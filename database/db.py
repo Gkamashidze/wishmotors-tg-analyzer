@@ -63,6 +63,15 @@ class Database:
             )
             return self._row(row)
 
+    async def get_product_by_partial_oem(self, partial: str) -> Optional[Dict]:
+        """Find a product whose OEM code ends with the given digits (e.g. '8500')."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM products WHERE oem_code LIKE $1",
+                f"%{partial.strip()}",
+            )
+            return self._row(row)
+
     async def get_product_by_name(self, name: str) -> Optional[Dict]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(

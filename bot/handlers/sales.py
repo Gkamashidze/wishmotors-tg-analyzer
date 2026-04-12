@@ -23,40 +23,66 @@ _PARSE = ParseMode.HTML
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
 
+async def _lookup_product(db: Database, raw: str) -> dict | None:
+    """Full OEM → partial OEM (if all digits) → name."""
+    product = await db.get_product_by_oem(raw)
+    if not product and raw.isdigit():
+        product = await db.get_product_by_partial_oem(raw)
+    if not product:
+        product = await db.get_product_by_name(raw)
+    return product
+
+
+async def _process_sale(message: Message, db: Database, text: str) -> None:
+    """Shared logic for text and photo-caption sale messages."""
+    parsed = parse_sale_message(text)
+    if not parsed:
+        return
+
+    raw = parsed.raw_product
+    product = await _lookup_product(db, raw)
+
+    if not product:
+        if parsed.is_return:
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+                parse_mode=_PARSE,
+            )
+            return
+        await _record_sale_freeform(message, db, raw, parsed)
+        return
+
+    if parsed.is_return:
+        await _record_return(message, db, product, parsed)
+    else:
+        await _record_sale(message, db, product, parsed)
+
+
 @sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     try:
-        parsed = parse_sale_message(text)
-
-        if not parsed:
-            return
-
-        raw = parsed.raw_product
-
-        product = await db.get_product_by_oem(raw)
-        if not product:
-            product = await db.get_product_by_name(raw)
-
-        if not product:
-            # პროდუქტი ბაზაში არ არის (საწყისი ნაშთები ჯერ არ არის ატვირთული).
-            # გაყიდვა მაინც ჩაიწერება — product_id=None, პროდუქტის სახელი notes-ში.
-            if parsed.is_return:
-                await message.bot.send_message(
-                    chat_id=message.from_user.id,
-                    text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
-                    parse_mode=_PARSE,
-                )
-                return
-            await _record_sale_freeform(message, db, raw, parsed)
-            return
-
-        if parsed.is_return:
-            await _record_return(message, db, product, parsed)
-        else:
-            await _record_sale(message, db, product, parsed)
+        await _process_sale(message, db, text)
     except Exception:
         logger.exception("Unexpected error in handle_sales_text: %r", text)
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ სისტემური შეცდომა. გთხოვთ, სცადოთ ხელახლა.",
+            parse_mode=_PARSE,
+        )
+
+
+@sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.photo)
+async def handle_sales_photo(message: Message, db: Database) -> None:
+    """Photo with caption: OEM/partial-OEM Nც PRICEლ [payment]"""
+    caption = (message.caption or "").strip()
+    if not caption:
+        return  # ფოტო caption-ის გარეშე — იგნორი
+    try:
+        await _process_sale(message, db, caption)
+    except Exception:
+        logger.exception("Unexpected error in handle_sales_photo caption: %r", caption)
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="❌ სისტემური შეცდომა. გთხოვთ, სცადოთ ხელახლა.",
