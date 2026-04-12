@@ -41,7 +41,7 @@ from telethon.tl.types import Message
 
 load_dotenv()
 
-from bot.parsers.message_parser import (
+from bot.parsers.message_parser import (  # noqa: E402
     parse_expense_message,
     parse_order_message,
     parse_sale_message,
@@ -168,7 +168,7 @@ async def audit(client: TelegramClient) -> None:
     grand_pct   = (grand_parsed / grand_total * 100) if grand_total else 0
 
     print(f"\n{'━' * 60}")
-    print(f"  📊 ᲡᲣᲚ — ყველა topic")
+    print("  📊 ᲡᲣᲚ — ყველა topic")
     print(f"{'━' * 60}")
     print(f"  სულ შეტყობინება : {grand_total}")
     print(f"  ✅ ამოცნობილი    : {grand_parsed}  ({grand_pct:.1f}%)")

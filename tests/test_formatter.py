@@ -4,13 +4,9 @@ No external dependencies — mocks config so no .env required.
 """
 
 import os
-import sys
-from calendar import monthrange
-from datetime import datetime, timedelta
-from unittest.mock import patch
+from datetime import datetime
 
 import pytz
-import pytest
 
 # Provide minimal env so config.py loads without errors
 os.environ.setdefault("BOT_TOKEN", "test")

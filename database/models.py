@@ -73,10 +73,31 @@ CREATE INDEX IF NOT EXISTS idx_parse_failures_topic ON parse_failures(topic_id);
 CREATE INDEX IF NOT EXISTS idx_parse_failures_time  ON parse_failures(created_at);
 """
 
-# Applied once at startup to add new columns to existing tables (idempotent).
+# Applied once at startup to add new columns / constraints to existing tables (idempotent).
+# Constraints are added NOT VALID so they apply to future rows without scanning existing data.
 MIGRATE_SQL = """
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS seller_type   TEXT NOT NULL DEFAULT 'individual';
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name TEXT;
+
+DO $$ BEGIN
+  ALTER TABLE sales ADD CONSTRAINT sales_quantity_positive CHECK (quantity > 0) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE returns ADD CONSTRAINT returns_quantity_positive CHECK (quantity > 0) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE orders ADD CONSTRAINT orders_quantity_positive CHECK (quantity_needed > 0) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 """
 
 

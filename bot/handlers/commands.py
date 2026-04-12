@@ -3,7 +3,7 @@ import logging
 from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
 from bot.handlers import IsAdmin, is_rate_limited
@@ -180,6 +180,8 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         sales = await db.get_credit_sales()
         text = format_credit_sales_report(sales)
         keyboard = _nisias_keyboard(sales) if sales else None
+        if isinstance(callback.message, InaccessibleMessage):
+            return
         try:
             await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=keyboard)
         except Exception as exc:
@@ -191,6 +193,12 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
 @commands_router.message(Command("paid"), IsAdmin())
 async def cmd_paid(message: Message, db: Database) -> None:
     """Mark a credit sale as paid. Usage: /paid ID ხელზე  or  /paid ID დარიცხა"""
+    if message.from_user and is_rate_limited(message.from_user.id, "paid"):
+        await message.bot.send_message(  # type: ignore[union-attr]
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
+        )
+        return
     parts = (message.text or "").split()
     if len(parts) < 3 or not parts[1].isdigit():
         await message.bot.send_message(
@@ -416,6 +424,12 @@ async def cmd_editproduct(message: Message, db: Database) -> None:
 
 @commands_router.message(Command("completeorder"), IsAdmin())
 async def cmd_complete_order(message: Message, db: Database) -> None:
+    if message.from_user and is_rate_limited(message.from_user.id, "completeorder"):
+        await message.bot.send_message(  # type: ignore[union-attr]
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
+        )
+        return
     parts = (message.text or "").split()
     if len(parts) < 2 or not parts[1].isdigit():
         await message.bot.send_message(
@@ -469,10 +483,14 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
 
         if not name:
             raise ValueError("empty name")
+        if price < 0:
+            raise ValueError("negative price")
+        if stock < 0:
+            raise ValueError("negative stock")
     except (ValueError, IndexError):
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text="❌ შეამოწმეთ ფორმატი. <b>მარაგი</b> მთელი რიცხვია, <b>ფასი</b> — ათობითი.",
+            text="❌ შეამოწმეთ ფორმატი. <b>მარაგი</b> მთელი რიცხვია, <b>ფასი</b> — ათობითი, ორივე 0 ან მეტი.",
             parse_mode=_PARSE,
         )
         return

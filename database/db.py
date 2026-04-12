@@ -229,7 +229,7 @@ class Database:
                         sale_dict["quantity"], sale_dict["product_id"],
                     )
                 await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
-                return sale_dict
+                return sale_dict  # type: ignore[return-value]
 
     async def mark_sale_paid(self, sale_id: int, payment_method: str) -> bool:
         """Mark a credit (ნისია) sale as paid. Returns True if updated."""
@@ -280,13 +280,21 @@ class Database:
         values: List[Any] = []
         idx = 1
         if name is not None:
-            updates.append(f"name = ${idx}"); values.append(name); idx += 1
+            updates.append(f"name = ${idx}")
+            values.append(name)
+            idx += 1
         if oem_code is not None:
-            updates.append(f"oem_code = ${idx}"); values.append(oem_code or None); idx += 1
+            updates.append(f"oem_code = ${idx}")
+            values.append(oem_code or None)
+            idx += 1
         if price is not None:
-            updates.append(f"unit_price = ${idx}"); values.append(price); idx += 1
+            updates.append(f"unit_price = ${idx}")
+            values.append(price)
+            idx += 1
         if min_stock is not None:
-            updates.append(f"min_stock = ${idx}"); values.append(min_stock); idx += 1
+            updates.append(f"min_stock = ${idx}")
+            values.append(min_stock)
+            idx += 1
         if not updates:
             return await self.get_product_by_id(product_id)
         values.append(product_id)

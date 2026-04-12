@@ -6,11 +6,14 @@ Public API (drop-in replacement):
     from bot.calendar_widget import SimpleCalendar, simple_cal_callback
 """
 
+from __future__ import annotations
+
 import calendar
 from datetime import datetime
+from typing import Optional, Tuple
 
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup
 
 _MONTH_NAMES = [
     "იანვარი", "თებერვალი", "მარტი", "აპრილი",
@@ -35,7 +38,7 @@ class SimpleCalendar:
     """Inline keyboard calendar.  Usage matches aiogram3-calendar's SimpleCalendar."""
 
     async def start_calendar(
-        self, year: int | None = None, month: int | None = None
+        self, year: Optional[int] = None, month: Optional[int] = None
     ) -> InlineKeyboardMarkup:
         now = datetime.now()
         return self._build(year or now.year, month or now.month)
@@ -76,17 +79,18 @@ class SimpleCalendar:
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
     async def process_selection(
-        self, callback, callback_data: SimpleCalCallback
-    ) -> tuple[bool, datetime | None]:
+        self, callback: CallbackQuery, callback_data: SimpleCalCallback
+    ) -> Tuple[bool, Optional[datetime]]:
         """Returns (selected, date). Handles navigation internally."""
         if callback_data.act == "ignore":
             await callback.answer()
             return False, None
 
         if callback_data.act in ("prev", "next"):
-            await callback.message.edit_reply_markup(
-                reply_markup=self._build(callback_data.year, callback_data.month)
-            )
+            if not isinstance(callback.message, InaccessibleMessage):
+                await callback.message.edit_reply_markup(
+                    reply_markup=self._build(callback_data.year, callback_data.month)
+                )
             await callback.answer()
             return False, None
 

@@ -3,14 +3,10 @@ Unit tests for bot/parsers/message_parser.py
 No external dependencies — runs without a database or Telegram connection.
 """
 
-import pytest
 from bot.parsers.message_parser import (
     PAYMENT_CASH,
     PAYMENT_CREDIT,
     PAYMENT_TRANSFER,
-    ParsedExpense,
-    ParsedOrder,
-    ParsedSale,
     parse_expense_message,
     parse_order_message,
     parse_sale_message,

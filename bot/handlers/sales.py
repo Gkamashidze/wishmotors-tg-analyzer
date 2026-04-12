@@ -12,14 +12,12 @@ from aiogram.types import Message
 import config
 from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import (
-    PAYMENT_CASH,
-    PAYMENT_CREDIT,
-    PAYMENT_TRANSFER,
     ParsedSale,
     parse_sale_message,
 )
 from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
 from database.db import Database
+from database.models import ProductRow
 
 logger = logging.getLogger(__name__)
 sales_router = Router(name="sales")
@@ -69,7 +67,7 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         )
 
 
-async def _record_sale(message: Message, db: Database, product: dict, parsed: ParsedSale) -> None:
+async def _record_sale(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:
     sale_id, new_stock = await db.create_sale(
         product_id=product["id"],
         quantity=parsed.quantity,
@@ -150,7 +148,7 @@ async def _record_sale_freeform(
     )
 
 
-async def _record_return(message: Message, db: Database, product: dict, parsed: ParsedSale) -> None:
+async def _record_return(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:
     refund = parsed.price * parsed.quantity
 
     _return_id, new_stock = await db.create_return(
@@ -207,6 +205,15 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    if doc.file_size and doc.file_size > config.MAX_EXCEL_BYTES:
+        mb = config.MAX_EXCEL_BYTES // (1024 * 1024)
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"❌ ფაილი ძალიან დიდია. მაქსიმალური ზომა: <b>{mb} MB</b>.",
             parse_mode=_PARSE,
         )
         return

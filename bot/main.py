@@ -76,6 +76,15 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
         logger.info("Weekly report sent successfully.")
     except Exception as exc:
         logger.error("Failed to send weekly report: %s", exc)
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"⚠️ <b>კვირის ანგარიში ვერ გაიგზავნა</b>\n<code>{exc}</code>",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

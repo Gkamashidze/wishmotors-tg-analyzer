@@ -15,6 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -77,6 +78,9 @@ async def handle_quick_period(
 
     if period == "custom":
         await state.set_state(PeriodState.waiting_start)
+        if isinstance(callback.message, InaccessibleMessage):
+            await callback.answer()
+            return
         await callback.message.edit_text(
             "📆 <b>საწყისი თარიღი</b>\n\nაირჩიე საწყისი თარიღი:",
             reply_markup=await SimpleCalendar().start_calendar(),
@@ -98,6 +102,10 @@ async def handle_quick_period(
         date_to = last_prev.replace(hour=23, minute=59, second=59, microsecond=0)
     else:
         await callback.answer("უცნობი პერიოდი")
+        return
+
+    if isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
         return
 
     await callback.message.edit_text("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
@@ -131,6 +139,10 @@ async def process_start_date(
     await state.update_data(start=date_from.isoformat())
     await state.set_state(PeriodState.waiting_end)
 
+    if isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
+
     await callback.message.answer(
         f"📆 <b>საბოლოო თარიღი</b>\n"
         f"✅ საწყისი: <b>{date_from.strftime('%d.%m.%Y')}</b>\n\n"
@@ -161,6 +173,10 @@ async def process_end_date(
     data = await state.get_data()
     date_from = datetime.fromisoformat(data["start"])
     await state.clear()
+
+    if isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
+        return
 
     if date_from > date_to:
         await callback.message.answer(

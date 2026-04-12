@@ -4,8 +4,7 @@ Uses unittest.mock to patch asyncpg so no PostgreSQL instance is needed.
 """
 
 import os
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 # Minimal env so config loads
