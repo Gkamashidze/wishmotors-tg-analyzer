@@ -189,13 +189,15 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
 
     def _sale_line(s: Any, num: int) -> str:
         name = s.get("product_name") or s.get("notes") or "უცნობი"
+        oem = s.get("oem_code")
         sold_at = s["sold_at"]
         date_str = (
             sold_at.strftime("%d.%m") if isinstance(sold_at, datetime) else str(sold_at)[5:10]
         )
         total = float(s["unit_price"]) * s["quantity"]
+        oem_part = f" <code>{_e(oem)}</code>" if oem else ""
         return (
-            f"  #{num} {date_str} — {_e(name)}: "
+            f"  #{num} {date_str}{oem_part} — {_e(name)}: "
             f"{s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>"
         )
 

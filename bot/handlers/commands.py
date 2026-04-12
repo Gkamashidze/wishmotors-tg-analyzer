@@ -180,13 +180,9 @@ def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
     for cname in named:
         label = (cname[:10] + "…") if len(cname) > 11 else cname
         key = _customer_key(cname)
-        # Row 1: full payment — cash or transfer
+        # Two buttons per customer: full payment (cash) + partial payment
         rows.append([
-            InlineKeyboardButton(text=f"💵 {label}", callback_data=f"npc:{key}:cash"),
-            InlineKeyboardButton(text=f"🏦 {label}", callback_data=f"npc:{key}:transfer"),
-        ])
-        # Row 2: partial payment
-        rows.append([
+            InlineKeyboardButton(text=f"✅ სრულად — {label}", callback_data=f"npc:{key}:cash"),
             InlineKeyboardButton(text=f"💸 ნაწილობრივ — {label}", callback_data=f"npp:{key}"),
         ])
 
