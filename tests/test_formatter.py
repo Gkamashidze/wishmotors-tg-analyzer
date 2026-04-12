@@ -5,6 +5,7 @@ No external dependencies — mocks config so no .env required.
 
 import os
 from datetime import datetime
+from typing import Optional
 
 import pytz
 
@@ -22,6 +23,7 @@ os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 from bot.reports.formatter import (
     _TG_LIMIT,
     _truncate,
+    format_credit_sales_report,
     format_orders_report,
     format_period_report,
     format_return_confirmation,
@@ -327,6 +329,94 @@ class TestFormatPeriodReport:
         text = format_period_report(sales, [], [], df, dt)
         assert "<script>" not in text
         assert "&lt;script&gt;" in text
+
+
+# ─── format_credit_sales_report ──────────────────────────────────────────────
+
+class TestFormatCreditSalesReport:
+    _TZ = pytz.timezone("Asia/Tbilisi")
+
+    def _sale(self, sale_id: int, product: str, qty: int, price: float,
+              customer: Optional[str] = None, seller: str = "individual") -> dict:
+        return {
+            "id": sale_id,
+            "product_name": product,
+            "notes": None,
+            "quantity": qty,
+            "unit_price": price,
+            "payment_method": "credit",
+            "seller_type": seller,
+            "customer_name": customer,
+            "sold_at": self._TZ.localize(datetime(2026, 4, 12, 10, 0, 0)),
+        }
+
+    def test_no_sales_returns_ok_message(self):
+        text = format_credit_sales_report([])
+        assert "ნისია არ არის" in text
+
+    def test_total_owed_shown(self):
+        sales = [
+            self._sale(1, "სარკე", 1, 150.0, customer="იმედა"),
+            self._sale(2, "ფარი", 2, 100.0, customer="იმედა"),
+        ]
+        text = format_credit_sales_report(sales)
+        assert "350.00₾" in text  # total owed
+
+    def test_named_customer_grouped(self):
+        sales = [
+            self._sale(1, "სარკე", 1, 150.0, customer="იმედა"),
+            self._sale(2, "ფარი", 1, 200.0, customer="იმედა"),
+        ]
+        text = format_credit_sales_report(sales)
+        # Customer header appears once
+        assert text.count("იმედა") >= 1
+        # Subtotal for customer
+        assert "350.00₾" in text
+        # Both sale IDs visible
+        assert "#1" in text
+        assert "#2" in text
+
+    def test_two_different_customers_both_shown(self):
+        sales = [
+            self._sale(1, "სარკე", 1, 100.0, customer="გიო"),
+            self._sale(2, "ფარი", 1, 200.0, customer="ლაშა"),
+        ]
+        text = format_credit_sales_report(sales)
+        assert "გიო" in text
+        assert "ლაშა" in text
+        assert "#1" in text
+        assert "#2" in text
+
+    def test_unnamed_sale_shown_without_customer_header(self):
+        sales = [self._sale(5, "კოდი123", 1, 80.0, customer=None)]
+        text = format_credit_sales_report(sales)
+        assert "#5" in text
+        # No customer name header should appear
+        assert "👤" not in text
+
+    def test_named_and_unnamed_mixed(self):
+        sales = [
+            self._sale(1, "სარკე", 1, 100.0, customer="გიო"),
+            self._sale(2, "ნათურა", 1, 50.0, customer=None),
+        ]
+        text = format_credit_sales_report(sales)
+        assert "გიო" in text
+        assert "#1" in text
+        assert "#2" in text
+
+    def test_html_escaped_customer_name(self):
+        sales = [self._sale(1, "ნათურა", 1, 50.0, customer="<script>")]
+        text = format_credit_sales_report(sales)
+        assert "<script>" not in text
+        assert "&lt;script&gt;" in text
+
+    def test_customer_subtotal_correct(self):
+        sales = [
+            self._sale(1, "A", 2, 50.0, customer="გიო"),   # 100₾
+            self._sale(2, "B", 1, 30.0, customer="გიო"),   # 30₾
+        ]
+        text = format_credit_sales_report(sales)
+        assert "130.00₾" in text  # subtotal for გიო
 
 
 # ─── _truncate ────────────────────────────────────────────────────────────────

@@ -175,25 +175,45 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
         "",
     ]
 
+    # Group sales by customer_name
+    named: Dict[str, List[Any]] = {}
+    unnamed: List[Any] = []
     for s in sales:
+        cname = s.get("customer_name")
+        if cname:
+            named.setdefault(cname, []).append(s)
+        else:
+            unnamed.append(s)
+
+    def _sale_line(s: Any, indent: bool = True) -> str:
         name = s.get("product_name") or s.get("notes") or "უცნობი"
         sold_at = s["sold_at"]
-        if isinstance(sold_at, datetime):
-            date_str = sold_at.strftime("%d.%m.%Y")
-        else:
-            date_str = str(sold_at)[:10]
-
+        date_str = sold_at.strftime("%d.%m") if isinstance(sold_at, datetime) else str(sold_at)[5:10]
         total = float(s["unit_price"]) * s["quantity"]
-        seller = _seller_label(s.get("seller_type", "individual"))
-        customer = s.get("customer_name") or "—"
-
-        lines.append(
-            f"🔸 <b>#{s['id']}</b> | {date_str} | {seller}\n"
-            f"   📦 {_e(name)} — {s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
-            f"   👤 {_e(customer)}"
+        prefix = "  " if indent else ""
+        return (
+            f"{prefix}🔸 <b>#{s['id']}</b> {date_str} — {_e(name)}: "
+            f"{s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>"
         )
 
-    lines.append("")
+    # Named customer groups
+    for cname, csales in named.items():
+        subtotal = sum(float(s["unit_price"]) * s["quantity"] for s in csales)
+        seller = _seller_label(csales[0].get("seller_type", "individual"))
+        lines.append(f"👤 <b>{_e(cname)}</b> ({seller}) — ვალი: <b>{subtotal:.2f}₾</b>")
+        for s in csales:
+            lines.append(_sale_line(s, indent=True))
+        lines.append("")
+
+    # Unnamed individual sales
+    if unnamed:
+        if named:
+            lines.append("📋 <b>სახელი გარეშე:</b>")
+        for s in unnamed:
+            seller = _seller_label(s.get("seller_type", "individual"))
+            lines.append(_sale_line(s, indent=False) + f" | {seller}")
+        lines.append("")
+
     return _truncate("\n".join(lines))
 
 

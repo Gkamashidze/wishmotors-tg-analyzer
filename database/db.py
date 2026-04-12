@@ -247,6 +247,18 @@ class Database:
             )
             return result == "UPDATE 1"
 
+    async def mark_customer_sales_paid(self, customer_name: str, payment_method: str) -> int:
+        """Mark all credit sales for a customer as paid.
+        Returns the number of sales updated."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """UPDATE sales
+                   SET payment_method = $1
+                   WHERE payment_method = 'credit' AND customer_name = $2""",
+                payment_method, customer_name,
+            )
+            return int(result.split()[-1])
+
     async def get_weekly_sales(self) -> List[SaleRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(

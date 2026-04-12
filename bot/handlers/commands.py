@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import html
 import logging
+from typing import Optional
 
 from aiogram import Router
 from aiogram.enums import ParseMode
@@ -144,23 +146,52 @@ async def cmd_orders(message: Message, db: Database) -> None:
 _NISIAS_KEYBOARD_MAX = 25  # Telegram keyboard size limit safety margin
 
 
+def _customer_key(name: str) -> str:
+    """8-char deterministic hash of a customer name for use in callback_data."""
+    return hashlib.md5(name.encode()).hexdigest()[:8]
+
+
 def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
-    """Build an inline keyboard with pay buttons for each nisias entry.
-    Capped at _NISIAS_KEYBOARD_MAX rows to avoid Telegram API payload limits."""
+    """Build inline keyboard grouped by customer name.
+
+    Named customers get one row each (2 buttons: ხელზე / დარიცხა for the whole debt).
+    Sales without a customer_name fall back to per-sale individual buttons.
+    Capped at _NISIAS_KEYBOARD_MAX rows total.
+    """
+    named: dict = {}
+    unnamed: list = []
+    for s in sales:
+        cname = s.get("customer_name")
+        if cname:
+            named.setdefault(cname, [])
+        else:
+            unnamed.append(s)
+
     rows = []
-    for s in sales[:_NISIAS_KEYBOARD_MAX]:
+
+    # One row per named customer
+    for cname in named:
+        label = (cname[:13] + "…") if len(cname) > 14 else cname
+        key = _customer_key(cname)
+        rows.append([
+            InlineKeyboardButton(text=f"💵 {label}", callback_data=f"npc:{key}:cash"),
+            InlineKeyboardButton(text=f"🏦 {label}", callback_data=f"npc:{key}:transfer"),
+        ])
+
+    # Per-sale rows for unnamed sales
+    for s in unnamed:
         sale_id = s["id"]
         rows.append([
             InlineKeyboardButton(text=f"💵 ხელზე #{sale_id}",  callback_data=f"np:{sale_id}:cash"),
             InlineKeyboardButton(text=f"🏦 დარიცხა #{sale_id}", callback_data=f"np:{sale_id}:transfer"),
         ])
-    if len(sales) > _NISIAS_KEYBOARD_MAX:
+
+    if len(rows) > _NISIAS_KEYBOARD_MAX:
+        rows = rows[:_NISIAS_KEYBOARD_MAX]
         rows.append([
-            InlineKeyboardButton(
-                text=f"... და კიდევ {len(sales) - _NISIAS_KEYBOARD_MAX} ნისია",
-                callback_data="np:0:ignore",
-            )
+            InlineKeyboardButton(text="... კიდევ მეტი ნისია", callback_data="np:0:ignore")
         ])
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -176,6 +207,55 @@ async def cmd_nisias(message: Message, db: Database) -> None:
         parse_mode=_PARSE,
         reply_markup=keyboard,
     )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("npc:"), IsAdmin())
+async def callback_nisias_pay_customer(callback: CallbackQuery, db: Database) -> None:
+    """Handle customer-level nisias pay: npc:{customer_hash}:{cash|transfer}
+    Marks ALL unpaid credit sales for that customer as paid in one action."""
+    try:
+        _, customer_hash, method = (callback.data or "").split(":")
+        label = "ხელზე 💵" if method == "cash" else "დარიცხა 🏦"
+    except (ValueError, AttributeError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    # Resolve customer name from hash against current unpaid sales
+    all_sales = await db.get_credit_sales()
+    target_customer: Optional[str] = None
+    for s in all_sales:
+        cname = s.get("customer_name")
+        if cname and _customer_key(cname) == customer_hash:
+            target_customer = cname
+            break
+
+    if not target_customer:
+        await callback.answer("⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True)
+        return
+
+    count = await db.mark_customer_sales_paid(target_customer, method)
+    if count > 0:
+        logger.info(
+            "AUDIT: admin %d marked %d credit sale(s) for '%s' as paid (%s)",
+            callback.from_user.id, count, target_customer, method,
+        )
+        await callback.answer(f"✅ {target_customer} — {label} ({count} ნისია)", show_alert=False)
+    else:
+        await callback.answer(
+            f"⚠️ {target_customer} — ნისია ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True
+        )
+        return
+
+    # Refresh the nisias list
+    sales = await db.get_credit_sales()
+    text = format_credit_sales_report(sales)
+    keyboard = _nisias_keyboard(sales) if sales else None
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+    try:
+        await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=keyboard)
+    except Exception as exc:
+        logger.debug("Could not refresh nisias message after customer payment: %s", exc)
 
 
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("np:"), IsAdmin())
