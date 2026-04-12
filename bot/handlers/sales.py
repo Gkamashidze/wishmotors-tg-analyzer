@@ -35,12 +35,15 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         product = await db.get_product_by_name(raw)
 
     if not product:
-        await message.reply(
-            f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა მონაცემთა ბაზაში.\n\n"
-            f"დაამატეთ ბრძანებით:\n"
-            f"<code>/addproduct {raw.replace(' ', '_')} OEM_კოდი 0 0.00</code>",
-            parse_mode=_PARSE,
-        )
+        # პროდუქტი ბაზაში არ არის (საწყისი ნაშთები ჯერ არ არის ატვირთული).
+        # გაყიდვა მაინც ჩაიწერება — product_id=None, პროდუქტის სახელი notes-ში.
+        if parsed.is_return:
+            await message.reply(
+                f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+                parse_mode=_PARSE,
+            )
+            return
+        await _record_sale_freeform(message, db, raw, parsed)
         return
 
     if parsed.is_return:
@@ -74,6 +77,32 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed) ->
         logger.warning(
             "Low stock alert: %s — %d units remaining", product["name"], new_stock
         )
+
+
+async def _record_sale_freeform(
+    message: Message, db: Database, product_name: str, parsed
+) -> None:
+    """პროდუქტი ბაზაში არ არსებობს — გაყიდვა ჩაიწერება notes-ით, stock ცვლილების გარეშე."""
+    payment_str = "ხელზე 💵" if parsed.payment_method == "cash" else "გადარიცხვა 🏦"
+    total = parsed.quantity * parsed.price
+
+    await db.create_sale(
+        product_id=None,
+        quantity=parsed.quantity,
+        unit_price=parsed.price,
+        payment_method=parsed.payment_method,
+        notes=product_name,
+    )
+
+    await message.reply(
+        f"✅ <b>გაყიდვა დაფიქსირდა</b>\n"
+        f"📦 პროდუქტი: {product_name}\n"
+        f"🔢 რაოდენობა: {parsed.quantity}ც\n"
+        f"💰 ფასი: {parsed.price:.2f}₾ × {parsed.quantity} = <b>{total:.2f}₾</b>\n"
+        f"💳 გადახდა: {payment_str}\n"
+        f"<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>",
+        parse_mode=_PARSE,
+    )
 
 
 async def _record_return(message: Message, db: Database, product: dict, parsed) -> None:
