@@ -5,8 +5,11 @@ No external dependencies — mocks config so no .env required.
 
 import os
 import sys
+from calendar import monthrange
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pytz
 import pytest
 
 # Provide minimal env so config.py loads without errors
@@ -22,11 +25,13 @@ os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 
 from bot.reports.formatter import (
     format_orders_report,
+    format_period_report,
     format_return_confirmation,
     format_sale_confirmation,
     format_stock_report,
     format_weekly_report,
 )
+from bot.handlers.commands import _parse_period
 
 
 # ─── format_sale_confirmation ────────────────────────────────────────────────
@@ -242,3 +247,138 @@ class TestFormatWeeklyReport:
         text = format_weekly_report(sales, [], [], [])
         assert "100.00₾" in text   # cash
         assert "200.00₾" in text   # transfer
+
+
+# ─── format_period_report ────────────────────────────────────────────────────
+
+class TestFormatPeriodReport:
+    _TZ = pytz.timezone("Asia/Tbilisi")
+
+    def _d(self, year: int, month: int, day: int, hour: int = 0) -> datetime:
+        return self._TZ.localize(datetime(year, month, day, hour, 0, 0))
+
+    def _sale(self, name: str, qty: int, price: float, method: str = "cash") -> dict:
+        return {
+            "product_name": name,
+            "quantity": qty,
+            "unit_price": price,
+            "payment_method": method,
+            "notes": None,
+        }
+
+    def _return(self, name: str, qty: int, refund: float) -> dict:
+        return {"product_name": name, "quantity": qty, "refund_amount": refund}
+
+    def _expense(self, desc: str, amount: float) -> dict:
+        return {"description": desc, "amount": amount}
+
+    def test_empty_period_returns_special_message(self):
+        d = self._d(2026, 3, 1)
+        text = format_period_report([], [], [], [], d, d)
+        assert "📭" in text
+        assert "არ დაფიქსირებულა" in text
+
+    def test_shows_period_header(self):
+        df = self._d(2026, 3, 1)
+        dt = self._d(2026, 3, 31)
+        sales = [self._sale("სარკე", 2, 30.0)]
+        text = format_period_report(sales, [], [], [], df, dt)
+        assert "01.03.2026" in text
+        assert "31.03.2026" in text
+
+    def test_revenue_calculation(self):
+        df = self._d(2026, 3, 1)
+        dt = self._d(2026, 3, 31)
+        sales = [self._sale("A", 2, 50.0), self._sale("B", 1, 30.0)]
+        text = format_period_report(sales, [], [], [], df, dt)
+        assert "130.00₾" in text   # total revenue
+
+    def test_net_income_with_returns_and_expenses(self):
+        df = self._d(2026, 3, 1)
+        dt = self._d(2026, 3, 31)
+        sales = [self._sale("A", 1, 100.0)]
+        returns = [self._return("A", 1, 20.0)]
+        expenses = [self._expense("ბენზინი", 10.0)]
+        text = format_period_report(sales, returns, expenses, [], df, dt)
+        # net = 100 - 20 - 10 = 70
+        assert "70.00₾" in text
+
+    def test_cash_and_transfer_split(self):
+        df = self._d(2026, 3, 1)
+        dt = self._d(2026, 3, 31)
+        sales = [
+            self._sale("A", 1, 100.0, "cash"),
+            self._sale("B", 1, 50.0, "transfer"),
+        ]
+        text = format_period_report(sales, [], [], [], df, dt)
+        assert "100.00₾" in text
+        assert "50.00₾" in text
+
+    def test_html_escaped_product_name(self):
+        df = self._d(2026, 3, 1)
+        dt = self._d(2026, 3, 31)
+        sales = [self._sale("<script>alert(1)</script>", 1, 10.0)]
+        text = format_period_report(sales, [], [], [], df, dt)
+        assert "<script>" not in text
+        assert "&lt;script&gt;" in text
+
+
+# ─── _parse_period ───────────────────────────────────────────────────────────
+
+class TestParsePeriod:
+    _TZ = pytz.timezone("Asia/Tbilisi")
+
+    def test_week_keyword(self):
+        result = _parse_period(["week"], self._TZ)
+        assert result is not None
+        df, dt = result
+        diff = dt - df
+        assert 6 <= diff.days <= 7
+
+    def test_month_keyword_starts_on_first(self):
+        result = _parse_period(["month"], self._TZ)
+        assert result is not None
+        df, _ = result
+        assert df.day == 1
+        assert df.hour == 0
+
+    def test_lastmonth_keyword(self):
+        result = _parse_period(["lastmonth"], self._TZ)
+        assert result is not None
+        df, dt = result
+        assert df.day == 1
+        assert dt.day >= 28   # last day of previous month
+
+    def test_yyyy_mm_format(self):
+        result = _parse_period(["2026-03"], self._TZ)
+        assert result is not None
+        df, dt = result
+        assert df.year == 2026
+        assert df.month == 3
+        assert df.day == 1
+        assert dt.day == 31
+        assert dt.hour == 23
+
+    def test_yyyy_mm_invalid_month(self):
+        assert _parse_period(["2026-13"], self._TZ) is None
+
+    def test_specific_date_range(self):
+        result = _parse_period(["2026-03-01", "2026-03-15"], self._TZ)
+        assert result is not None
+        df, dt = result
+        assert df.day == 1
+        assert dt.day == 15
+        assert dt.hour == 23
+
+    def test_inverted_date_range_returns_none(self):
+        result = _parse_period(["2026-03-31", "2026-03-01"], self._TZ)
+        assert result is None
+
+    def test_empty_args_returns_none(self):
+        assert _parse_period([], self._TZ) is None
+
+    def test_invalid_keyword_returns_none(self):
+        assert _parse_period(["სულ"], self._TZ) is None
+
+    def test_invalid_date_format_returns_none(self):
+        assert _parse_period(["26-03-01", "26-03-15"], self._TZ) is None

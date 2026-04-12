@@ -1,3 +1,4 @@
+import html
 import logging
 from io import BytesIO
 
@@ -8,7 +9,7 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
-from bot.parsers.message_parser import parse_sale_message
+from bot.parsers.message_parser import ParsedSale, parse_sale_message
 from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
 from database.db import Database
 
@@ -23,37 +24,45 @@ _PARSE = ParseMode.HTML
 @sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
-    parsed = parse_sale_message(text)
+    try:
+        parsed = parse_sale_message(text)
 
-    if not parsed:
-        return
-
-    raw = parsed.raw_product
-
-    product = await db.get_product_by_oem(raw)
-    if not product:
-        product = await db.get_product_by_name(raw)
-
-    if not product:
-        # პროდუქტი ბაზაში არ არის (საწყისი ნაშთები ჯერ არ არის ატვირთული).
-        # გაყიდვა მაინც ჩაიწერება — product_id=None, პროდუქტის სახელი notes-ში.
-        if parsed.is_return:
-            await message.bot.send_message(
-                chat_id=message.from_user.id,
-                text=f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
-                parse_mode=_PARSE,
-            )
+        if not parsed:
             return
-        await _record_sale_freeform(message, db, raw, parsed)
-        return
 
-    if parsed.is_return:
-        await _record_return(message, db, product, parsed)
-    else:
-        await _record_sale(message, db, product, parsed)
+        raw = parsed.raw_product
+
+        product = await db.get_product_by_oem(raw)
+        if not product:
+            product = await db.get_product_by_name(raw)
+
+        if not product:
+            # პროდუქტი ბაზაში არ არის (საწყისი ნაშთები ჯერ არ არის ატვირთული).
+            # გაყიდვა მაინც ჩაიწერება — product_id=None, პროდუქტის სახელი notes-ში.
+            if parsed.is_return:
+                await message.bot.send_message(
+                    chat_id=message.from_user.id,
+                    text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+                    parse_mode=_PARSE,
+                )
+                return
+            await _record_sale_freeform(message, db, raw, parsed)
+            return
+
+        if parsed.is_return:
+            await _record_return(message, db, product, parsed)
+        else:
+            await _record_sale(message, db, product, parsed)
+    except Exception:
+        logger.exception("Unexpected error in handle_sales_text: %r", text)
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ სისტემური შეცდომა. გთხოვთ, სცადოთ ხელახლა.",
+            parse_mode=_PARSE,
+        )
 
 
-async def _record_sale(message: Message, db: Database, product: dict, parsed) -> None:
+async def _record_sale(message: Message, db: Database, product: dict, parsed: ParsedSale) -> None:
     _sale_id, new_stock = await db.create_sale(
         product_id=product["id"],
         quantity=parsed.quantity,
@@ -82,7 +91,7 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed) ->
 
 
 async def _record_sale_freeform(
-    message: Message, db: Database, product_name: str, parsed
+    message: Message, db: Database, product_name: str, parsed: ParsedSale
 ) -> None:
     """პროდუქტი ბაზაში არ არსებობს — გაყიდვა ჩაიწერება notes-ით, stock ცვლილების გარეშე."""
     payment_str = "ხელზე 💵" if parsed.payment_method == "cash" else "გადარიცხვა 🏦"
@@ -100,7 +109,7 @@ async def _record_sale_freeform(
         chat_id=message.from_user.id,
         text=(
             f"✅ <b>გაყიდვა დაფიქსირდა</b>\n"
-            f"📦 პროდუქტი: {product_name}\n"
+            f"📦 პროდუქტი: {html.escape(product_name)}\n"
             f"🔢 რაოდენობა: {parsed.quantity}ც\n"
             f"💰 ფასი: {parsed.price:.2f}₾ × {parsed.quantity} = <b>{total:.2f}₾</b>\n"
             f"💳 გადახდა: {payment_str}\n"
@@ -110,7 +119,7 @@ async def _record_sale_freeform(
     )
 
 
-async def _record_return(message: Message, db: Database, product: dict, parsed) -> None:
+async def _record_return(message: Message, db: Database, product: dict, parsed: ParsedSale) -> None:
     refund = parsed.price * parsed.quantity
 
     _return_id, new_stock = await db.create_return(
