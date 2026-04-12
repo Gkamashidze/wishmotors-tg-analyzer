@@ -84,12 +84,20 @@ async def main() -> None:
     )
 
     await bot.set_my_commands([
+        # ── 📊 ანგარიშები ──────────────────────────────
         BotCommand(command="report",        description="📊 კვირის ანგარიში"),
-        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში (week / month / 2026-03)"),
+        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში"),
+        # ── 🏪 საწყობი ────────────────────────────────
         BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
-        BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
-        BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — /completeorder ID"),
         BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
+        # ── 📋 შეკვეთები ──────────────────────────────
+        BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
+        BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — ID საჭიროა"),
+        # ── 💳 ნისია ──────────────────────────────────
+        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები"),
+        BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
+        # ── 🔧 სისტემა ────────────────────────────────
+        BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
     ])
     logger.info("Bot commands menu registered.")

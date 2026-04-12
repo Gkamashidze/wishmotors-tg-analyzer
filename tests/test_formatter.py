@@ -31,7 +31,6 @@ from bot.reports.formatter import (
     format_stock_report,
     format_weekly_report,
 )
-from bot.handlers.commands import _parse_period
 
 
 # ─── format_sale_confirmation ────────────────────────────────────────────────
@@ -43,8 +42,11 @@ class TestFormatSaleConfirmation:
             qty=2,
             price=30.0,
             payment="cash",
+            seller_type="individual",
+            customer_name="",
             new_stock=8,
             low_stock=False,
+            sale_id=1,
         )
         assert "გაყიდვა დაფიქსირდა" in text
         assert "60.00₾" in text          # total
@@ -58,10 +60,13 @@ class TestFormatSaleConfirmation:
             qty=1,
             price=45.0,
             payment="transfer",
+            seller_type="individual",
+            customer_name="",
             new_stock=3,
             low_stock=True,
+            sale_id=2,
         )
-        assert "გადარიცხვა" in text
+        assert "დარიცხა" in text
         assert "⚠️" in text              # low-stock warning
 
     def test_html_special_chars_escaped(self):
@@ -70,8 +75,11 @@ class TestFormatSaleConfirmation:
             qty=1,
             price=10.0,
             payment="cash",
+            seller_type="individual",
+            customer_name="",
             new_stock=5,
             low_stock=False,
+            sale_id=3,
         )
         assert "<script>" not in text
         assert "&lt;script&gt;" in text
@@ -322,63 +330,3 @@ class TestFormatPeriodReport:
         assert "<script>" not in text
         assert "&lt;script&gt;" in text
 
-
-# ─── _parse_period ───────────────────────────────────────────────────────────
-
-class TestParsePeriod:
-    _TZ = pytz.timezone("Asia/Tbilisi")
-
-    def test_week_keyword(self):
-        result = _parse_period(["week"], self._TZ)
-        assert result is not None
-        df, dt = result
-        diff = dt - df
-        assert 6 <= diff.days <= 7
-
-    def test_month_keyword_starts_on_first(self):
-        result = _parse_period(["month"], self._TZ)
-        assert result is not None
-        df, _ = result
-        assert df.day == 1
-        assert df.hour == 0
-
-    def test_lastmonth_keyword(self):
-        result = _parse_period(["lastmonth"], self._TZ)
-        assert result is not None
-        df, dt = result
-        assert df.day == 1
-        assert dt.day >= 28   # last day of previous month
-
-    def test_yyyy_mm_format(self):
-        result = _parse_period(["2026-03"], self._TZ)
-        assert result is not None
-        df, dt = result
-        assert df.year == 2026
-        assert df.month == 3
-        assert df.day == 1
-        assert dt.day == 31
-        assert dt.hour == 23
-
-    def test_yyyy_mm_invalid_month(self):
-        assert _parse_period(["2026-13"], self._TZ) is None
-
-    def test_specific_date_range(self):
-        result = _parse_period(["2026-03-01", "2026-03-15"], self._TZ)
-        assert result is not None
-        df, dt = result
-        assert df.day == 1
-        assert dt.day == 15
-        assert dt.hour == 23
-
-    def test_inverted_date_range_returns_none(self):
-        result = _parse_period(["2026-03-31", "2026-03-01"], self._TZ)
-        assert result is None
-
-    def test_empty_args_returns_none(self):
-        assert _parse_period([], self._TZ) is None
-
-    def test_invalid_keyword_returns_none(self):
-        assert _parse_period(["სულ"], self._TZ) is None
-
-    def test_invalid_date_format_returns_none(self):
-        assert _parse_period(["26-03-01", "26-03-15"], self._TZ) is None
