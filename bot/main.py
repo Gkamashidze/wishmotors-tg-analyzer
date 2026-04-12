@@ -62,14 +62,7 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
 
         text = format_weekly_report(sales, returns, expenses, products)
 
-        # Send to group
-        await bot.send_message(
-            chat_id=config.GROUP_ID,
-            text=text,
-            parse_mode=ParseMode.HTML,
-        )
-
-        # Also DM each admin
+        # DM each admin
         for admin_id in config.ADMIN_IDS:
             try:
                 await bot.send_message(
