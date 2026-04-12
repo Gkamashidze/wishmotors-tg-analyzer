@@ -14,6 +14,7 @@ from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import (
     ParsedSale,
     parse_batch_sales,
+    parse_dual_sale_message,
     parse_sale_message,
 )
 from bot.reports.formatter import (
@@ -42,6 +43,12 @@ async def handle_sales_text(message: Message, db: Database) -> None:
             await _handle_batch_sales(message, db, text)
             return
 
+        # Dual-product format: "008b03 და 108000 1-1ც ჯამში 100₾" → two separate sales
+        dual = parse_dual_sale_message(text)
+        if dual is not None:
+            await _handle_dual_sale(message, db, dual)
+            return
+
         parsed = parse_sale_message(text)
 
         if not parsed:
@@ -51,6 +58,8 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         raw = parsed.raw_product
 
         product = await db.get_product_by_oem(raw)
+        if not product and raw:
+            product = await db.get_product_by_partial_oem(raw)
         if not product:
             product = await db.get_product_by_name(raw)
 
@@ -103,6 +112,8 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
             raw = parsed.raw_product
             product = await db.get_product_by_oem(raw) if raw else None
             if not product and raw:
+                product = await db.get_product_by_partial_oem(raw)
+            if not product and raw:
                 product = await db.get_product_by_name(raw)
 
             sale_id, _ = await db.create_sale(
@@ -125,6 +136,39 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=format_batch_confirmation(customer_name, results, grand_total, failed_lines),
+        parse_mode=_PARSE,
+    )
+
+
+async def _handle_dual_sale(message: Message, db: Database, dual: list) -> None:
+    """Record two sales from a single-line dual entry (e.g. '008b03 და 108000 1-1ც ჯამში 100₾')."""
+    results = []
+    grand_total = 0.0
+    customer_name = dual[0].customer_name or None
+
+    for parsed in dual:
+        raw = parsed.raw_product
+        product = await db.get_product_by_oem(raw) if raw else None
+        if not product and raw:
+            product = await db.get_product_by_partial_oem(raw)
+        if not product and raw:
+            product = await db.get_product_by_name(raw)
+
+        sale_id, _ = await db.create_sale(
+            product_id=product["id"] if product else None,
+            quantity=parsed.quantity,
+            unit_price=parsed.price,
+            payment_method=parsed.payment_method,
+            seller_type=parsed.seller_type,
+            customer_name=parsed.customer_name or None,
+            notes=raw if not product else None,
+        )
+        grand_total += parsed.quantity * parsed.price
+        results.append((parsed, product, sale_id))
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_batch_confirmation(customer_name, results, grand_total, []),
         parse_mode=_PARSE,
     )
 
@@ -329,6 +373,8 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
                 raise ValueError("ცარიელი ან არასწორი მნიშვნელობა")
 
             product = await db.get_product_by_oem(raw_product)
+            if not product:
+                product = await db.get_product_by_partial_oem(raw_product)
             if not product:
                 product = await db.get_product_by_name(raw_product)
 
