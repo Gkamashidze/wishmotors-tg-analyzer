@@ -11,7 +11,13 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
-from bot.parsers.message_parser import ParsedSale, parse_sale_message
+from bot.parsers.message_parser import (
+    PAYMENT_CASH,
+    PAYMENT_CREDIT,
+    PAYMENT_TRANSFER,
+    ParsedSale,
+    parse_sale_message,
+)
 from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
 from database.db import Database
 
@@ -23,47 +29,37 @@ _PARSE = ParseMode.HTML
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
 
-async def _lookup_product(db: Database, raw: str) -> dict | None:
-    """Full OEM → partial OEM (if all digits) → name."""
-    product = await db.get_product_by_oem(raw)
-    if not product and raw.isdigit():
-        product = await db.get_product_by_partial_oem(raw)
-    if not product:
-        product = await db.get_product_by_name(raw)
-    return product
-
-
-async def _process_sale(message: Message, db: Database, text: str) -> None:
-    """Shared logic for text and photo-caption sale messages."""
-    parsed = parse_sale_message(text)
-    if not parsed:
-        return
-
-    raw = parsed.raw_product
-    product = await _lookup_product(db, raw)
-
-    if not product:
-        if parsed.is_return:
-            await message.bot.send_message(
-                chat_id=message.from_user.id,
-                text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
-                parse_mode=_PARSE,
-            )
-            return
-        await _record_sale_freeform(message, db, raw, parsed)
-        return
-
-    if parsed.is_return:
-        await _record_return(message, db, product, parsed)
-    else:
-        await _record_sale(message, db, product, parsed)
-
-
 @sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     try:
-        await _process_sale(message, db, text)
+        parsed = parse_sale_message(text)
+
+        if not parsed:
+            await db.log_parse_failure(config.SALES_TOPIC_ID, text)
+            return
+
+        raw = parsed.raw_product
+
+        product = await db.get_product_by_oem(raw)
+        if not product:
+            product = await db.get_product_by_name(raw)
+
+        if not product:
+            if parsed.is_return:
+                await message.bot.send_message(
+                    chat_id=message.from_user.id,
+                    text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+                    parse_mode=_PARSE,
+                )
+                return
+            await _record_sale_freeform(message, db, raw, parsed)
+            return
+
+        if parsed.is_return:
+            await _record_return(message, db, product, parsed)
+        else:
+            await _record_sale(message, db, product, parsed)
     except Exception:
         logger.exception("Unexpected error in handle_sales_text: %r", text)
         await message.bot.send_message(
@@ -73,29 +69,14 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         )
 
 
-@sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.photo)
-async def handle_sales_photo(message: Message, db: Database) -> None:
-    """Photo with caption: OEM/partial-OEM Nც PRICEლ [payment]"""
-    caption = (message.caption or "").strip()
-    if not caption:
-        return  # ფოტო caption-ის გარეშე — იგნორი
-    try:
-        await _process_sale(message, db, caption)
-    except Exception:
-        logger.exception("Unexpected error in handle_sales_photo caption: %r", caption)
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="❌ სისტემური შეცდომა. გთხოვთ, სცადოთ ხელახლა.",
-            parse_mode=_PARSE,
-        )
-
-
 async def _record_sale(message: Message, db: Database, product: dict, parsed: ParsedSale) -> None:
-    _sale_id, new_stock = await db.create_sale(
+    sale_id, new_stock = await db.create_sale(
         product_id=product["id"],
         quantity=parsed.quantity,
         unit_price=parsed.price,
         payment_method=parsed.payment_method,
+        seller_type=parsed.seller_type,
+        customer_name=parsed.customer_name or None,
     )
     low = new_stock <= product["min_stock"]
 
@@ -106,8 +87,11 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed: Pa
             qty=parsed.quantity,
             price=parsed.price,
             payment=parsed.payment_method,
+            seller_type=parsed.seller_type,
+            customer_name=parsed.customer_name,
             new_stock=new_stock,
             low_stock=low,
+            sale_id=sale_id,
         ),
         parse_mode=_PARSE,
     )
@@ -122,26 +106,29 @@ async def _record_sale_freeform(
     message: Message, db: Database, product_name: str, parsed: ParsedSale
 ) -> None:
     """პროდუქტი ბაზაში არ არსებობს — გაყიდვა ჩაიწერება notes-ით, stock ცვლილების გარეშე."""
-    payment_str = "ხელზე 💵" if parsed.payment_method == "cash" else "გადარიცხვა 🏦"
-    total = parsed.quantity * parsed.price
-
-    await db.create_sale(
+    sale_id, _ = await db.create_sale(
         product_id=None,
         quantity=parsed.quantity,
         unit_price=parsed.price,
         payment_method=parsed.payment_method,
+        seller_type=parsed.seller_type,
+        customer_name=parsed.customer_name or None,
         notes=product_name,
     )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=(
-            f"✅ <b>გაყიდვა დაფიქსირდა</b>\n"
-            f"📦 პროდუქტი: {html.escape(product_name)}\n"
-            f"🔢 რაოდენობა: {parsed.quantity}ც\n"
-            f"💰 ფასი: {parsed.price:.2f}₾ × {parsed.quantity} = <b>{total:.2f}₾</b>\n"
-            f"💳 გადახდა: {payment_str}\n"
-            f"<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>"
+        text=format_sale_confirmation(
+            product_name=product_name,
+            qty=parsed.quantity,
+            price=parsed.price,
+            payment=parsed.payment_method,
+            seller_type=parsed.seller_type,
+            customer_name=parsed.customer_name,
+            new_stock=None,
+            low_stock=False,
+            sale_id=sale_id,
+            unknown_product=True,
         ),
         parse_mode=_PARSE,
     )
@@ -188,8 +175,10 @@ def _parse_import_date(val: object, tz: pytz.BaseTzInfo) -> datetime:
 
 def _parse_import_payment(val: object) -> str:
     v = str(val).lower().strip()
-    if any(k in v for k in ("გადარიცხვა", "transfer", "ბარათი", "card")):
+    if any(k in v for k in ("გადარიცხვა", "დარიცხა", "transfer", "ბარათი", "კარტი", "card")):
         return "transfer"
+    if any(k in v for k in ("ნისია", "credit")):
+        return "credit"
     return "cash"
 
 
@@ -244,7 +233,7 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
             raw_product = str(row[1]).strip() if row[1] is not None else ""
             quantity = int(row[2])
             unit_price = float(row[3])
-            payment = _parse_import_payment(row[4]) if len(row) > 4 and row[4] else "cash"
+            payment = _parse_import_payment(row[4]) if len(row) > 4 and row[4] else "credit"
 
             if not raw_product or quantity <= 0 or unit_price < 0:
                 raise ValueError("ცარიელი ან არასწორი მნიშვნელობა")

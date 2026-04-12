@@ -7,7 +7,13 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import IsAdmin
-from bot.reports.formatter import format_orders_report, format_stock_report, format_weekly_report
+from bot.reports.formatter import (
+    format_credit_sales_report,
+    format_diagnostics_report,
+    format_orders_report,
+    format_stock_report,
+    format_weekly_report,
+)
 from database.db import Database
 
 logger = logging.getLogger(__name__)
@@ -20,10 +26,25 @@ _HELP_TEXT = """
 
 📌 <b>გაყიდვის ფორმატი (Sales topic):</b>
 <code>მარჭვენა რეფლექტორი 1ც 30₾ ხელზე</code>
-<code>8390132500 2ც 45₾ გადარიცხვა</code>
+<code>8390132500 2ც 45₾ დარიცხა</code>
 <code>კოდი: 8390132500, 1ც, 35₾</code>
+<code>სარკე 1ც 30₾</code> ← ცარიელი = ნისია
 
-↩️ <b>დაბრუნება (Sales topic — same format + სიტყვა "დაბრუნება"):</b>
+💳 <b>გადახდის სიტყვები:</b>
+• <b>ხელზე</b> — ნაღდი ფული
+• <b>დარიცხა</b> — გადარიცხვა (ასევე: გადარიცხვა, ბარათი, კარტი)
+• <i>(არაფერი)</i> — ნისია (გახსოვდეს დარეკვა!)
+
+🏢 <b>გამყიდველი:</b>
+• <code>შპსდან</code> ან <code>შპს-დან</code> — შპს-ის გაყიდვა
+• <i>(არაფერი)</i> — ფიზიკური პირი (ფზ)
+
+👤 <b>მომხმარებლის სახელი (სურვილისამებრ):</b>
+<code>სარკე 1ც 30₾ გიო</code>
+<code>სარკე 1ც 30₾ ხელზე შპსდან გიო</code>
+<code>სარკე 1ც 30₾ შპსდან გიო</code>
+
+↩️ <b>დაბრუნება (Sales topic):</b>
 <code>დაბრუნება 8390132500 1ც 45₾</code>
 
 📋 <b>შეკვეთა (Orders topic):</b>
@@ -34,15 +55,12 @@ _HELP_TEXT = """
 <code>50₾ ბენზინი</code>
 <code>ბენზინი 50₾</code>
 
-📂 <b>საწყობის ატვირთვა (Capital topic):</b>
-გამოაგზავნეთ Excel (.xlsx) სვეტებით:
-<b>სახელი | OEM | მარაგი | ფასი</b>
+📂 <b>საწყობის ატვირთვა (Capital topic — Excel):</b>
+სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>
 
-📥 <b>გასული გაყიდვების იმპორტი (Sales topic — Excel):</b>
-გამოაგზავნეთ Excel (.xlsx) სვეტებით:
-<b>თარიღი | პროდუქტი/OEM | რაოდენობა | ფასი | გადახდა</b>
-თარიღის ფორმატი: <code>15.03.2026</code> ან <code>2026-03-15</code>
-გადახდა: <code>ხელზე</code> ან <code>გადარიცხვა</code> (არასავალდებულო)
+📥 <b>ისტორიული იმპორტი (Sales topic — Excel):</b>
+სვეტები: <b>თარიღი | პროდუქტი/OEM | რაოდენობა | ფასი | გადახდა</b>
+გადახდა: <code>ხელზე</code> / <code>დარიცხა</code> / <code>ნისია</code>
 
 ━━━━━━━━━━━━━━━━━━━━━
 🤖 <b>ბრძანებები:</b>
@@ -50,16 +68,13 @@ _HELP_TEXT = """
 /report_period — პერიოდის ანგარიში
 /stock — საწყობის მდგომარეობა
 /orders — მომლოდინე შეკვეთები
+/nisias — გადაუხდელი ნისიები
+/diagnostics — ვერ ამოცნობილი შეტყობინებები
 /completeorder ID — შეკვეთის დახურვა
+/paid ID ხელზე — ნისიის გადახდა ხელზე
+/paid ID დარიცხა — ნისიის გადახდა გადარიცხვით
 /addproduct — პროდუქტის დამატება
 /help — ეს შეტყობინება
-
-📦 <b>პროდუქტის დამატება:</b>
-<code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>
-სახელში გამოიყენეთ _ სფეისის ნაცვლად.
-
-მაგალითი:
-<code>/addproduct მარჭვენა_რეფლექტორი 8390132500 50 30.00</code>
 """.strip()
 
 
@@ -104,6 +119,80 @@ async def cmd_orders(message: Message, db: Database) -> None:
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=format_orders_report(orders),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(Command("nisias"), IsAdmin())
+async def cmd_nisias(message: Message, db: Database) -> None:
+    """Show all unpaid credit sales."""
+    sales = await db.get_credit_sales()
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_credit_sales_report(sales),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(Command("paid"), IsAdmin())
+async def cmd_paid(message: Message, db: Database) -> None:
+    """Mark a credit sale as paid. Usage: /paid ID ხელზე  or  /paid ID დარიცხა"""
+    parts = (message.text or "").split()
+    if len(parts) < 3 or not parts[1].isdigit():
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "❌ ფორმატი:\n"
+                "<code>/paid ID ხელზე</code>\n"
+                "<code>/paid ID დარიცხა</code>\n\n"
+                "ID-ს ნახვა: /nisias"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    sale_id = int(parts[1])
+    payment_word = parts[2].lower()
+
+    if any(k in payment_word for k in ("ხელ", "ნაღ", "ქეშ")):
+        payment_method = "cash"
+        label = "ხელზე 💵"
+    elif any(k in payment_word for k in ("დარ", "გადარ", "ბარათ", "კარტ", "transfer")):
+        payment_method = "transfer"
+        label = "დარიცხა 🏦"
+    else:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ გადახდის მეთოდი არ ვიცი. გამოიყენეთ: <code>ხელზე</code> ან <code>დარიცხა</code>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    updated = await db.mark_sale_paid(sale_id, payment_method)
+    if updated:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"✅ ნისია <b>#{sale_id}</b> გადახდილია — {label}",
+            parse_mode=_PARSE,
+        )
+    else:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"⚠️ გაყიდვა #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.",
+            parse_mode=_PARSE,
+        )
+
+
+@commands_router.message(Command("diagnostics"), IsAdmin())
+async def cmd_diagnostics(message: Message, db: Database) -> None:
+    """Show parse failure statistics."""
+    failures = await db.get_parse_failure_stats(days=30)
+    total_7d = await db.get_parse_failure_count(days=7)
+    total_30d = await db.get_parse_failure_count(days=30)
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_diagnostics_report(failures, total_7d, total_30d),
         parse_mode=_PARSE,
     )
 

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import asyncpg
 import pytz
 
-from database.models import CREATE_TABLES_SQL
+from database.models import CREATE_TABLES_SQL, MIGRATE_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class Database:
         self._pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
         async with self.pool.acquire() as conn:
             await conn.execute(CREATE_TABLES_SQL)
+            await conn.execute(MIGRATE_SQL)
         logger.info("Database pool initialised.")
 
     async def close(self) -> None:
@@ -169,6 +170,8 @@ class Database:
         quantity: int,
         unit_price: float,
         payment_method: str,
+        seller_type: str = "individual",
+        customer_name: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> Tuple[int, int]:
         """Insert sale and decrement stock atomically.
@@ -176,10 +179,13 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    """INSERT INTO sales (product_id, quantity, unit_price, payment_method, notes)
-                       VALUES ($1, $2, $3, $4, $5)
+                    """INSERT INTO sales
+                           (product_id, quantity, unit_price, payment_method,
+                            seller_type, customer_name, notes)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)
                        RETURNING id""",
-                    product_id, quantity, unit_price, payment_method, notes,
+                    product_id, quantity, unit_price, payment_method,
+                    seller_type, customer_name or None, notes,
                 )
                 sale_id = row["id"]
 
@@ -197,6 +203,17 @@ class Database:
 
         return sale_id, new_stock
 
+    async def mark_sale_paid(self, sale_id: int, payment_method: str) -> bool:
+        """Mark a credit (ნისია) sale as paid. Returns True if updated."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """UPDATE sales
+                   SET payment_method = $1
+                   WHERE id = $2 AND payment_method = 'credit'""",
+                payment_method, sale_id,
+            )
+            return result == "UPDATE 1"
+
     async def get_weekly_sales(self) -> List[Dict]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -206,6 +223,18 @@ class Database:
                    WHERE s.sold_at >= $1
                    ORDER BY s.sold_at DESC""",
                 self._week_ago(),
+            )
+            return self._rows(rows)
+
+    async def get_credit_sales(self) -> List[Dict]:
+        """Return all unpaid (ნისია) sales, oldest first."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT s.*, p.name AS product_name, p.oem_code
+                   FROM sales s
+                   LEFT JOIN products p ON s.product_id = p.id
+                   WHERE s.payment_method = 'credit'
+                   ORDER BY s.sold_at ASC""",
             )
             return self._rows(rows)
 
@@ -327,6 +356,8 @@ class Database:
         unit_price: float,
         payment_method: str,
         sold_at: datetime,
+        seller_type: str = "individual",
+        customer_name: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> int:
         """Insert a historical sale with an explicit date. Does NOT touch current stock.
@@ -334,10 +365,12 @@ class Database:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO sales
-                       (product_id, quantity, unit_price, payment_method, sold_at, notes)
-                   VALUES ($1, $2, $3, $4, $5, $6)
+                       (product_id, quantity, unit_price, payment_method,
+                        seller_type, customer_name, sold_at, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    RETURNING id""",
-                product_id, quantity, unit_price, payment_method, sold_at, notes,
+                product_id, quantity, unit_price, payment_method,
+                seller_type, customer_name or None, sold_at, notes,
             )
             return row["id"]
 
@@ -380,3 +413,38 @@ class Database:
                 date_from, date_to,
             )
             return self._rows(rows)
+
+    # ─── Parse failures (diagnostics) ─────────────────────────────────────────
+
+    async def log_parse_failure(self, topic_id: int, message_text: str) -> None:
+        """Record a message that arrived in a tracked topic but could not be parsed."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO parse_failures (topic_id, message_text) VALUES ($1, $2)",
+                topic_id, message_text,
+            )
+
+    async def get_parse_failure_stats(self, days: int = 30) -> List[Dict]:
+        """Return top unparsed messages grouped by text, for the last N days."""
+        since = self._now() - timedelta(days=days)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT message_text, COUNT(*) AS occurrences, MAX(created_at) AS last_seen
+                   FROM parse_failures
+                   WHERE created_at >= $1
+                   GROUP BY message_text
+                   ORDER BY occurrences DESC
+                   LIMIT 20""",
+                since,
+            )
+            return self._rows(rows)
+
+    async def get_parse_failure_count(self, days: int = 7) -> int:
+        """Return total number of parse failures in the last N days."""
+        since = self._now() - timedelta(days=days)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM parse_failures WHERE created_at >= $1",
+                since,
+            )
+            return row["cnt"] if row else 0

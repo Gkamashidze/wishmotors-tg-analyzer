@@ -22,13 +22,16 @@ CREATE TABLE IF NOT EXISTS sales (
     product_id     INTEGER REFERENCES products(id),
     quantity       INTEGER NOT NULL,
     unit_price     NUMERIC(12, 2) NOT NULL,
-    payment_method TEXT    NOT NULL DEFAULT 'cash',
+    payment_method TEXT    NOT NULL DEFAULT 'credit',
+    seller_type    TEXT    NOT NULL DEFAULT 'individual',
+    customer_name  TEXT,
     sold_at        TIMESTAMPTZ DEFAULT NOW(),
     notes          TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_sales_sold_at    ON sales(sold_at);
-CREATE INDEX IF NOT EXISTS idx_sales_product_id ON sales(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_sold_at       ON sales(sold_at);
+CREATE INDEX IF NOT EXISTS idx_sales_product_id    ON sales(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_payment       ON sales(payment_method);
 
 CREATE TABLE IF NOT EXISTS returns (
     id                  SERIAL PRIMARY KEY,
@@ -57,7 +60,24 @@ CREATE TABLE IF NOT EXISTS expenses (
     category    TEXT,
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS parse_failures (
+    id           SERIAL PRIMARY KEY,
+    topic_id     INTEGER NOT NULL,
+    message_text TEXT    NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_parse_failures_topic ON parse_failures(topic_id);
+CREATE INDEX IF NOT EXISTS idx_parse_failures_time  ON parse_failures(created_at);
 """
+
+# Applied once at startup to add new columns to existing tables (idempotent).
+MIGRATE_SQL = """
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS seller_type   TEXT NOT NULL DEFAULT 'individual';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name TEXT;
+"""
+
 
 # ─── Dataclasses (for type hints in handlers) ─────────────────────────────────
 
@@ -79,5 +99,7 @@ class Sale:
     quantity: int
     unit_price: float
     payment_method: str
+    seller_type: str
+    customer_name: Optional[str]
     sold_at: str
     notes: Optional[str]

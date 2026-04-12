@@ -4,11 +4,15 @@ Report formatters — all output is in Georgian, HTML parse mode.
 
 import html
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytz
 
 import config
+
+PAYMENT_CASH = "cash"
+PAYMENT_TRANSFER = "transfer"
+PAYMENT_CREDIT = "credit"
 
 
 def _tz() -> pytz.BaseTzInfo:
@@ -24,6 +28,110 @@ def _e(text: object) -> str:
     return html.escape(str(text))
 
 
+def _payment_label(payment: str) -> str:
+    if payment == PAYMENT_CASH:
+        return "ხელზე 💵"
+    if payment == PAYMENT_TRANSFER:
+        return "დარიცხა 🏦"
+    return "ნისია 📋"
+
+
+def _seller_label(seller_type: str) -> str:
+    return "შპს" if seller_type == "llc" else "ფზ"
+
+
+# ─── Confirmation messages ────────────────────────────────────────────────────
+
+def format_sale_confirmation(
+    product_name: str,
+    qty: int,
+    price: float,
+    payment: str,
+    seller_type: str,
+    customer_name: str,
+    new_stock: Optional[int],
+    low_stock: bool,
+    sale_id: int,
+    unknown_product: bool = False,
+) -> str:
+    total = qty * price
+    lines = [
+        "✅ <b>გაყიდვა დაფიქსირდა</b>",
+        f"📦 პროდუქტი: {_e(product_name)}",
+        f"🔢 რაოდენობა: {qty}ც",
+        f"💰 ფასი: {price:.2f}₾ × {qty} = <b>{total:.2f}₾</b>",
+        f"💳 გადახდა: {_payment_label(payment)}",
+        f"🏢 გამყიდველი: {_seller_label(seller_type)}",
+    ]
+    if customer_name:
+        lines.append(f"👤 მომხმარებელი: {_e(customer_name)}")
+    if payment == PAYMENT_CREDIT:
+        lines.append(f"📋 <b>ნისია #{ sale_id } — გახსოვდეს დარეკვა!</b>")
+    if new_stock is not None:
+        lines.append(f"📊 დარჩა საწყობში: {new_stock}ც")
+    if unknown_product:
+        lines.append("<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>")
+    if low_stock and new_stock is not None:
+        lines.append(f"\n⚠️ <b>გაფრთხილება: მარაგი დაბალია! ({new_stock}ც)</b>")
+    return "\n".join(lines)
+
+
+def format_return_confirmation(
+    product_name: str,
+    qty: int,
+    refund: float,
+    new_stock: int,
+) -> str:
+    return (
+        f"↩️ <b>დაბრუნება დაფიქსირდა</b>\n"
+        f"📦 პროდუქტი: {_e(product_name)}\n"
+        f"🔢 რაოდენობა: {qty}ც\n"
+        f"💰 დაბრუნებული თანხა: {refund:.2f}₾\n"
+        f"📊 საწყობში ახლა: {new_stock}ც"
+    )
+
+
+# ─── Credit (ნისია) report ────────────────────────────────────────────────────
+
+def format_credit_sales_report(sales: List[Dict]) -> str:
+    if not sales:
+        return "✅ <b>ნისია არ არის!</b> ყველა გაყიდვა გადახდილია."
+
+    total_owed = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
+    now = _now()
+
+    lines: List[str] = [
+        "📋 <b>ნისიები — გადაუხდელი გაყიდვები</b>",
+        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
+        f"💰 სულ ვალი: <b>{total_owed:.2f}₾</b>",
+        "",
+    ]
+
+    for s in sales:
+        name = s.get("product_name") or s.get("notes") or "უცნობი"
+        sold_at = s["sold_at"]
+        if isinstance(sold_at, datetime):
+            date_str = sold_at.strftime("%d.%m.%Y")
+        else:
+            date_str = str(sold_at)[:10]
+
+        total = float(s["unit_price"]) * s["quantity"]
+        seller = _seller_label(s.get("seller_type", "individual"))
+        customer = s.get("customer_name") or "—"
+
+        lines.append(
+            f"🔸 <b>#{s['id']}</b> | {date_str} | {seller}\n"
+            f"   📦 {_e(name)} — {s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
+            f"   👤 {_e(customer)}"
+        )
+
+    lines += [
+        "",
+        "<i>გადახდის შემდეგ: <code>/paid ID ხელზე</code> ან <code>/paid ID დარიცხა</code></i>",
+    ]
+    return "\n".join(lines)
+
+
 # ─── Weekly report ────────────────────────────────────────────────────────────
 
 def format_weekly_report(
@@ -35,21 +143,28 @@ def format_weekly_report(
     now = _now()
     week_start = now - timedelta(days=7)
 
-    total_revenue = sum(s["unit_price"] * s["quantity"] for s in sales)
-    total_returns = sum(r["refund_amount"] for r in returns)
-    total_expenses = sum(e["amount"] for e in expenses)
+    total_revenue = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
+    total_returns = sum(float(r["refund_amount"]) for r in returns)
+    total_expenses = sum(float(e["amount"]) for e in expenses)
     net_income = total_revenue - total_returns - total_expenses
 
     cash_revenue = sum(
-        s["unit_price"] * s["quantity"]
-        for s in sales
-        if s.get("payment_method") == "cash"
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("payment_method") == PAYMENT_CASH
     )
     transfer_revenue = sum(
-        s["unit_price"] * s["quantity"]
-        for s in sales
-        if s.get("payment_method") == "transfer"
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
     )
+    credit_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("payment_method") == PAYMENT_CREDIT
+    )
+    llc_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("seller_type") == "llc"
+    )
+    individual_revenue = total_revenue - llc_revenue
 
     by_product: Dict[str, Dict] = {}
     for s in sales:
@@ -67,7 +182,9 @@ def format_weekly_report(
         "━━━━━━━━━━━━━━━━━━━━━",
         f"💰 მთლიანი შემოსავალი: <b>{total_revenue:.2f}₾</b>",
         f"   💵 ხელზე: {cash_revenue:.2f}₾",
-        f"   🏦 გადარიცხვა: {transfer_revenue:.2f}₾",
+        f"   🏦 დარიცხა: {transfer_revenue:.2f}₾",
+        f"   📋 ნისია: {credit_revenue:.2f}₾",
+        f"   🏢 შპს: {llc_revenue:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
         f"↩️ დაბრუნებები: {total_returns:.2f}₾",
         f"🧾 ხარჯები: {total_expenses:.2f}₾",
         f"💵 სუფთა შემოსავალი: <b>{net_income:.2f}₾</b>",
@@ -171,44 +288,38 @@ def format_orders_report(orders: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-# ─── Confirmation messages ────────────────────────────────────────────────────
+# ─── Diagnostics report ───────────────────────────────────────────────────────
 
-def format_sale_confirmation(
-    product_name: str,
-    qty: int,
-    price: float,
-    payment: str,
-    new_stock: int,
-    low_stock: bool,
-) -> str:
-    payment_str = "ხელზე 💵" if payment == "cash" else "გადარიცხვა 🏦"
-    total = qty * price
-    lines = [
-        "✅ <b>გაყიდვა დაფიქსირდა</b>",
-        f"📦 პროდუქტი: {_e(product_name)}",
-        f"🔢 რაოდენობა: {qty}ც",
-        f"💰 ფასი: {price:.2f}₾ × {qty} = <b>{total:.2f}₾</b>",
-        f"💳 გადახდა: {payment_str}",
-        f"📊 დარჩა საწყობში: {new_stock}ც",
+def format_diagnostics_report(failures: List[Dict], total_7d: int, total_30d: int) -> str:
+    now = _now()
+    lines: List[str] = [
+        "🔍 <b>დიაგნოსტიკა — ვერ ამოცნობილი შეტყობინებები</b>",
+        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
+        "",
+        f"📅 ბოლო 7 დღე: <b>{total_7d}</b> შეტყობინება გამოტოვდა",
+        f"📅 ბოლო 30 დღე: <b>{total_30d}</b> შეტყობინება გამოტოვდა",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━",
     ]
-    if low_stock:
-        lines.append(f"\n⚠️ <b>გაფრთხილება: მარაგი დაბალია! ({new_stock}ც)</b>")
+
+    if not failures:
+        lines.append("✅ გამოტოვებული შეტყობინება არ არის!")
+        return "\n".join(lines)
+
+    lines.append("🔝 <b>ყველაზე ხშირი გამოტოვებული ფრაზები:</b>")
+    for f in failures[:15]:
+        txt = str(f["message_text"])[:60]
+        if len(str(f["message_text"])) > 60:
+            txt += "..."
+        lines.append(
+            f"• <code>{_e(txt)}</code> — {f['occurrences']}-ჯერ"
+        )
+
+    lines += [
+        "",
+        "<i>ამ ფრაზების საფუძველზე ბოტი გაუმჯობესდება.</i>",
+    ]
     return "\n".join(lines)
-
-
-def format_return_confirmation(
-    product_name: str,
-    qty: int,
-    refund: float,
-    new_stock: int,
-) -> str:
-    return (
-        f"↩️ <b>დაბრუნება დაფიქსირდა</b>\n"
-        f"📦 პროდუქტი: {_e(product_name)}\n"
-        f"🔢 რაოდენობა: {qty}ც\n"
-        f"💰 დაბრუნებული თანხა: {refund:.2f}₾\n"
-        f"📊 საწყობში ახლა: {new_stock}ც"
-    )
 
 
 # ─── Period report ────────────────────────────────────────────────────────────
@@ -231,14 +342,21 @@ def format_period_report(
 
     cash_revenue = sum(
         float(s["unit_price"]) * s["quantity"]
-        for s in sales
-        if s.get("payment_method") == "cash"
+        for s in sales if s.get("payment_method") == PAYMENT_CASH
     )
     transfer_revenue = sum(
         float(s["unit_price"]) * s["quantity"]
-        for s in sales
-        if s.get("payment_method") == "transfer"
+        for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
     )
+    credit_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("payment_method") == PAYMENT_CREDIT
+    )
+    llc_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales if s.get("seller_type") == "llc"
+    )
+    individual_revenue = total_revenue - llc_revenue
 
     by_product: Dict[str, Dict] = {}
     for s in sales:
@@ -254,7 +372,9 @@ def format_period_report(
         "━━━━━━━━━━━━━━━━━━━━━",
         f"💰 სულ შემოსული: <b>{total_revenue:.2f}₾</b>",
         f"   💵 ხელზე: {cash_revenue:.2f}₾",
-        f"   🏦 გადარიცხვა: {transfer_revenue:.2f}₾",
+        f"   🏦 დარიცხა: {transfer_revenue:.2f}₾",
+        f"   📋 ნისია: {credit_revenue:.2f}₾",
+        f"   🏢 შპს: {llc_revenue:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
         f"↩️ სულ დაბრუნებული: {total_returns:.2f}₾",
         f"🧾 სულ ხარჯები: {total_expenses:.2f}₾",
         f"💵 წმინდა შემოსავალი: <b>{net_income:.2f}₾</b>",

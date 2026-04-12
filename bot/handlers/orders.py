@@ -24,6 +24,7 @@ async def handle_order_message(message: Message, db: Database) -> None:
         parsed = parse_order_message(text)
 
         if not parsed:
+            await db.log_parse_failure(config.ORDERS_TOPIC_ID, text)
             return
 
         product = await db.get_product_by_oem(parsed.raw_product)
@@ -66,6 +67,7 @@ async def handle_expense_message(message: Message, db: Database) -> None:
         parsed = parse_expense_message(text)
 
         if not parsed:
+            await db.log_parse_failure(config.EXPENSES_TOPIC_ID, text)
             return
 
         await db.create_expense(
