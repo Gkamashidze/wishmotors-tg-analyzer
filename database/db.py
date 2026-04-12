@@ -259,6 +259,65 @@ class Database:
             )
             return int(result.split()[-1])
 
+    async def apply_partial_payment(self, customer_name: str, amount: float) -> float:
+        """Apply a partial payment to a customer's credit sales (oldest-first).
+
+        Marks whole sales as paid ('cash') until the amount is exhausted.
+        If a sale is only partially covered, its unit_price is reduced to reflect
+        the remaining balance.
+        Returns the remaining debt for this customer after the payment.
+        """
+        if amount <= 0:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
+                       FROM sales
+                       WHERE payment_method = 'credit' AND customer_name = $1""",
+                    customer_name,
+                )
+                return float(row["total"]) if row else 0.0
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """SELECT id, unit_price, quantity
+                       FROM sales
+                       WHERE payment_method = 'credit' AND customer_name = $1
+                       ORDER BY sold_at ASC""",
+                    customer_name,
+                )
+                remaining_payment = amount
+                for row in rows:
+                    if remaining_payment <= 0:
+                        break
+                    sale_total = float(row["unit_price"]) * row["quantity"]
+                    if remaining_payment >= sale_total:
+                        # Fully covers this sale — mark as paid
+                        await conn.execute(
+                            "UPDATE sales SET payment_method = 'cash' WHERE id = $1",
+                            row["id"],
+                        )
+                        remaining_payment -= sale_total
+                    else:
+                        # Partially covers this sale — reduce its unit_price
+                        new_total = sale_total - remaining_payment
+                        new_price = new_total / row["quantity"]
+                        await conn.execute(
+                            "UPDATE sales SET unit_price = $1 WHERE id = $2",
+                            new_price, row["id"],
+                        )
+                        remaining_payment = 0.0
+                        break
+
+                # Return the remaining debt for this customer
+                total_row = await conn.fetchrow(
+                    """SELECT COALESCE(SUM(unit_price * quantity), 0.0) AS remaining
+                       FROM sales
+                       WHERE payment_method = 'credit' AND customer_name = $1""",
+                    customer_name,
+                )
+                return float(total_row["remaining"]) if total_row else 0.0
+
     async def get_weekly_sales(self) -> List[SaleRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(

@@ -354,27 +354,35 @@ class TestFormatCreditSalesReport:
         text = format_credit_sales_report([])
         assert "ნისია არ არის" in text
 
-    def test_total_owed_shown(self):
+    def test_header_shows_customer_count_and_total(self):
         sales = [
             self._sale(1, "სარკე", 1, 150.0, customer="იმედა"),
-            self._sale(2, "ფარი", 2, 100.0, customer="იმედა"),
+            self._sale(2, "ფარი", 2, 100.0, customer="ლაშა"),
         ]
         text = format_credit_sales_report(sales)
-        assert "350.00₾" in text  # total owed
+        # two distinct named customers → კლიენტები: 2
+        assert "კლიენტები" in text
+        assert "2" in text
+        # grand total 150 + 200 = 350
+        assert "350.00₾" in text
 
-    def test_named_customer_grouped(self):
+    def test_named_customer_grouped_subtotal_at_bottom(self):
         sales = [
             self._sale(1, "სარკე", 1, 150.0, customer="იმედა"),
             self._sale(2, "ფარი", 1, 200.0, customer="იმედა"),
         ]
         text = format_credit_sales_report(sales)
-        # Customer header appears once
-        assert text.count("იმედა") >= 1
-        # Subtotal for customer
+        # customer header present
+        assert "იმედა" in text
+        # subtotal present
         assert "350.00₾" in text
-        # Both sale IDs visible
+        # per-customer numbering: #1 and #2 under this customer
         assert "#1" in text
         assert "#2" in text
+        # subtotal line (💳 სულ:) comes AFTER the item lines
+        idx_item2 = text.index("#2")
+        idx_subtotal = text.index("💳 სულ:")
+        assert idx_item2 < idx_subtotal
 
     def test_two_different_customers_both_shown(self):
         sales = [
@@ -384,25 +392,43 @@ class TestFormatCreditSalesReport:
         text = format_credit_sales_report(sales)
         assert "გიო" in text
         assert "ლაშა" in text
-        assert "#1" in text
-        assert "#2" in text
+        # each customer has one item numbered #1
+        assert text.count("#1") >= 2
 
-    def test_unnamed_sale_shown_without_customer_header(self):
+    def test_per_customer_numbering_resets(self):
+        """Each customer's items start from #1 independently."""
+        sales = [
+            self._sale(10, "A", 1, 50.0, customer="გიო"),
+            self._sale(11, "B", 1, 60.0, customer="გიო"),
+            self._sale(20, "C", 1, 70.0, customer="ლაშა"),
+        ]
+        text = format_credit_sales_report(sales)
+        # გიო has #1 and #2; ლაშა has #1 — so #1 appears at least twice
+        assert text.count("#1") >= 2
+        assert text.count("#2") >= 1
+        # original DB ids (10, 11, 20) should NOT appear in item lines
+        assert "#10" not in text
+        assert "#20" not in text
+
+    def test_unnamed_sale_shown_with_original_id(self):
         sales = [self._sale(5, "კოდი123", 1, 80.0, customer=None)]
         text = format_credit_sales_report(sales)
+        # unnamed sale keeps its DB id
         assert "#5" in text
-        # No customer name header should appear
+        # no customer name header
         assert "👤" not in text
 
     def test_named_and_unnamed_mixed(self):
         sales = [
             self._sale(1, "სარკე", 1, 100.0, customer="გიო"),
-            self._sale(2, "ნათურა", 1, 50.0, customer=None),
+            self._sale(7, "ნათურა", 1, 50.0, customer=None),
         ]
         text = format_credit_sales_report(sales)
         assert "გიო" in text
+        # named customer item is #1
         assert "#1" in text
-        assert "#2" in text
+        # unnamed sale keeps original DB id #7
+        assert "#7" in text
 
     def test_html_escaped_customer_name(self):
         sales = [self._sale(1, "ნათურა", 1, 50.0, customer="<script>")]

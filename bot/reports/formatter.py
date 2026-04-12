@@ -168,14 +168,7 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
     total_owed = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
     now = _now()
 
-    lines: List[str] = [
-        "📋 <b>ნისიები — გადაუხდელი გაყიდვები</b>",
-        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
-        f"💰 სულ ვალი: <b>{total_owed:.2f}₾</b>",
-        "",
-    ]
-
-    # Group sales by customer_name
+    # Group by customer_name
     named: Dict[str, List[Any]] = {}
     unnamed: List[Any] = []
     for s in sales:
@@ -185,33 +178,54 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
         else:
             unnamed.append(s)
 
-    def _sale_line(s: Any, indent: bool = True) -> str:
+    total_customers = len(named) + len(unnamed)
+
+    lines: List[str] = [
+        "📋 <b>ნისიები — გადაუხდელი გაყიდვები</b>",
+        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
+        f"👥 კლიენტები: <b>{total_customers}</b>  |  💰 სულ: <b>{total_owed:.2f}₾</b>",
+        "",
+    ]
+
+    def _sale_line(s: Any, num: int) -> str:
         name = s.get("product_name") or s.get("notes") or "უცნობი"
         sold_at = s["sold_at"]
-        date_str = sold_at.strftime("%d.%m") if isinstance(sold_at, datetime) else str(sold_at)[5:10]
+        date_str = (
+            sold_at.strftime("%d.%m") if isinstance(sold_at, datetime) else str(sold_at)[5:10]
+        )
         total = float(s["unit_price"]) * s["quantity"]
-        prefix = "  " if indent else ""
         return (
-            f"{prefix}🔸 <b>#{s['id']}</b> {date_str} — {_e(name)}: "
+            f"  #{num} {date_str} — {_e(name)}: "
             f"{s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>"
         )
 
-    # Named customer groups
+    # Named customer groups: name → numbered items → subtotal
     for cname, csales in named.items():
         subtotal = sum(float(s["unit_price"]) * s["quantity"] for s in csales)
         seller = _seller_label(csales[0].get("seller_type", "individual"))
-        lines.append(f"👤 <b>{_e(cname)}</b> ({seller}) — ვალი: <b>{subtotal:.2f}₾</b>")
-        for s in csales:
-            lines.append(_sale_line(s, indent=True))
+        lines.append(f"👤 <b>{_e(cname)}</b> ({seller})")
+        for i, s in enumerate(csales, start=1):
+            lines.append(_sale_line(s, i))
+        lines.append(f"  💳 სულ: <b>{subtotal:.2f}₾</b>")
         lines.append("")
 
-    # Unnamed individual sales
+    # Unnamed sales (no customer_name) — shown with their original DB id
     if unnamed:
         if named:
             lines.append("📋 <b>სახელი გარეშე:</b>")
         for s in unnamed:
             seller = _seller_label(s.get("seller_type", "individual"))
-            lines.append(_sale_line(s, indent=False) + f" | {seller}")
+            name = s.get("product_name") or s.get("notes") or "უცნობი"
+            sold_at = s["sold_at"]
+            date_str = (
+                sold_at.strftime("%d.%m") if isinstance(sold_at, datetime) else str(sold_at)[5:10]
+            )
+            total = float(s["unit_price"]) * s["quantity"]
+            lines.append(
+                f"🔸 <b>#{s['id']}</b> {date_str} — {_e(name)}: "
+                f"{s['quantity']}ც × {float(s['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>"
+                f" | {seller}"
+            )
         lines.append("")
 
     return _truncate("\n".join(lines))

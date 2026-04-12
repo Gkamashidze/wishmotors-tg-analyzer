@@ -7,6 +7,8 @@ from typing import Optional
 from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
@@ -143,7 +145,11 @@ async def cmd_orders(message: Message, db: Database) -> None:
     )
 
 
-_NISIAS_KEYBOARD_MAX = 25  # Telegram keyboard size limit safety margin
+_NISIAS_KEYBOARD_MAX = 30  # max rows safety margin (2 rows per named customer)
+
+
+class NisiasStates(StatesGroup):
+    waiting_partial_amount = State()
 
 
 def _customer_key(name: str) -> str:
@@ -154,8 +160,10 @@ def _customer_key(name: str) -> str:
 def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
     """Build inline keyboard grouped by customer name.
 
-    Named customers get one row each (2 buttons: ხელზე / დარიცხა for the whole debt).
-    Sales without a customer_name fall back to per-sale individual buttons.
+    Named customers get two rows each:
+      Row 1: [💵 სრულად ხელზე] [🏦 სრულად დარიცხა]
+      Row 2: [💸 ნაწილობრივ — name]
+    Unnamed sales retain the old per-sale two-button row.
     Capped at _NISIAS_KEYBOARD_MAX rows total.
     """
     named: dict = {}
@@ -169,16 +177,20 @@ def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
 
     rows = []
 
-    # One row per named customer
     for cname in named:
-        label = (cname[:13] + "…") if len(cname) > 14 else cname
+        label = (cname[:10] + "…") if len(cname) > 11 else cname
         key = _customer_key(cname)
+        # Row 1: full payment — cash or transfer
         rows.append([
             InlineKeyboardButton(text=f"💵 {label}", callback_data=f"npc:{key}:cash"),
             InlineKeyboardButton(text=f"🏦 {label}", callback_data=f"npc:{key}:transfer"),
         ])
+        # Row 2: partial payment
+        rows.append([
+            InlineKeyboardButton(text=f"💸 ნაწილობრივ — {label}", callback_data=f"npp:{key}"),
+        ])
 
-    # Per-sale rows for unnamed sales
+    # Per-sale rows for unnamed sales (no grouping possible)
     for s in unnamed:
         sale_id = s["id"]
         rows.append([
@@ -196,8 +208,9 @@ def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
 
 
 @commands_router.message(Command("nisias"), IsAdmin())
-async def cmd_nisias(message: Message, db: Database) -> None:
+async def cmd_nisias(message: Message, state: FSMContext, db: Database) -> None:
     """Show all unpaid credit sales with inline pay buttons."""
+    await state.clear()  # cancel any in-progress partial payment entry
     sales = await db.get_credit_sales()
     text = format_credit_sales_report(sales)
     keyboard = _nisias_keyboard(sales) if sales else None
@@ -256,6 +269,99 @@ async def callback_nisias_pay_customer(callback: CallbackQuery, db: Database) ->
         await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=keyboard)
     except Exception as exc:
         logger.debug("Could not refresh nisias message after customer payment: %s", exc)
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("npp:"), IsAdmin())
+async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Start partial payment flow: npp:{customer_hash}
+    Saves the customer name in FSM state and asks for the amount."""
+    try:
+        _, customer_hash = (callback.data or "").split(":", 1)
+    except ValueError:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    # Resolve customer name and current debt
+    all_sales = await db.get_credit_sales()
+    target_customer: Optional[str] = None
+    customer_debt = 0.0
+    for s in all_sales:
+        cname = s.get("customer_name")
+        if cname and _customer_key(cname) == customer_hash:
+            if target_customer is None:
+                target_customer = cname
+            customer_debt += float(s["unit_price"]) * s["quantity"]
+
+    if not target_customer:
+        await callback.answer("⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True)
+        return
+
+    await state.set_state(NisiasStates.waiting_partial_amount)
+    await state.update_data(customer_name=target_customer)
+    await callback.answer()
+
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+    await callback.message.reply(
+        f"💸 <b>{html.escape(target_customer)}</b>\n"
+        f"მიმდინარე ვალი: <b>{customer_debt:.2f}₾</b>\n\n"
+        f"რამდენი გადაიხადა? <i>(₾)</i>\n"
+        f"<i>მაგ: <code>150</code> ან <code>75.50</code></i>",
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(NisiasStates.waiting_partial_amount, IsAdmin())
+async def handle_partial_payment_amount(message: Message, state: FSMContext, db: Database) -> None:
+    """Receive the amount for partial payment and apply it."""
+    data = await state.get_data()
+    customer_name: str = data.get("customer_name", "")
+
+    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "").strip()
+    try:
+        amount = float(raw)
+        if amount <= 0:
+            raise ValueError("non-positive")
+    except ValueError:
+        await message.reply(
+            "❌ შეიყვანეთ სწორი თანხა. მაგ: <code>150</code> ან <code>75.50</code>",
+            parse_mode=_PARSE,
+        )
+        return  # stay in state — wait for a valid number
+
+    remaining = await db.apply_partial_payment(customer_name, amount)
+    await state.clear()
+
+    logger.info(
+        "AUDIT: admin %d applied partial payment %.2f₾ for '%s', remaining=%.2f₾",
+        message.from_user.id, amount, customer_name, remaining,
+    )
+
+    if remaining <= 0.005:
+        result_text = f"✅ <b>{html.escape(customer_name)}</b> — სრულად გადახდილია!"
+    else:
+        result_text = (
+            f"✅ <b>{html.escape(customer_name)}</b>\n"
+            f"💸 გადახდა: <b>{amount:.2f}₾</b>\n"
+            f"💳 დარჩა: <b>{remaining:.2f}₾</b>"
+        )
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=result_text,
+        parse_mode=_PARSE,
+    )
+
+    # Refresh full nisias list
+    sales = await db.get_credit_sales()
+    updated_text = format_credit_sales_report(sales)
+    keyboard = _nisias_keyboard(sales) if sales else None
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=updated_text,
+        parse_mode=_PARSE,
+        reply_markup=keyboard,
+    )
 
 
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("np:"), IsAdmin())
