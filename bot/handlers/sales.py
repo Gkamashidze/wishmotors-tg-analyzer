@@ -1,0 +1,163 @@
+import logging
+from io import BytesIO
+
+import openpyxl
+from aiogram import F, Router, Bot
+from aiogram.enums import ParseMode
+from aiogram.types import Message
+
+import config
+from bot.handlers import InTopic
+from bot.parsers.message_parser import parse_sale_message
+from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
+from database.db import Database
+
+logger = logging.getLogger(__name__)
+sales_router = Router(name="sales")
+
+_PARSE = ParseMode.HTML
+
+
+# ─── Sales topic: text messages ───────────────────────────────────────────────
+
+@sales_router.message(InTopic(config.SALES_TOPIC_ID), F.text)
+async def handle_sales_text(message: Message, db: Database) -> None:
+    text = (message.text or "").strip()
+    parsed = parse_sale_message(text)
+
+    if not parsed:
+        # Not a recognised sale format — owner might be typing a note, ignore.
+        return
+
+    raw = parsed.raw_product
+
+    # Try OEM lookup first (exact), then fall back to fuzzy name search
+    product = await db.get_product_by_oem(raw)
+    if not product:
+        product = await db.get_product_by_name(raw)
+
+    if not product:
+        await message.reply(
+            f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა მონაცემთა ბაზაში.\n\n"
+            f"დაამატეთ ბრძანებით:\n"
+            f"<code>/addproduct {raw.replace(' ', '_')} OEM_კოდი 0 0.00</code>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    if parsed.is_return:
+        await _record_return(message, db, product, parsed)
+    else:
+        await _record_sale(message, db, product, parsed)
+
+
+async def _record_sale(message: Message, db: Database, product: dict, parsed) -> None:
+    await db.create_sale(
+        product_id=product["id"],
+        quantity=parsed.quantity,
+        sale_price=parsed.price,
+        payment_method=parsed.payment_method,
+    )
+    new_stock = await db.update_stock(product["id"], -parsed.quantity)
+    low = new_stock <= product["min_stock"]
+
+    await message.reply(
+        format_sale_confirmation(
+            product_name=product["name"],
+            qty=parsed.quantity,
+            price=parsed.price,
+            payment=parsed.payment_method,
+            new_stock=new_stock,
+            low_stock=low,
+        ),
+        parse_mode=_PARSE,
+    )
+
+    if low:
+        logger.warning(
+            "Low stock alert: %s — %d units remaining", product["name"], new_stock
+        )
+
+
+async def _record_return(message: Message, db: Database, product: dict, parsed) -> None:
+    refund = parsed.price * parsed.quantity
+
+    await db.create_return(
+        product_id=product["id"],
+        quantity=parsed.quantity,
+        refund_amount=refund,
+        notes="დაბრუნება",
+    )
+    new_stock = await db.update_stock(product["id"], parsed.quantity)
+
+    await message.reply(
+        format_return_confirmation(
+            product_name=product["name"],
+            qty=parsed.quantity,
+            refund=refund,
+            new_stock=new_stock,
+        ),
+        parse_mode=_PARSE,
+    )
+
+
+# ─── Capital topic: Excel stock uploads ───────────────────────────────────────
+
+@sales_router.message(InTopic(config.CAPITAL_TOPIC_ID), F.document)
+async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
+    doc = message.document
+    if not doc or not doc.file_name:
+        return
+
+    if not doc.file_name.lower().endswith((".xlsx", ".xls")):
+        await message.reply(
+            "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    await message.reply("⏳ ფაილი მუშავდება...", parse_mode=_PARSE)
+
+    file_info = await bot.get_file(doc.file_id)
+    buf = BytesIO()
+    await bot.download_file(file_info.file_path, destination=buf)
+    buf.seek(0)
+
+    try:
+        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+        ws = wb.active
+    except Exception as exc:
+        logger.error("Excel parse error: %s", exc)
+        await message.reply(
+            "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
+            "სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    updated = 0
+    errors = 0
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or row[0] is None:
+            continue
+        try:
+            name = str(row[0]).strip()
+            oem = str(row[1]).strip() if row[1] is not None else None
+            stock = int(row[2]) if row[2] is not None else 0
+            price = float(row[3]) if row[3] is not None else 0.0
+
+            if not name:
+                continue
+
+            await db.upsert_product(name=name, oem_code=oem, stock=stock, price=price)
+            updated += 1
+        except Exception as exc:
+            logger.error("Row error %s: %s", row, exc)
+            errors += 1
+
+    summary = f"✅ <b>საწყობი განახლდა!</b>\n📦 პროდუქტები: {updated}ც"
+    if errors:
+        summary += f"\n⚠️ გამოტოვებული სტრიქონები: {errors}"
+
+    await message.reply(summary, parse_mode=_PARSE)

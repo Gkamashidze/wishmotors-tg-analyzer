@@ -1,0 +1,116 @@
+import asyncio
+import logging
+from typing import Any, Awaitable, Callable, Dict
+
+import pytz
+from aiogram import BaseMiddleware, Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.types import TelegramObject
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+import config
+from bot.handlers.commands import commands_router
+from bot.handlers.orders import orders_router
+from bot.handlers.sales import sales_router
+from bot.reports.formatter import format_weekly_report
+from database.db import Database
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+# ─── Dependency injection middleware ──────────────────────────────────────────
+
+class DatabaseMiddleware(BaseMiddleware):
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ) -> Any:
+        data["db"] = self.db
+        return await handler(event, data)
+
+
+# ─── Scheduled weekly report ──────────────────────────────────────────────────
+
+async def _send_weekly_report(bot: Bot, db: Database) -> None:
+    logger.info("Sending scheduled weekly report...")
+    try:
+        sales = await db.get_weekly_sales()
+        returns = await db.get_weekly_returns()
+        expenses = await db.get_weekly_expenses()
+        products = await db.get_all_products()
+
+        text = format_weekly_report(sales, returns, expenses, products)
+        await bot.send_message(
+            chat_id=config.GROUP_ID,
+            text=text,
+            parse_mode=ParseMode.HTML,
+        )
+        logger.info("Weekly report sent successfully.")
+    except Exception as exc:
+        logger.error("Failed to send weekly report: %s", exc)
+
+
+# ─── Entry point ──────────────────────────────────────────────────────────────
+
+async def main() -> None:
+    db = Database(config.DATABASE_PATH)
+    await db.init()
+    logger.info("Database initialised at %s", config.DATABASE_PATH)
+
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+    dp = Dispatcher()
+    dp.message.middleware(DatabaseMiddleware(db))
+
+    dp.include_router(sales_router)
+    dp.include_router(orders_router)
+    dp.include_router(commands_router)
+
+    tz = pytz.timezone(config.TIMEZONE)
+    scheduler = AsyncIOScheduler(timezone=tz)
+    scheduler.add_job(
+        _send_weekly_report,
+        trigger=CronTrigger(
+            day_of_week=config.REPORT_WEEKDAY,
+            hour=config.REPORT_HOUR,
+            minute=config.REPORT_MINUTE,
+            timezone=tz,
+        ),
+        kwargs={"bot": bot, "db": db},
+        id="weekly_report",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info(
+        "Scheduler started — weekly report every %s at %02d:%02d (%s)",
+        config.REPORT_WEEKDAY.upper(),
+        config.REPORT_HOUR,
+        config.REPORT_MINUTE,
+        config.TIMEZONE,
+    )
+
+    try:
+        logger.info("Bot is running. Press Ctrl+C to stop.")
+        await dp.start_polling(bot, skip_updates=True)
+    finally:
+        scheduler.shutdown(wait=False)
+        await bot.session.close()
+        logger.info("Bot stopped.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
