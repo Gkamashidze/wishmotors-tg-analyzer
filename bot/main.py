@@ -6,7 +6,7 @@ import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import TelegramObject
+from aiogram.types import BotCommand, TelegramObject
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -72,6 +72,17 @@ async def main() -> None:
         token=config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+
+    await bot.set_my_commands([
+        BotCommand(command="report",        description="📊 კვირის ანგარიში"),
+        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში (week / month / 2026-03)"),
+        BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
+        BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
+        BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — /completeorder ID"),
+        BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
+        BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
+    ])
+    logger.info("Bot commands menu registered.")
 
     dp = Dispatcher()
     dp.message.middleware(DatabaseMiddleware(db))
