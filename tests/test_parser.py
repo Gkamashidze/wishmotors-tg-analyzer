@@ -222,6 +222,48 @@ class TestFormatVariations:
         assert result is not None
 
 
+# ─── parse_sale_message — price-only shorthand (Pattern C) ───────────────────
+
+class TestPriceOnlyPattern:
+    """Real-world format: '30ლ ხელზე' — price + payment, no product/qty."""
+
+    def test_price_cash(self):
+        result = parse_sale_message("30ლ ხელზე")
+        assert result is not None
+        assert result.price == 30.0
+        assert result.quantity == 1
+        assert result.payment_method == PAYMENT_CASH
+        assert result.raw_product == ""
+
+    def test_price_transfer(self):
+        result = parse_sale_message("40ლ ხელზე")
+        assert result is not None
+        assert result.price == 40.0
+        assert result.payment_method == PAYMENT_CASH
+
+    def test_price_daritxa(self):
+        result = parse_sale_message("90 ლ დარიცხა")
+        assert result is not None
+        assert result.price == 90.0
+        assert result.payment_method == PAYMENT_TRANSFER
+
+    def test_price_with_lari_symbol(self):
+        result = parse_sale_message("150ლ ხელზე")
+        assert result is not None
+        assert result.price == 150.0
+
+    def test_price_no_payment_is_credit(self):
+        result = parse_sale_message("200ლ")
+        assert result is not None
+        assert result.price == 200.0
+        assert result.payment_method == PAYMENT_CREDIT
+
+    def test_price_decimal(self):
+        result = parse_sale_message("12,50ლ ხელზე")
+        assert result is not None
+        assert result.price == 12.50
+
+
 # ─── parse_expense_message ────────────────────────────────────────────────────
 
 class TestParseExpenseMessage:
@@ -267,6 +309,30 @@ class TestParseExpenseMessage:
         assert result is not None
         assert result.amount == 50.0
 
+    def test_negative_shorthand_no_symbol(self):
+        """'-11 დელივო' — real format used in expenses topic."""
+        result = parse_expense_message("-11 დელივო")
+        assert result is not None
+        assert result.amount == 11.0
+        assert result.description == "დელივო"
+
+    def test_negative_shorthand_with_lari(self):
+        result = parse_expense_message("-20ლ საბაჟო")
+        assert result is not None
+        assert result.amount == 20.0
+        assert result.description == "საბაჟო"
+
+    def test_negative_multiword_description(self):
+        result = parse_expense_message("-11 დელივო გაგზავნის")
+        assert result is not None
+        assert result.amount == 11.0
+        assert result.description == "დელივო გაგზავნის"
+
+    def test_negative_decimal(self):
+        result = parse_expense_message("-13.2 დელივო")
+        assert result is not None
+        assert result.amount == 13.2
+
 
 # ─── parse_order_message ─────────────────────────────────────────────────────
 
@@ -290,11 +356,22 @@ class TestParseOrderMessage:
         assert result.quantity == 3
 
     def test_unrecognised_returns_none(self):
-        assert parse_order_message("შეკვეთა") is None
         assert parse_order_message("") is None
-        assert parse_order_message("სარკე") is None  # no quantity
+        assert parse_order_message("12") is None     # bare number, no ც
+        assert parse_order_message("ab") is None     # too short
 
     def test_whitespace_stripped(self):
         result = parse_order_message("  სარკე 1ც  ")
         assert result is not None
         assert result.raw_product == "სარკე"
+
+    def test_qty_only_shorthand(self):
+        """'20ც' alone — real format used as reply in orders topic."""
+        result = parse_order_message("20ც")
+        assert result is not None
+        assert result.quantity == 20
+        assert result.raw_product == ""
+
+    def test_qty_only_various(self):
+        assert parse_order_message("10ც") is not None
+        assert parse_order_message("50ც") is not None

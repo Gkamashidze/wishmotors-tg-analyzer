@@ -73,9 +73,9 @@ class ParsedOrder:
 
 # ─── Keyword patterns ─────────────────────────────────────────────────────────
 
-_CASH_RE = re.compile(r"ხელ[ზბ]?[ე]?|ქეში|ნაღ", re.UNICODE | re.IGNORECASE)
+_CASH_RE = re.compile(r"ხელ[ზბ]?[ე-ს]?|ქეში|ნაღ|მომც|გადაიხად", re.UNICODE | re.IGNORECASE)
 _TRANSFER_RE = re.compile(
-    r"გადარ|დარიცხ|ტრანსფ|გადაქ|transfer|ბარათ|კარტ",
+    r"გადარ|დარიცხ|ტრანსფ|გადაქ|transfer|ბარათ|კარტ|დავურიცხ",
     re.UNICODE | re.IGNORECASE,
 )
 _LLC_RE = re.compile(r"შპს\s*-?\s*დან|შპსდან", re.UNICODE | re.IGNORECASE)
@@ -120,17 +120,53 @@ _SALE_B = re.compile(
     re.UNICODE | re.IGNORECASE,
 )
 
-# Expense: amount-first or description-first
+# Pattern C: "PRICEლ/₾ [rest]"  ← 30ლ ხელზე / 30ლ დარიცხა
+# No product or quantity — price-only shorthand.
+# qty defaults to 1, product recorded as empty.
+_SALE_C = re.compile(
+    r"^(?P<price>\d+(?:[.,]\d+)?)\s*[₾ლ$](?:\s+(?P<rest>.+))?\s*$",
+    re.UNICODE,
+)
+
+# Pattern D: "Nც PRICEლ [rest]"  ← 1ც 40ლ დარიცხა / 2ც 80ლ ხელზე
+# Quantity + price, no product name.
+_SALE_D = re.compile(
+    r"^(?P<qty>\d+)\s*ც\s+(?P<price>\d+(?:[.,]\d+)?)\s*[₾ლ$](?:\s+(?P<rest>.+))?\s*$",
+    re.UNICODE,
+)
+
+# Pattern E: "PRODUCT PRICEლ PAYMENT"  ← ტროსი 150 ლ ხელზე
+# Product name + price (no qty). Payment keyword is REQUIRED to distinguish from expenses.
+# Space between price digits and ლ is allowed.
+_SALE_E = re.compile(
+    r"^(?P<product>.+?)\s+(?P<price>\d+(?:[.,]\d+)?)\s*[₾ლ$](?:\s+(?P<rest>.+))?\s*$",
+    re.UNICODE,
+)
+
+# Expense: amount-first or description-first (positive). $ accepted too.
 _EXPENSE_AMOUNT_FIRST = re.compile(
-    r"^(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ]\s+(?P<desc>.+)$", re.UNICODE
+    r"^(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ$]\s+(?P<desc>.+)$", re.UNICODE
 )
 _EXPENSE_DESC_FIRST = re.compile(
-    r"^(?P<desc>.+?)\s+(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ]\s*$", re.UNICODE
+    r"^(?P<desc>.+?)\s+(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ$]\s*$", re.UNICODE
+)
+# Expense: negative shorthand  "-11 დელივო"  "-20ლ საბაჟო"  "-10გაგზავნა"  "-22$ რეკლამა"
+_EXPENSE_NEGATIVE = re.compile(
+    r"^-\s*(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ$]?\s*(?P<desc>\S.*)$", re.UNICODE
 )
 
 # Order: "product Nც" (no price)
 _ORDER_RE = re.compile(
     r"^(?P<product>.+?)\s+(?P<qty>\d+)\s*ც\s*$", re.UNICODE
+)
+# Order: just "Nც" alone (reply to a product message)
+_ORDER_QTY_ONLY = re.compile(r"^\d+\s*ც$", re.UNICODE)
+
+# Order: product name only, no quantity (qty stored as 0)
+# Must have at least 2 Georgian characters to avoid false positives.
+# Must NOT contain a price indicator (₾ ლ $).
+_ORDER_PRODUCT_ONLY = re.compile(
+    r"^[^\d₾ლ$\-].{3,}$", re.UNICODE
 )
 
 
@@ -199,6 +235,11 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     Try to parse a Georgian sales (or return) message.
     Returns ParsedSale on success, None if the message doesn't match any pattern.
 
+    Supported patterns:
+      A: "product Nც PRICEლ [rest]"   — full format
+      B: "კოდი: OEM, Nც, PRICEლ"      — OEM prefix format
+      C: "PRICEლ [rest]"               — price-only shorthand (qty=1, product unknown)
+
     Payment rules:
       explicit cash keyword   → PAYMENT_CASH
       explicit transfer kw    → PAYMENT_TRANSFER
@@ -207,7 +248,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     text = _normalize_text(text.strip())
     is_return = bool(_RETURN_RE.search(text))
 
-    # Try explicit კოდი: prefix first
+    # Pattern B: explicit კოდი: prefix
     m = _SALE_B.search(text)
     if m:
         payment, seller, customer = _parse_rest(m.group("rest"))
@@ -221,7 +262,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             customer_name=customer,
         )
 
-    # Try free-form pattern
+    # Pattern A: full free-form "product Nც PRICEლ [rest]"
     m = _SALE_A.match(text)
     if m:
         payment, seller, customer = _parse_rest(m.group("rest"))
@@ -235,12 +276,72 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             customer_name=customer,
         )
 
+    # Pattern D: qty+price shorthand "1ც 40ლ დარიცხა"
+    m = _SALE_D.match(text)
+    if m:
+        payment, seller, customer = _parse_rest(m.group("rest"))
+        return ParsedSale(
+            raw_product="",
+            quantity=int(m.group("qty")),
+            price=_parse_price(m.group("price")),
+            payment_method=payment,
+            is_return=is_return,
+            seller_type=seller,
+            customer_name=customer,
+        )
+
+    # Pattern C: price-only shorthand "30ლ ხელზე" or "30ლ"
+    m = _SALE_C.match(text)
+    if m:
+        payment, seller, customer = _parse_rest(m.group("rest"))
+        return ParsedSale(
+            raw_product="",
+            quantity=1,
+            price=_parse_price(m.group("price")),
+            payment_method=payment,
+            is_return=is_return,
+            seller_type=seller,
+            customer_name=customer,
+        )
+
+    # Pattern E: product+price with explicit payment keyword "ტროსი 150 ლ ხელზე"
+    # Payment keyword is REQUIRED to distinguish sales from expenses.
+    m = _SALE_E.match(text)
+    if m:
+        payment, seller, customer = _parse_rest(m.group("rest"))
+        if payment in (PAYMENT_CASH, PAYMENT_TRANSFER):
+            return ParsedSale(
+                raw_product=m.group("product").strip(),
+                quantity=1,
+                price=_parse_price(m.group("price")),
+                payment_method=payment,
+                is_return=is_return,
+                seller_type=seller,
+                customer_name=customer,
+            )
+
     return None
 
 
 def parse_expense_message(text: str) -> Optional[ParsedExpense]:
-    """Parse an expense message like '50₾ ბენზინი' or 'ბენზინი 50₾'."""
+    """
+    Parse an expense message.
+
+    Supported formats:
+      '50₾ ბენზინი'    — amount first
+      'ბენზინი 50₾'    — description first
+      '-11 დელივო'     — negative shorthand (minus prefix, no ₾ required)
+      '-20ლ საბაჟო'    — negative shorthand with ლ
+    """
     text = _normalize_text(text.strip())
+
+    # Negative shorthand: "-11 დელივო" or "-20ლ საბაჟო"
+    m = _EXPENSE_NEGATIVE.match(text)
+    if m:
+        return ParsedExpense(
+            amount=_parse_price(m.group("amount")),
+            description=m.group("desc").strip(),
+        )
 
     m = _EXPENSE_AMOUNT_FIRST.match(text)
     if m:
@@ -260,13 +361,33 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
 
 
 def parse_order_message(text: str) -> Optional[ParsedOrder]:
-    """Parse a re-order note like '8390132500 5ც' or 'მარჭვენა სარკე 2ც'."""
+    """
+    Parse a re-order note.
+
+    Supported formats:
+      '8390132500 5ც'     — OEM + quantity
+      'მარჭვენა სარკე 2ც' — product name + quantity
+      '20ც'               — quantity only (reply to a product message)
+    """
     text = _normalize_text(text.strip())
+
+    # Quantity-only: "20ც" (reply context — product unknown)
+    if _ORDER_QTY_ONLY.match(text):
+        qty = int(text.replace("ც", "").strip())
+        return ParsedOrder(raw_product="", quantity=qty, notes=text)
+
+    # Product + quantity
     m = _ORDER_RE.match(text)
-    if not m:
-        return None
-    return ParsedOrder(
-        raw_product=m.group("product").strip(),
-        quantity=int(m.group("qty")),
-        notes=text,
-    )
+    if m:
+        return ParsedOrder(
+            raw_product=m.group("product").strip(),
+            quantity=int(m.group("qty")),
+            notes=text,
+        )
+
+    # Product name only (no quantity — qty=0 means "need some amount")
+    # Requires at least 4 chars, no price symbol, starts with letter.
+    if _ORDER_PRODUCT_ONLY.match(text) and "₾" not in text and "$" not in text:
+        return ParsedOrder(raw_product=text, quantity=0, notes=text)
+
+    return None

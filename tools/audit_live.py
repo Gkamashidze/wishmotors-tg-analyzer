@@ -51,6 +51,7 @@ from bot.parsers.message_parser import (
 
 API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
+PHONE    = os.getenv("TELEGRAM_PHONE", "")
 GROUP_ID = int(os.getenv("GROUP_ID", "0"))
 
 TOPICS = {
@@ -76,6 +77,8 @@ def _validate_config() -> None:
         missing.append("TELEGRAM_API_ID")
     if not API_HASH:
         missing.append("TELEGRAM_API_HASH")
+    if not PHONE:
+        missing.append("TELEGRAM_PHONE  (მაგ: +995599123456)")
     if not GROUP_ID:
         missing.append("GROUP_ID")
     for name, tid in TOPICS.items():
@@ -187,7 +190,7 @@ async def main() -> None:
     client = TelegramClient(str(session_path), API_ID, API_HASH)
 
     print("🔗 Telegram-თან კავშირი...")
-    await client.start()
+    await client.start(phone=PHONE)
     print("✅ შესულია!")
 
     try:
