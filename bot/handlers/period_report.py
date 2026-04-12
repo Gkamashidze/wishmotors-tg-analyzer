@@ -19,7 +19,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from aiogram3_calendar import SimpleCalendar, simple_cal_callback
+from bot.calendar_widget import SimpleCalendar, simple_cal_callback
 
 import config
 from bot.handlers import IsAdmin
