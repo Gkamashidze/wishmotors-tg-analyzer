@@ -52,12 +52,13 @@ class ParsedOrder:
 
 # ─── Regex patterns ───────────────────────────────────────────────────────────
 
-# Pattern A: "product Nც PRICEლ/₾ [payment]"
+# Pattern A: "product Nც PRICEლ/₾/ლარი [payment]"
 # e.g. "მარჭვენა რეფლექტორი 1ც 30₾ ხელზე"
+#      "ფარსუნკის შაიბა 4ც 30 ლარი ხელზე"
 _SALE_A = re.compile(
     r"^(?P<product>.+?)\s+"
     r"(?P<qty>\d+(?:\.\d+)?)\s*ც\s+"
-    r"(?P<price>\d+(?:\.\d+)?)\s*[₾ლ]"
+    r"(?P<price>\d+(?:\.\d+)?)\s*(?:₾|ლ(?:არი?)?)"
     r"(?:\s+(?P<payment>\S+))?"
     r"\s*$",
     re.UNICODE,
@@ -109,9 +110,22 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     """
     Try to parse a Georgian sales (or return) message.
     Returns ParsedSale on success, None if the message doesn't match any pattern.
+
+    Handles multiline messages where payment appears on a separate line, e.g.:
+        ფარსუნკის შაიბა (673) 4ც 30 ლარი
+        ხელზე
     """
     text = text.strip()
     is_return = bool(_RETURN_RE.search(text))
+
+    # Collapse multiline: if last line is a payment keyword, join it onto previous line
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if len(lines) >= 2:
+        last = lines[-1].lower()
+        if re.search(r"ხელ[ზბ]?[ე]?|ქეში|ნაღ|გადარ|ტრანსფ|transfer", last):
+            text = " ".join(lines)
+        else:
+            text = lines[0]  # use first meaningful line only
 
     # Try explicit კოდი: prefix first
     m = _SALE_B.search(text)
