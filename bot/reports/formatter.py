@@ -209,3 +209,82 @@ def format_return_confirmation(
         f"💰 დაბრუნებული თანხა: {refund:.2f}₾\n"
         f"📊 საწყობში ახლა: {new_stock}ც"
     )
+
+
+# ─── Period report ────────────────────────────────────────────────────────────
+
+def format_period_report(
+    sales: List[Dict],
+    returns: List[Dict],
+    expenses: List[Dict],
+    products: List[Dict],
+    date_from: datetime,
+    date_to: datetime,
+) -> str:
+    if not sales and not returns and not expenses:
+        return "📭 არჩეულ პერიოდში გაყიდვები არ დაფიქსირებულა"
+
+    total_revenue = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
+    total_returns = sum(float(r["refund_amount"]) for r in returns)
+    total_expenses = sum(float(e["amount"]) for e in expenses)
+    net_income = total_revenue - total_returns - total_expenses
+
+    cash_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales
+        if s.get("payment_method") == "cash"
+    )
+    transfer_revenue = sum(
+        float(s["unit_price"]) * s["quantity"]
+        for s in sales
+        if s.get("payment_method") == "transfer"
+    )
+
+    by_product: Dict[str, Dict] = {}
+    for s in sales:
+        key = s.get("product_name") or s.get("notes") or "უცნობი"
+        entry = by_product.setdefault(key, {"qty": 0, "revenue": 0.0})
+        entry["qty"] += s["quantity"]
+        entry["revenue"] += float(s["unit_price"]) * s["quantity"]
+
+    lines: List[str] = [
+        "📊 <b>პერიოდის ანგარიში</b>",
+        f"📅 {date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"💰 სულ შემოსული: <b>{total_revenue:.2f}₾</b>",
+        f"   💵 ხელზე: {cash_revenue:.2f}₾",
+        f"   🏦 გადარიცხვა: {transfer_revenue:.2f}₾",
+        f"↩️ სულ დაბრუნებული: {total_returns:.2f}₾",
+        f"🧾 სულ ხარჯები: {total_expenses:.2f}₾",
+        f"💵 წმინდა შემოსავალი: <b>{net_income:.2f}₾</b>",
+        "━━━━━━━━━━━━━━━━━━━━━",
+    ]
+
+    if by_product:
+        lines += ["", "📦 <b>გაყიდული ნაწილები:</b>"]
+        for name, data in sorted(by_product.items(), key=lambda x: -x[1]["revenue"]):
+            lines.append(
+                f"🔹 <b>{_e(name)}</b>\n"
+                f"   რაოდენობა: {data['qty']}ც  |  შემოსავალი: {data['revenue']:.2f}₾"
+            )
+    else:
+        lines += ["", "📦 ამ პერიოდში გაყიდვა არ მომხდარა."]
+
+    if returns:
+        lines += ["", "↩️ <b>დაბრუნებები:</b>"]
+        for r in returns:
+            name = r.get("product_name") or "უცნობი"
+            lines.append(
+                f"• {_e(name)}: {r['quantity']}ც — {float(r['refund_amount']):.2f}₾"
+            )
+
+    if expenses:
+        lines += ["", "🧾 <b>ხარჯები:</b>"]
+        for e in expenses:
+            desc = e.get("description") or "—"
+            lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
+
+    now = _now()
+    lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
+    return "\n".join(lines)

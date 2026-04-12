@@ -308,3 +308,45 @@ class Database:
                 self._week_ago(),
             )
             return self._rows(rows)
+
+    # ─── Period queries ───────────────────────────────────────────────────────
+
+    async def get_sales_by_period(
+        self, date_from: datetime, date_to: datetime
+    ) -> List[Dict]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT s.*, p.name AS product_name, p.oem_code
+                   FROM sales s
+                   LEFT JOIN products p ON s.product_id = p.id
+                   WHERE s.sold_at >= $1 AND s.sold_at <= $2
+                   ORDER BY s.sold_at DESC""",
+                date_from, date_to,
+            )
+            return self._rows(rows)
+
+    async def get_returns_by_period(
+        self, date_from: datetime, date_to: datetime
+    ) -> List[Dict]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT r.*, p.name AS product_name
+                   FROM returns r
+                   LEFT JOIN products p ON r.product_id = p.id
+                   WHERE r.returned_at >= $1 AND r.returned_at <= $2
+                   ORDER BY r.returned_at DESC""",
+                date_from, date_to,
+            )
+            return self._rows(rows)
+
+    async def get_expenses_by_period(
+        self, date_from: datetime, date_to: datetime
+    ) -> List[Dict]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM expenses
+                   WHERE created_at >= $1 AND created_at <= $2
+                   ORDER BY created_at DESC""",
+                date_from, date_to,
+            )
+            return self._rows(rows)
