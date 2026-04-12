@@ -1,5 +1,6 @@
 aiogram==3.7.0
 pytest==8.4.2
+pytest-asyncio==0.23.8
 asyncpg==0.29.0
 APScheduler==3.10.4
 python-dotenv==1.0.1
@@ -7,3 +8,6 @@ openpyxl==3.1.2
 pytz==2024.1
 types-pytz==2024.1.0.20240203
 telethon==1.36.0
+ruff==0.4.4
+mypy==1.10.0
+typing-extensions==4.11.0

@@ -5,7 +5,16 @@ from typing import Any, Dict, List, Optional, Tuple
 import asyncpg
 import pytz
 
-from database.models import CREATE_TABLES_SQL, MIGRATE_SQL
+from database.models import (
+    CREATE_TABLES_SQL,
+    MIGRATE_SQL,
+    ExpenseRow,
+    OrderRow,
+    ParseFailureRow,
+    ProductRow,
+    ReturnRow,
+    SaleRow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,47 +59,47 @@ class Database:
 
     # ─── Products ─────────────────────────────────────────────────────────────
 
-    async def get_product_by_id(self, product_id: int) -> Optional[Dict]:
+    async def get_product_by_id(self, product_id: int) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM products WHERE id = $1", product_id
             )
-            return self._row(row)
+            return self._row(row)  # type: ignore[return-value]
 
-    async def get_product_by_oem(self, oem_code: str) -> Optional[Dict]:
+    async def get_product_by_oem(self, oem_code: str) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM products WHERE oem_code = $1", oem_code.strip()
             )
-            return self._row(row)
+            return self._row(row)  # type: ignore[return-value]
 
-    async def get_product_by_partial_oem(self, partial: str) -> Optional[Dict]:
+    async def get_product_by_partial_oem(self, partial: str) -> Optional[ProductRow]:
         """Find a product whose OEM code ends with the given digits (e.g. '8500')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM products WHERE oem_code LIKE $1",
                 f"%{partial.strip()}",
             )
-            return self._row(row)
+            return self._row(row)  # type: ignore[return-value]
 
-    async def get_product_by_name(self, name: str) -> Optional[Dict]:
+    async def get_product_by_name(self, name: str) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM products WHERE name ILIKE $1", f"%{name.strip()}%"
             )
-            return self._row(row)
+            return self._row(row)  # type: ignore[return-value]
 
-    async def get_all_products(self) -> List[Dict]:
+    async def get_all_products(self) -> List[ProductRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM products ORDER BY name")
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
-    async def get_low_stock_products(self) -> List[Dict]:
+    async def get_low_stock_products(self) -> List[ProductRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM products WHERE current_stock <= min_stock ORDER BY current_stock"
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def create_product(
         self,
@@ -203,7 +212,7 @@ class Database:
 
         return sale_id, new_stock
 
-    async def delete_sale(self, sale_id: int) -> Optional[Dict]:
+    async def delete_sale(self, sale_id: int) -> Optional[SaleRow]:
         """Delete a sale and restore stock if a product was linked.
         Returns the deleted sale record, or None if not found."""
         async with self.pool.acquire() as conn:
@@ -233,7 +242,7 @@ class Database:
             )
             return result == "UPDATE 1"
 
-    async def get_weekly_sales(self) -> List[Dict]:
+    async def get_weekly_sales(self) -> List[SaleRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT s.*, p.name AS product_name, p.oem_code
@@ -243,9 +252,9 @@ class Database:
                    ORDER BY s.sold_at DESC""",
                 self._week_ago(),
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
-    async def get_credit_sales(self) -> List[Dict]:
+    async def get_credit_sales(self) -> List[SaleRow]:
         """Return all unpaid (ნისია) sales, oldest first."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -255,7 +264,7 @@ class Database:
                    WHERE s.payment_method = 'credit'
                    ORDER BY s.sold_at ASC""",
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def edit_product(
         self,
@@ -264,7 +273,7 @@ class Database:
         oem_code: Optional[str] = None,
         price: Optional[float] = None,
         min_stock: Optional[int] = None,
-    ) -> Optional[Dict]:
+    ) -> Optional[ProductRow]:
         """Update one or more product fields. Only provided (non-None) fields change.
         Returns the updated product, or None if not found."""
         updates: List[str] = []
@@ -286,7 +295,7 @@ class Database:
                 f"UPDATE products SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
                 *values,
             )
-            return self._row(row)
+            return self._row(row)  # type: ignore[return-value]
 
     # ─── Returns (atomic: record return + restore stock) ──────────────────────
 
@@ -323,7 +332,7 @@ class Database:
 
         return return_id, new_stock
 
-    async def get_weekly_returns(self) -> List[Dict]:
+    async def get_weekly_returns(self) -> List[ReturnRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT r.*, p.name AS product_name
@@ -333,7 +342,7 @@ class Database:
                    ORDER BY r.returned_at DESC""",
                 self._week_ago(),
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     # ─── Orders ───────────────────────────────────────────────────────────────
 
@@ -352,7 +361,7 @@ class Database:
             )
             return row["id"]
 
-    async def get_pending_orders(self) -> List[Dict]:
+    async def get_pending_orders(self) -> List[OrderRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT o.*, p.name AS product_name, p.oem_code
@@ -361,7 +370,7 @@ class Database:
                    WHERE o.status = 'pending'
                    ORDER BY o.created_at DESC""",
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def complete_order(self, order_id: int) -> bool:
         """Mark an order as completed. Returns True if the order was found."""
@@ -387,7 +396,7 @@ class Database:
             )
             return row["id"]
 
-    async def get_weekly_expenses(self) -> List[Dict]:
+    async def get_weekly_expenses(self) -> List[ExpenseRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
@@ -395,7 +404,7 @@ class Database:
                    ORDER BY created_at DESC""",
                 self._week_ago(),
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     # ─── Period queries ───────────────────────────────────────────────────────
 
@@ -426,7 +435,7 @@ class Database:
 
     async def get_sales_by_period(
         self, date_from: datetime, date_to: datetime
-    ) -> List[Dict]:
+    ) -> List[SaleRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT s.*, p.name AS product_name, p.oem_code
@@ -436,11 +445,11 @@ class Database:
                    ORDER BY s.sold_at DESC""",
                 date_from, date_to,
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def get_returns_by_period(
         self, date_from: datetime, date_to: datetime
-    ) -> List[Dict]:
+    ) -> List[ReturnRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT r.*, p.name AS product_name
@@ -450,11 +459,11 @@ class Database:
                    ORDER BY r.returned_at DESC""",
                 date_from, date_to,
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def get_expenses_by_period(
         self, date_from: datetime, date_to: datetime
-    ) -> List[Dict]:
+    ) -> List[ExpenseRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
@@ -462,7 +471,7 @@ class Database:
                    ORDER BY created_at DESC""",
                 date_from, date_to,
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     # ─── Parse failures (diagnostics) ─────────────────────────────────────────
 
@@ -474,7 +483,7 @@ class Database:
                 topic_id, message_text,
             )
 
-    async def get_parse_failure_stats(self, days: int = 30) -> List[Dict]:
+    async def get_parse_failure_stats(self, days: int = 30) -> List[ParseFailureRow]:
         """Return top unparsed messages grouped by text, for the last N days."""
         since = self._now() - timedelta(days=days)
         async with self.pool.acquire() as conn:
@@ -487,7 +496,7 @@ class Database:
                    LIMIT 20""",
                 since,
             )
-            return self._rows(rows)
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def get_parse_failure_count(self, days: int = 7) -> int:
         """Return total number of parse failures in the last N days."""

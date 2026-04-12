@@ -1,3 +1,4 @@
+import time
 from typing import Union
 
 from aiogram.filters import Filter
@@ -27,3 +28,27 @@ class IsAdmin(Filter):
         return bool(
             event.from_user and event.from_user.id in config.ADMIN_IDS
         )
+
+
+# ─── Simple per-user rate limiter ────────────────────────────────────────────
+# Tracks the last call timestamp per (user_id, command) pair.
+# Default: max 1 call per 2 seconds per user per command.
+
+_last_called: dict[str, float] = {}
+
+
+def is_rate_limited(user_id: int, command: str, min_interval: float = 2.0) -> bool:
+    """Return True if the user called this command too recently.
+
+    Args:
+        user_id: Telegram user ID.
+        command: Command name (e.g. 'deletesale').
+        min_interval: Minimum seconds between calls (default 2s).
+    """
+    key = f"{user_id}:{command}"
+    now = time.monotonic()
+    last = _last_called.get(key, 0.0)
+    if now - last < min_interval:
+        return True
+    _last_called[key] = now
+    return False

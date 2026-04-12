@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
-from bot.handlers import IsAdmin
+from bot.handlers import IsAdmin, is_rate_limited
 from bot.reports.formatter import (
     format_credit_sales_report,
     format_diagnostics_report,
@@ -171,6 +171,10 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
 
     updated = await db.mark_sale_paid(sale_id, payment_method)
     if updated:
+        logger.info(
+            "AUDIT: admin %d marked sale #%d as paid (%s)",
+            callback.from_user.id, sale_id, payment_method,
+        )
         await callback.answer(f"✅ #{sale_id} — {label}", show_alert=False)
         # Refresh the list
         sales = await db.get_credit_sales()
@@ -178,8 +182,8 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         keyboard = _nisias_keyboard(sales) if sales else None
         try:
             await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=keyboard)
-        except Exception:
-            pass  # message unchanged — that's fine
+        except Exception as exc:
+            logger.debug("Could not refresh nisias message (likely unchanged): %s", exc)
     else:
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True)
 
@@ -220,6 +224,10 @@ async def cmd_paid(message: Message, db: Database) -> None:
 
     updated = await db.mark_sale_paid(sale_id, payment_method)
     if updated:
+        logger.info(
+            "AUDIT: admin %d marked sale #%d as paid (%s) via /paid command",
+            message.from_user.id, sale_id, payment_method,
+        )
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text=f"✅ ნისია <b>#{sale_id}</b> გადახდილია — {label}",
@@ -250,6 +258,12 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
 @commands_router.message(Command("deletesale"), IsAdmin())
 async def cmd_deletesale(message: Message, db: Database) -> None:
     """Delete a sale by ID and restore stock. Usage: /deletesale ID"""
+    if message.from_user and is_rate_limited(message.from_user.id, "deletesale"):
+        await message.bot.send_message(  # type: ignore[union-attr]
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
+        )
+        return
     parts = (message.text or "").split()
     if len(parts) < 2 or not parts[1].isdigit():
         await message.bot.send_message(
@@ -265,6 +279,16 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
 
     sale_id = int(parts[1])
     deleted = await db.delete_sale(sale_id)
+
+    if deleted:
+        logger.info(
+            "AUDIT: admin %d deleted sale #%d (product_id=%s, qty=%s, price=%s)",
+            message.from_user.id,
+            sale_id,
+            deleted.get("product_id"),
+            deleted.get("quantity"),
+            deleted.get("unit_price"),
+        )
 
     if not deleted:
         await message.bot.send_message(
@@ -297,6 +321,12 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
 async def cmd_editproduct(message: Message, db: Database) -> None:
     """Edit a product field. Usage: /editproduct ID field value
     Fields: name | oem | price | minstock"""
+    if message.from_user and is_rate_limited(message.from_user.id, "editproduct"):
+        await message.bot.send_message(  # type: ignore[union-attr]
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
+        )
+        return
     parts = (message.text or "").split(None, 3)  # max 4 parts
     if len(parts) < 4 or not parts[1].isdigit():
         await message.bot.send_message(
@@ -362,6 +392,10 @@ async def cmd_editproduct(message: Message, db: Database) -> None:
 
     updated = await db.edit_product(product_id, **kwargs)
     if updated:
+        logger.info(
+            "AUDIT: admin %d edited product #%d — %s",
+            message.from_user.id, product_id, kwargs,
+        )
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text=(

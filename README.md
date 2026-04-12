@@ -152,9 +152,24 @@ Add the bot to the supergroup and grant it **Read Messages** permission. The bot
 **Automatic weekly report:** Every Sunday at 22:00 Tbilisi time the bot posts a full summary to the group.
 
 ### Database
-SQLite database is stored at `data/wishmotors.db` (auto-created on first run).
+The bot uses **PostgreSQL** (via `asyncpg`). A local PostgreSQL instance or a hosted
+service (e.g. Railway Postgres) is required.
 
-Tables: `products`, `sales`, `returns`, `orders`, `expenses`
+Tables: `products`, `sales`, `returns`, `orders`, `expenses`, `parse_failures`
+
+Schema and indexes are created automatically on first run.
+
+### Railway Deployment
+
+1. Create a new Railway project and add a **PostgreSQL** plugin.
+2. In your service's **Variables** tab, add all required env vars (see `.env.example`).
+3. For `DATABASE_URL`, use Railway's auto-generated variable reference:
+   ```
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   ```
+4. Push to the `main` branch — Railway builds and deploys automatically.
+5. The bot guard (`RAILWAY_ENVIRONMENT`) prevents accidental local runs against the
+   production database.
 
 ---
 

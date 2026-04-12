@@ -4,7 +4,7 @@ Report formatters — all output is in Georgian, HTML parse mode.
 
 import html
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import pytz
 
@@ -111,7 +111,7 @@ def format_return_confirmation(
 
 # ─── Credit (ნისია) report ────────────────────────────────────────────────────
 
-def format_credit_sales_report(sales: List[Dict]) -> str:
+def format_credit_sales_report(sales: Sequence[Any]) -> str:
     if not sales:
         return "✅ <b>ნისია არ არის!</b> ყველა გაყიდვა გადახდილია."
 
@@ -147,74 +147,81 @@ def format_credit_sales_report(sales: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-# ─── Weekly report ────────────────────────────────────────────────────────────
+# ─── Shared report helpers ────────────────────────────────────────────────────
 
-def format_weekly_report(
-    sales: List[Dict],
-    returns: List[Dict],
-    expenses: List[Dict],
-    products: List[Dict],
-) -> str:
-    now = _now()
-    week_start = now - timedelta(days=7)
-
+def _calculate_report_metrics(
+    sales: Sequence[Any],
+    returns: Sequence[Any],
+    expenses: Sequence[Any],
+) -> Dict[str, Any]:
+    """Calculate financial totals and per-product aggregates for any report period."""
     total_revenue = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
     total_returns = sum(float(r["refund_amount"]) for r in returns)
     total_expenses = sum(float(e["amount"]) for e in expenses)
-    net_income = total_revenue - total_returns - total_expenses
 
-    cash_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_CASH
-    )
-    transfer_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
-    )
-    credit_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_CREDIT
-    )
-    llc_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("seller_type") == "llc"
-    )
-    individual_revenue = total_revenue - llc_revenue
-
-    by_product: Dict[str, Dict] = {}
+    by_product: Dict[str, Dict[str, Any]] = {}
     for s in sales:
         key = s.get("product_name") or s.get("notes") or "უცნობი"
         entry = by_product.setdefault(key, {"qty": 0, "revenue": 0.0})
         entry["qty"] += s["quantity"]
         entry["revenue"] += float(s["unit_price"]) * s["quantity"]
 
-    low_stock = [p for p in products if p["current_stock"] <= p["min_stock"]]
+    return {
+        "total_revenue": total_revenue,
+        "total_returns": total_returns,
+        "total_expenses": total_expenses,
+        "net_income": total_revenue - total_returns - total_expenses,
+        "cash_revenue": sum(
+            float(s["unit_price"]) * s["quantity"]
+            for s in sales if s.get("payment_method") == PAYMENT_CASH
+        ),
+        "transfer_revenue": sum(
+            float(s["unit_price"]) * s["quantity"]
+            for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
+        ),
+        "credit_revenue": sum(
+            float(s["unit_price"]) * s["quantity"]
+            for s in sales if s.get("payment_method") == PAYMENT_CREDIT
+        ),
+        "llc_revenue": sum(
+            float(s["unit_price"]) * s["quantity"]
+            for s in sales if s.get("seller_type") == "llc"
+        ),
+        "by_product": by_product,
+    }
 
+
+def _build_report_body(
+    m: Dict[str, Any],
+    sales: Sequence[Any],
+    returns: Sequence[Any],
+    expenses: Sequence[Any],
+    no_sales_label: str,
+) -> List[str]:
+    """Build the common body lines (metrics + products + returns + expenses)."""
+    individual_revenue = m["total_revenue"] - m["llc_revenue"]
     lines: List[str] = [
-        "📊 <b>კვირის ანგარიში</b>",
-        f"📅 {week_start.strftime('%d.%m.%Y')} — {now.strftime('%d.%m.%Y')}",
-        "",
         "━━━━━━━━━━━━━━━━━━━━━",
-        f"💰 მთლიანი შემოსავალი: <b>{total_revenue:.2f}₾</b>",
-        f"   💵 ხელზე: {cash_revenue:.2f}₾",
-        f"   🏦 დარიცხა: {transfer_revenue:.2f}₾",
-        f"   📋 ნისია: {credit_revenue:.2f}₾",
-        f"   🏢 შპს: {llc_revenue:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
-        f"↩️ დაბრუნებები: {total_returns:.2f}₾",
-        f"🧾 ხარჯები: {total_expenses:.2f}₾",
-        f"💵 სუფთა შემოსავალი: <b>{net_income:.2f}₾</b>",
+        f"💰 მთლიანი შემოსავალი: <b>{m['total_revenue']:.2f}₾</b>",
+        f"   💵 ხელზე: {m['cash_revenue']:.2f}₾",
+        f"   🏦 დარიცხა: {m['transfer_revenue']:.2f}₾",
+        f"   📋 ნისია: {m['credit_revenue']:.2f}₾",
+        f"   🏢 შპს: {m['llc_revenue']:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
+        f"↩️ დაბრუნებები: {m['total_returns']:.2f}₾",
+        f"🧾 ხარჯები: {m['total_expenses']:.2f}₾",
+        f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
 
-    if by_product:
+    if m["by_product"]:
         lines += ["", "📦 <b>გაყიდული პროდუქტები:</b>"]
-        for name, data in sorted(by_product.items(), key=lambda x: -x[1]["revenue"]):
+        for name, data in sorted(m["by_product"].items(), key=lambda x: -x[1]["revenue"]):
             lines.append(
                 f"🔹 <b>{_e(name)}</b>\n"
                 f"   გაყიდული: {data['qty']}ც  |  შემოსავალი: {data['revenue']:.2f}₾"
             )
     else:
-        lines += ["", "📦 ამ კვირაში გაყიდვა არ მომხდარა."]
+        lines += ["", no_sales_label]
 
     if returns:
         lines += ["", "↩️ <b>დაბრუნებები:</b>"]
@@ -230,7 +237,29 @@ def format_weekly_report(
             desc = e.get("description") or "—"
             lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
 
-    lines.append("\n━━━━━━━━━━━━━━━━━━━━━")
+    return lines
+
+
+# ─── Weekly report ────────────────────────────────────────────────────────────
+
+def format_weekly_report(
+    sales: Sequence[Any],
+    returns: Sequence[Any],
+    expenses: Sequence[Any],
+    products: Sequence[Any],
+) -> str:
+    now = _now()
+    week_start = now - timedelta(days=7)
+    m = _calculate_report_metrics(sales, returns, expenses)
+    low_stock = [p for p in products if p["current_stock"] <= p["min_stock"]]
+
+    lines: List[str] = [
+        "📊 <b>კვირის ანგარიში</b>",
+        f"📅 {week_start.strftime('%d.%m.%Y')} — {now.strftime('%d.%m.%Y')}",
+        "",
+    ]
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.")
+    lines.append("")
 
     if low_stock:
         lines += ["", "⚠️ <b>დაბალი მარაგი:</b>"]
@@ -246,7 +275,7 @@ def format_weekly_report(
 
 # ─── Stock report ─────────────────────────────────────────────────────────────
 
-def format_stock_report(products: List[Dict]) -> str:
+def format_stock_report(products: Sequence[Any]) -> str:
     if not products:
         return "📦 საწყობი ცარიელია."
 
@@ -277,7 +306,7 @@ def format_stock_report(products: List[Dict]) -> str:
 
 # ─── Orders report ────────────────────────────────────────────────────────────
 
-def format_orders_report(orders: List[Dict]) -> str:
+def format_orders_report(orders: Sequence[Any]) -> str:
     if not orders:
         return "📋 მომლოდინე შეკვეთა არ არის."
 
@@ -305,7 +334,7 @@ def format_orders_report(orders: List[Dict]) -> str:
 
 # ─── Diagnostics report ───────────────────────────────────────────────────────
 
-def format_diagnostics_report(failures: List[Dict], total_7d: int, total_30d: int) -> str:
+def format_diagnostics_report(failures: Sequence[Any], total_7d: int, total_30d: int) -> str:
     now = _now()
     lines: List[str] = [
         "🔍 <b>დიაგნოსტიკა — ვერ ამოცნობილი შეტყობინებები</b>",
@@ -340,86 +369,24 @@ def format_diagnostics_report(failures: List[Dict], total_7d: int, total_30d: in
 # ─── Period report ────────────────────────────────────────────────────────────
 
 def format_period_report(
-    sales: List[Dict],
-    returns: List[Dict],
-    expenses: List[Dict],
-    products: List[Dict],
+    sales: Sequence[Any],
+    returns: Sequence[Any],
+    expenses: Sequence[Any],
+    products: Sequence[Any],
     date_from: datetime,
     date_to: datetime,
 ) -> str:
     if not sales and not returns and not expenses:
         return "📭 არჩეულ პერიოდში გაყიდვები არ დაფიქსირებულა"
 
-    total_revenue = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
-    total_returns = sum(float(r["refund_amount"]) for r in returns)
-    total_expenses = sum(float(e["amount"]) for e in expenses)
-    net_income = total_revenue - total_returns - total_expenses
-
-    cash_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_CASH
-    )
-    transfer_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
-    )
-    credit_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("payment_method") == PAYMENT_CREDIT
-    )
-    llc_revenue = sum(
-        float(s["unit_price"]) * s["quantity"]
-        for s in sales if s.get("seller_type") == "llc"
-    )
-    individual_revenue = total_revenue - llc_revenue
-
-    by_product: Dict[str, Dict] = {}
-    for s in sales:
-        key = s.get("product_name") or s.get("notes") or "უცნობი"
-        entry = by_product.setdefault(key, {"qty": 0, "revenue": 0.0})
-        entry["qty"] += s["quantity"]
-        entry["revenue"] += float(s["unit_price"]) * s["quantity"]
+    m = _calculate_report_metrics(sales, returns, expenses)
+    now = _now()
 
     lines: List[str] = [
         "📊 <b>პერიოდის ანგარიში</b>",
         f"📅 {date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}",
         "",
-        "━━━━━━━━━━━━━━━━━━━━━",
-        f"💰 სულ შემოსული: <b>{total_revenue:.2f}₾</b>",
-        f"   💵 ხელზე: {cash_revenue:.2f}₾",
-        f"   🏦 დარიცხა: {transfer_revenue:.2f}₾",
-        f"   📋 ნისია: {credit_revenue:.2f}₾",
-        f"   🏢 შპს: {llc_revenue:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
-        f"↩️ სულ დაბრუნებული: {total_returns:.2f}₾",
-        f"🧾 სულ ხარჯები: {total_expenses:.2f}₾",
-        f"💵 წმინდა შემოსავალი: <b>{net_income:.2f}₾</b>",
-        "━━━━━━━━━━━━━━━━━━━━━",
     ]
-
-    if by_product:
-        lines += ["", "📦 <b>გაყიდული ნაწილები:</b>"]
-        for name, data in sorted(by_product.items(), key=lambda x: -x[1]["revenue"]):
-            lines.append(
-                f"🔹 <b>{_e(name)}</b>\n"
-                f"   რაოდენობა: {data['qty']}ც  |  შემოსავალი: {data['revenue']:.2f}₾"
-            )
-    else:
-        lines += ["", "📦 ამ პერიოდში გაყიდვა არ მომხდარა."]
-
-    if returns:
-        lines += ["", "↩️ <b>დაბრუნებები:</b>"]
-        for r in returns:
-            name = r.get("product_name") or "უცნობი"
-            lines.append(
-                f"• {_e(name)}: {r['quantity']}ც — {float(r['refund_amount']):.2f}₾"
-            )
-
-    if expenses:
-        lines += ["", "🧾 <b>ხარჯები:</b>"]
-        for e in expenses:
-            desc = e.get("description") or "—"
-            lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
-
-    now = _now()
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.")
     lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
     return "\n".join(lines)
