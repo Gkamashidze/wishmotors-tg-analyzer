@@ -311,6 +311,27 @@ class Database:
 
     # ─── Period queries ───────────────────────────────────────────────────────
 
+    async def import_sale(
+        self,
+        product_id: Optional[int],
+        quantity: int,
+        unit_price: float,
+        payment_method: str,
+        sold_at: datetime,
+        notes: Optional[str] = None,
+    ) -> int:
+        """Insert a historical sale with an explicit date. Does NOT touch current stock.
+        Returns the new sale id."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO sales
+                       (product_id, quantity, unit_price, payment_method, sold_at, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6)
+                   RETURNING id""",
+                product_id, quantity, unit_price, payment_method, sold_at, notes,
+            )
+            return row["id"]
+
     async def get_sales_by_period(
         self, date_from: datetime, date_to: datetime
     ) -> List[Dict]:

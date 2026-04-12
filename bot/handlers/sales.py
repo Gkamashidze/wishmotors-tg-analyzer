@@ -1,8 +1,10 @@
 import html
 import logging
+from datetime import date, datetime
 from io import BytesIO
 
 import openpyxl
+import pytz
 from aiogram import F, Router, Bot
 from aiogram.enums import ParseMode
 from aiogram.types import Message
@@ -137,6 +139,117 @@ async def _record_return(message: Message, db: Database, product: dict, parsed: 
             refund=refund,
             new_stock=new_stock,
         ),
+        parse_mode=_PARSE,
+    )
+
+
+# ─── Sales topic: Excel historical import ────────────────────────────────────
+
+def _parse_import_date(val: object, tz: pytz.BaseTzInfo) -> datetime:
+    """Accept Excel date objects or strings (DD.MM.YYYY / YYYY-MM-DD / DD/MM/YYYY)."""
+    if isinstance(val, datetime):
+        return tz.localize(val.replace(tzinfo=None))
+    if isinstance(val, date):
+        return tz.localize(datetime(val.year, val.month, val.day))
+    s = str(val).strip()
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return tz.localize(datetime.strptime(s, fmt))
+        except ValueError:
+            continue
+    raise ValueError(f"თარიღი ვერ წაიკითხა: {s}")
+
+
+def _parse_import_payment(val: object) -> str:
+    v = str(val).lower().strip()
+    if any(k in v for k in ("გადარიცხვა", "transfer", "ბარათი", "card")):
+        return "transfer"
+    return "cash"
+
+
+@sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.document)
+async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) -> None:
+    doc = message.document
+    if not doc or not doc.file_name:
+        return
+    if not doc.file_name.lower().endswith((".xlsx", ".xls")):
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="⏳ გაყიდვების იმპორტი მუშავდება...",
+        parse_mode=_PARSE,
+    )
+
+    file_info = await bot.get_file(doc.file_id)
+    buf = BytesIO()
+    await bot.download_file(file_info.file_path, destination=buf)
+    buf.seek(0)
+
+    try:
+        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+        ws = wb.active
+    except Exception as exc:
+        logger.error("Sales import Excel parse error: %s", exc)
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "❌ ფაილი ვერ წაიკითხა.\n"
+                "სვეტები: <b>თარიღი | პროდუქტი/OEM | რაოდენობა | ფასი | გადახდა</b>"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    tz = pytz.timezone(config.TIMEZONE)
+    imported = 0
+    errors: list[str] = []
+
+    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not row or row[0] is None:
+            continue
+        try:
+            sold_at = _parse_import_date(row[0], tz)
+            raw_product = str(row[1]).strip() if row[1] is not None else ""
+            quantity = int(row[2])
+            unit_price = float(row[3])
+            payment = _parse_import_payment(row[4]) if len(row) > 4 and row[4] else "cash"
+
+            if not raw_product or quantity <= 0 or unit_price < 0:
+                raise ValueError("ცარიელი ან არასწორი მნიშვნელობა")
+
+            product = await db.get_product_by_oem(raw_product)
+            if not product:
+                product = await db.get_product_by_name(raw_product)
+
+            await db.import_sale(
+                product_id=product["id"] if product else None,
+                quantity=quantity,
+                unit_price=unit_price,
+                payment_method=payment,
+                sold_at=sold_at,
+                notes=raw_product if not product else None,
+            )
+            imported += 1
+        except Exception as exc:
+            errors.append(f"სტრიქონი {i}: {exc}")
+            logger.warning("Sales import row %d error: %s", i, exc)
+
+    summary = f"✅ <b>იმპორტი დასრულდა!</b>\n📊 ჩაიწერა: <b>{imported}</b> გაყიდვა"
+    if errors:
+        preview = "\n".join(errors[:5])
+        if len(errors) > 5:
+            preview += f"\n... და კიდევ {len(errors) - 5}"
+        summary += f"\n⚠️ გამოტოვებული ({len(errors)}):\n<code>{html.escape(preview)}</code>"
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=summary,
         parse_mode=_PARSE,
     )
 
