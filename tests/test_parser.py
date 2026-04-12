@@ -8,6 +8,7 @@ from bot.parsers.message_parser import (
     PAYMENT_CREDIT,
     PAYMENT_TRANSFER,
     parse_batch_sales,
+    parse_dual_sale_message,
     parse_expense_message,
     parse_order_message,
     parse_sale_message,
@@ -467,6 +468,8 @@ class TestJumshiTotalPrice:
 # ─── parse_batch_sales ────────────────────────────────────────────────────────
 
 class TestParseBatchSales:
+    # Each item in the returned list is: None (failed) | [ParsedSale, ...] (1 or 2 sales)
+
     def test_header_extracted_as_customer(self):
         """First line without price → customer name; rest are sales."""
         text = "იმედა:\nპადვესნოი 1ც 150ლ\n136001 2ც ჯამში 360ლ"
@@ -482,7 +485,7 @@ class TestParseBatchSales:
         assert name == "გიო"
         for item in items:
             assert item is not None
-            assert item.customer_name == "გიო"
+            assert item[0].customer_name == "გიო"
 
     def test_no_header_when_first_line_is_sale(self):
         """First line looks like a sale → no customer extracted."""
@@ -504,9 +507,9 @@ class TestParseBatchSales:
         name, items = parse_batch_sales(text)
         assert name == "იმედა"
         assert items[0] is not None
-        assert items[0].price == 180.0   # 360 / 2
+        assert items[0][0].price == 180.0   # 360 / 2
         assert items[1] is not None
-        assert items[1].price == 35.0
+        assert items[1][0].price == 35.0
 
     def test_empty_message_returns_empty(self):
         """Empty text → empty results."""
@@ -519,3 +522,73 @@ class TestParseBatchSales:
         name, items = parse_batch_sales(text)
         assert name == "ლაშა"
         assert len(items) == 1
+
+    def test_dual_line_in_batch_produces_two_sales(self):
+        """Dual format line in batch → two entries in results for that one line."""
+        text = "იმედა:\n008b03 და 108000 1-1ც ჯამში 210\n209000 1ც 35ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "იმედა"
+        assert len(items) == 2          # 2 input lines → 2 items
+        assert items[0] is not None
+        assert len(items[0]) == 2       # dual → two ParsedSale objects
+        assert items[1] is not None
+        assert len(items[1]) == 1       # single sale
+
+    def test_dual_customer_propagated(self):
+        """Customer name from header is set on both halves of a dual sale."""
+        text = "გიო:\n008b03 და 108000 1-1ც ჯამში 210"
+        _, items = parse_batch_sales(text)
+        assert items[0] is not None
+        for sale in items[0]:
+            assert sale.customer_name == "გიო"
+
+
+# ─── parse_dual_sale_message ──────────────────────────────────────────────────
+
+class TestParseDualSale:
+    def test_basic_1_1_jumshi(self):
+        """'008b03 და 108000 1-1ც ჯამში 210' → two sales, 105₾ each."""
+        result = parse_dual_sale_message("008b03 და 108000 1-1ც ჯამში 210")
+        assert result is not None
+        assert len(result) == 2
+        assert result[0].raw_product == "008b03"
+        assert result[1].raw_product == "108000"
+        assert result[0].quantity == 1
+        assert result[1].quantity == 1
+        assert result[0].price == 105.0
+        assert result[1].price == 105.0
+
+    def test_2_2_jumshi_lari(self):
+        """'09003 და 09013 2-2ც ჯამში 280ლ' → unit price 70 each."""
+        result = parse_dual_sale_message("09003 და 09013 2-2ც ჯამში 280ლ")
+        assert result is not None
+        assert result[0].quantity == 2
+        assert result[1].quantity == 2
+        assert result[0].price == 70.0
+        assert result[1].price == 70.0
+
+    def test_credit_payment_default(self):
+        """No payment keyword → credit (ნისია)."""
+        result = parse_dual_sale_message("a01 და b02 1-1ც ჯამში 200ლ")
+        assert result is not None
+        assert result[0].payment_method == PAYMENT_CREDIT
+        assert result[1].payment_method == PAYMENT_CREDIT
+
+    def test_no_currency_symbol(self):
+        """Price without ₾/ლ still parsed (common in practice)."""
+        result = parse_dual_sale_message("05010 და 008ba0 1-1ც ჯამში 210")
+        assert result is not None
+        assert result[0].price == 105.0
+
+    def test_non_matching_returns_none(self):
+        """Single-product line → None."""
+        assert parse_dual_sale_message("სარკე 1ც 50ლ") is None
+
+    def test_asymmetric_qty(self):
+        """'1-2ც' — different quantities per product."""
+        result = parse_dual_sale_message("a01 და b02 1-2ც ჯამში 300ლ")
+        assert result is not None
+        assert result[0].quantity == 1
+        assert result[1].quantity == 2
+        assert result[0].price == 150.0   # 300/2 / 1
+        assert result[1].price == 75.0    # 300/2 / 2

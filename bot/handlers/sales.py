@@ -90,30 +90,32 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
     failed_lines = []
     grand_total = 0.0
 
-    for i, parsed in enumerate(parsed_list):
-        if parsed is None:
-            # Determine the original line for the error report
-            raw_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-            offset = 1 if customer_name else 0
-            failed_lines.append(raw_lines[offset + i] if (offset + i) < len(raw_lines) else "?")
+    raw_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    offset = 1 if customer_name else 0
+
+    for i, item_group in enumerate(parsed_list):
+        if item_group is None:
+            line_idx = offset + i
+            failed_lines.append(raw_lines[line_idx] if line_idx < len(raw_lines) else "?")
             continue
 
-        raw = parsed.raw_product
-        product = await db.get_product_by_oem(raw) if raw else None
-        if not product and raw:
-            product = await db.get_product_by_name(raw)
+        for parsed in item_group:
+            raw = parsed.raw_product
+            product = await db.get_product_by_oem(raw) if raw else None
+            if not product and raw:
+                product = await db.get_product_by_name(raw)
 
-        sale_id, _ = await db.create_sale(
-            product_id=product["id"] if product else None,
-            quantity=parsed.quantity,
-            unit_price=parsed.price,
-            payment_method=parsed.payment_method,
-            seller_type=parsed.seller_type,
-            customer_name=parsed.customer_name or None,
-            notes=raw if not product else None,
-        )
-        grand_total += parsed.quantity * parsed.price
-        results.append((parsed, product, sale_id))
+            sale_id, _ = await db.create_sale(
+                product_id=product["id"] if product else None,
+                quantity=parsed.quantity,
+                unit_price=parsed.price,
+                payment_method=parsed.payment_method,
+                seller_type=parsed.seller_type,
+                customer_name=parsed.customer_name or None,
+                notes=raw if not product else None,
+            )
+            grand_total += parsed.quantity * parsed.price
+            results.append((parsed, product, sale_id))
 
     if not results:
         # All lines failed — log and bail

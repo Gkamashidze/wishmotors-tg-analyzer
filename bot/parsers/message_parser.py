@@ -211,6 +211,18 @@ _SALE_F = re.compile(
     re.UNICODE,
 )
 
+# Pattern DUAL: "product1 და product2 N1-N2ც [ჯამში] PRICE[ლ/₾]"
+# Two products sharing a combined price. Price is always the total; split equally.
+# product2 must be a single word (OEM code) to avoid ambiguity.
+_SALE_DUAL = re.compile(
+    r"^(?P<product1>.+?)\s+და\s+(?P<product2>\S+)\s+"
+    r"(?P<qty1>\d+)-(?P<qty2>\d+)\s*ც\s*"
+    r"(?:ჯამში\s+)?"
+    r"(?P<price>\d+(?:[.,]\d+)?)\s*[₾ლ]?"
+    r"(?:\s+(?P<rest>.+))?\s*$",
+    re.UNICODE,
+)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -454,19 +466,58 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
     return None
 
 
-def parse_batch_sales(text: str) -> Tuple[Optional[str], List[Optional[ParsedSale]]]:
+def parse_dual_sale_message(text: str) -> Optional[List[ParsedSale]]:
+    """
+    Parse 'product1 და product2 N1-N2ც [ჯამში] PRICEლ' into two ParsedSale objects.
+
+    The price is always treated as the combined total and split equally between
+    the two products.  Each unit price = (total / 2) / qty_per_product.
+
+    Examples:
+      "008b03 და 108000 1-1ც ჯამში 210"  → two sales, unit price 105 each
+      "09003 და 09013 2-2ც ჯამში 280ლ"   → two sales, unit price 70 each
+    """
+    text = _normalize_text(text.strip())
+    m = _SALE_DUAL.match(text)
+    if not m:
+        return None
+
+    product1 = m.group("product1").strip()
+    product2 = m.group("product2").strip()
+    qty1 = int(m.group("qty1"))
+    qty2 = int(m.group("qty2"))
+    total = _parse_price(m.group("price"))
+    payment, seller, customer = _parse_rest(m.group("rest"))
+
+    # Split total equally; derive unit price per product
+    half = total / 2
+    unit1 = half / qty1 if qty1 > 0 else half
+    unit2 = half / qty2 if qty2 > 0 else half
+
+    return [
+        ParsedSale(raw_product=product1, quantity=qty1, price=unit1,
+                   payment_method=payment, seller_type=seller, customer_name=customer),
+        ParsedSale(raw_product=product2, quantity=qty2, price=unit2,
+                   payment_method=payment, seller_type=seller, customer_name=customer),
+    ]
+
+
+def parse_batch_sales(
+    text: str,
+) -> Tuple[Optional[str], List[Optional[List[ParsedSale]]]]:
     """
     Parse a multi-line sales message where all items share one customer.
 
     Format:
-      იმედა:          ← optional customer name header (first line, no price)
-      პადვესნოი 1ც 150ლ
-      136001 2ც ჯამში 360ლ
-      ...
+      იმედა:                         ← optional customer name header
+      პადვესნოი 1ც 150ლ              ← single sale
+      136001 2ც ჯამში 360ლ           ← single sale with total price
+      008b03 და 108000 1-1ც ჯამში 210 ← dual sale → two ParsedSale entries
 
-    Returns (customer_name, [ParsedSale | None, ...]).
-    customer_name is None when the first line is already a valid sale.
-    None entries in the list mark lines that could not be parsed.
+    Returns (customer_name, items) where each item is:
+      None              — line could not be parsed
+      [ParsedSale]      — single sale
+      [sale1, sale2]    — dual sale (X და Y format)
     """
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:
@@ -475,18 +526,32 @@ def parse_batch_sales(text: str) -> Tuple[Optional[str], List[Optional[ParsedSal
     customer_name: Optional[str] = None
     sale_lines = lines
 
-    # If first line doesn't parse as a sale, treat it as customer name header
+    # If first line doesn't parse as any kind of sale, treat it as customer header
     first_clean = lines[0].rstrip(":")
-    if not parse_sale_message(first_clean):
+    if not parse_sale_message(first_clean) and not parse_dual_sale_message(first_clean):
         customer_name = first_clean
         sale_lines = lines[1:]
 
-    results: List[Optional[ParsedSale]] = []
+    results: List[Optional[List[ParsedSale]]] = []
     for line in sale_lines:
+        # Try dual format first ("X და Y N-Nც ...")
+        dual = parse_dual_sale_message(line)
+        if dual is not None:
+            if customer_name:
+                for s in dual:
+                    if not s.customer_name:
+                        s.customer_name = customer_name
+            results.append(dual)
+            continue
+
+        # Try single sale
         parsed = parse_sale_message(line)
-        if parsed is not None and not parsed.customer_name and customer_name:
-            parsed.customer_name = customer_name
-        results.append(parsed)
+        if parsed is not None:
+            if not parsed.customer_name and customer_name:
+                parsed.customer_name = customer_name
+            results.append([parsed])
+        else:
+            results.append(None)
 
     return customer_name, results
 
