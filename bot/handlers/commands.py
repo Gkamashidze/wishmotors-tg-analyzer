@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 
 from aiogram import Router
@@ -348,7 +349,7 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
         chat_id=message.from_user.id,
         text=(
             f"🗑 <b>გაყიდვა #{sale_id} წაიშალა</b>\n"
-            f"📦 {name}\n"
+            f"📦 {html.escape(name)}\n"
             f"💰 {deleted['quantity']}ც × {float(deleted['unit_price']):.2f}₾ = {total:.2f}₾"
             f"{product_note}"
         ),
@@ -404,10 +405,10 @@ async def cmd_editproduct(message: Message, db: Database) -> None:
     try:
         if field == "name":
             kwargs["name"] = value_str
-            field_label = f"სახელი → <b>{value_str}</b>"
+            field_label = f"სახელი → <b>{html.escape(value_str)}</b>"
         elif field == "oem":
             kwargs["oem_code"] = value_str
-            field_label = f"OEM → <b>{value_str}</b>"
+            field_label = f"OEM → <b>{html.escape(value_str)}</b>"
         elif field == "price":
             kwargs["price"] = float(value_str.replace(",", "."))
             field_label = f"ფასი → <b>{kwargs['price']:.2f}₾</b>"
@@ -439,7 +440,7 @@ async def cmd_editproduct(message: Message, db: Database) -> None:
             chat_id=message.from_user.id,
             text=(
                 f"✅ <b>პროდუქტი განახლდა</b>\n"
-                f"📦 {updated['name']}\n"
+                f"📦 {html.escape(updated['name'])}\n"
                 f"🆔 #{product_id}\n"
                 f"✏️ {field_label}"
             ),
@@ -553,8 +554,8 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         chat_id=message.from_user.id,
         text=(
             f"✅ <b>პროდუქტი დამატებულია!</b>\n"
-            f"📦 სახელი: {name}\n"
-            f"🔑 OEM: {oem or '—'}\n"
+            f"📦 სახელი: {html.escape(name)}\n"
+            f"🔑 OEM: {html.escape(oem) if oem else '—'}\n"
             f"📊 საწყობი: {stock}ც\n"
             f"💰 ფასი: {price:.2f}₾\n"
             f"🆔 ID: {product_id}"

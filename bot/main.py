@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import os
 import sys
@@ -52,6 +53,16 @@ class DatabaseMiddleware(BaseMiddleware):
 
 # ─── Scheduled weekly report ──────────────────────────────────────────────────
 
+async def _purge_old_parse_failures(db: Database) -> None:
+    """Nightly cleanup: remove parse_failures older than 90 days."""
+    try:
+        count = await db.purge_old_parse_failures(days=90)
+        if count:
+            logger.info("Purged %d old parse failure records (>90 days).", count)
+    except Exception as exc:
+        logger.warning("Failed to purge old parse failures: %s", exc)
+
+
 async def _send_weekly_report(bot: Bot, db: Database) -> None:
     logger.info("Sending scheduled weekly report...")
     try:
@@ -80,7 +91,7 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
             try:
                 await bot.send_message(
                     chat_id=admin_id,
-                    text=f"⚠️ <b>კვირის ანგარიში ვერ გაიგზავნა</b>\n<code>{exc}</code>",
+                    text=f"⚠️ <b>კვირის ანგარიში ვერ გაიგზავნა</b>\n<code>{html.escape(str(exc))}</code>",
                     parse_mode="HTML",
                 )
             except Exception:
@@ -142,6 +153,13 @@ async def main() -> None:
         ),
         kwargs={"bot": bot, "db": db},
         id="weekly_report",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _purge_old_parse_failures,
+        trigger=CronTrigger(hour=3, minute=0, timezone=tz),
+        kwargs={"db": db},
+        id="purge_parse_failures",
         replace_existing=True,
     )
     scheduler.start()

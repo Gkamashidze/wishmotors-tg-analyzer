@@ -520,3 +520,15 @@ class Database:
                 since,
             )
             return row["cnt"] if row else 0
+
+    async def purge_old_parse_failures(self, days: int = 90) -> int:
+        """Delete parse_failures records older than `days` days.
+        Returns the number of rows deleted."""
+        cutoff = self._now() - timedelta(days=days)
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM parse_failures WHERE created_at < $1",
+                cutoff,
+            )
+            # asyncpg returns "DELETE N" as a string
+            return int(result.split()[-1])

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 sales_router = Router(name="sales")
 
 _PARSE = ParseMode.HTML
+_MAX_IMPORT_ROWS = 2_000  # Safety limit per Excel import
 
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
@@ -247,10 +248,15 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
     tz = pytz.timezone(config.TIMEZONE)
     imported = 0
     errors: list[str] = []
+    data_rows = 0
 
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not row or row[0] is None:
             continue
+        data_rows += 1
+        if data_rows > _MAX_IMPORT_ROWS:
+            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი. დანარჩენი გამოტოვდა.")
+            break
         try:
             sold_at = _parse_import_date(row[0], tz)
             raw_product = str(row[1]).strip() if row[1] is not None else ""
@@ -342,10 +348,16 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
 
     updated = 0
     errors = 0
+    data_rows = 0
 
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or row[0] is None:
             continue
+        data_rows += 1
+        if data_rows > _MAX_IMPORT_ROWS:
+            errors += 1
+            logger.warning("Excel upload exceeded %d row limit — remaining rows skipped.", _MAX_IMPORT_ROWS)
+            break
         try:
             name = str(row[0]).strip()
             oem = str(row[1]).strip() if row[1] is not None else None
