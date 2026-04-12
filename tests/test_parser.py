@@ -425,6 +425,11 @@ class TestRealWorldFormats:
         assert parse_sale_message("+995 592 15 90 52") is None
         assert parse_sale_message("+995-599-123456") is None
 
+    def test_local_phone_number_ignored(self):
+        """Georgian local mobile (9 digits, starts with 5) → None."""
+        assert parse_sale_message("592159052") is None
+        assert parse_sale_message("555123456") is None
+
     def test_llc_before_qty_in_pattern_a(self):
         """'სარკე შპსდან 2ც 80₾' — LLC keyword before quantity."""
         result = parse_sale_message("სარკე შპსდან 2ც 80₾")
@@ -541,6 +546,62 @@ class TestParseBatchSales:
         assert items[0] is not None
         for sale in items[0]:
             assert sale.customer_name == "გიო"
+
+    def test_phone_line_silently_skipped(self):
+        """A standalone phone number line in a batch is ignored, not a failure."""
+        text = "გიო:\nსარკე 1ც 50ლ\n592159052"
+        _, items = parse_batch_sales(text)
+        assert len(items) == 1          # only the sale; phone line dropped
+        assert items[0] is not None
+
+    def test_phone_and_name_as_header(self):
+        """'592159052 ლაშა' as first line → treated as customer name header."""
+        text = "592159052 ლაშა\nსარკე 1ც 50ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "592159052 ლაშა"
+        assert len(items) == 1
+
+
+# ─── Payment-keyword-first format (Pattern G) ────────────────────────────────
+
+class TestPaymentKeywordFirst:
+    def test_momca_lari_symbol(self):
+        """'მომცა 300₾' → cash payment, price 300, empty product."""
+        result = parse_sale_message("მომცა 300₾")
+        assert result is not None
+        assert result.payment_method == PAYMENT_CASH
+        assert result.price == 300.0
+        assert result.raw_product == ""
+
+    def test_momca_lari_letter(self):
+        """'მომცა 300ლ' → cash payment."""
+        result = parse_sale_message("მომცა 300ლ")
+        assert result is not None
+        assert result.payment_method == PAYMENT_CASH
+        assert result.price == 300.0
+
+    def test_momca_no_currency(self):
+        """'მომცა 300' (no symbol) → cash payment."""
+        result = parse_sale_message("მომცა 300")
+        assert result is not None
+        assert result.payment_method == PAYMENT_CASH
+        assert result.price == 300.0
+
+    def test_daritxa_transfer(self):
+        """'დარიცხა 500₾' → transfer payment."""
+        result = parse_sale_message("დარიცხა 500₾")
+        assert result is not None
+        assert result.payment_method == PAYMENT_TRANSFER
+        assert result.price == 500.0
+
+    def test_momca_in_batch(self):
+        """'მომცა 300₾' inside a batch is parsed as cash, not a failed line."""
+        text = "გიო:\nსარკე 1ც 50ლ\nმომცა 300₾"
+        _, items = parse_batch_sales(text)
+        assert len(items) == 2
+        assert items[1] is not None
+        assert items[1][0].payment_method == PAYMENT_CASH
+        assert items[1][0].price == 300.0
 
 
 # ─── parse_dual_sale_message ──────────────────────────────────────────────────

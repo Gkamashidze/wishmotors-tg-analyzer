@@ -195,8 +195,15 @@ _ORDER_PRODUCT_ONLY = re.compile(
     r"^[^\d₾ლ$\-].{3,}$", re.UNICODE
 )
 
-# Phone number (international format starting with +): silently ignored in sales topic.
-_PHONE_RE = re.compile(r"^\+[\d\s\-().]{8,}$", re.UNICODE)
+# Phone number — silently ignored in sales topic (contact info, not a sale).
+# Covers: +995 592 15 90 52  |  592159052  |  555 12 34 56  |  032 2 XX XX XX
+_PHONE_RE = re.compile(
+    r"^\+[\d\s\-().]{8,}$"     # international: +995...
+    r"|^5\d{8}$"               # Georgian mobile local: 5XXXXXXXX (9 digits)
+    r"|^5\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}$"  # 5XX XX XX XX
+    r"|^0\d{8,9}$",            # landline with leading 0
+    re.UNICODE,
+)
 
 # Split payment: "ხელზე 300 დარჩა 100ლ" → paid + remaining = total, cash.
 _SALE_SPLIT_RE = re.compile(
@@ -208,6 +215,13 @@ _SALE_SPLIT_RE = re.compile(
 # Covers "ხუნდები 50" style — product name starts with a non-digit/non-symbol char.
 _SALE_F = re.compile(
     r"^(?P<product>[^\d₾ლ$\+\-].+?)\s+(?P<price>\d+(?:[.,]\d+)?)\s*$",
+    re.UNICODE,
+)
+
+# Pattern G: payment keyword first, then price — "მომცა 300₾" / "ხელზე 500"
+# Covers partial or full cash/transfer notes where no product name is given.
+_SALE_G = re.compile(
+    r"^(?P<kw>\S+)\s+(?P<price>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s*$",
     re.UNICODE,
 )
 
@@ -385,6 +399,23 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             customer_name=customer,
         )
 
+    # Pattern G: payment keyword first + price — "მომცა 300₾" / "ხელზე 500"
+    # Must be checked before E/F so the keyword is not treated as a product name.
+    m = _SALE_G.match(text)
+    if m:
+        kw = m.group("kw")
+        if _CASH_RE.search(kw):
+            return ParsedSale(
+                raw_product="", quantity=1, price=_parse_price(m.group("price")),
+                payment_method=PAYMENT_CASH, is_return=is_return,
+            )
+        if _TRANSFER_RE.search(kw):
+            return ParsedSale(
+                raw_product="", quantity=1, price=_parse_price(m.group("price")),
+                payment_method=PAYMENT_TRANSFER, is_return=is_return,
+            )
+        # kw is not a payment keyword → fall through to Pattern E
+
     # Pattern E: product + price, payment optional (no keyword → credit/ნისია).
     # Since this runs only for messages in the sales topic, credit default is safe.
     m = _SALE_E.match(text)
@@ -534,6 +565,10 @@ def parse_batch_sales(
 
     results: List[Optional[List[ParsedSale]]] = []
     for line in sale_lines:
+        # Silently skip standalone phone numbers — contact info, not a sale
+        if _PHONE_RE.match(_normalize_text(line)):
+            continue
+
         # Try dual format first ("X და Y N-Nც ...")
         dual = parse_dual_sale_message(line)
         if dual is not None:

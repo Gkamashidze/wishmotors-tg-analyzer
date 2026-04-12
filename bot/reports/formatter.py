@@ -119,11 +119,17 @@ def format_batch_confirmation(
 
     for item in results:
         parsed, product, sale_id = item
-        name = product["name"] if product else _e(parsed.raw_product or "—")
         item_total = parsed.quantity * parsed.price
-        lines.append(
-            f"🔸 #{sale_id} {name} — {parsed.quantity}ც × {parsed.price:.2f}₾ = <b>{item_total:.2f}₾</b>"
-        )
+        if not parsed.raw_product and not product:
+            # Payment-only entry (e.g. "მომცა 300₾") — no product name
+            pay_icon = "💵 ხელზე" if parsed.payment_method == PAYMENT_CASH else "🏦 დარიცხა"
+            lines.append(f"💳 #{sale_id} {pay_icon} — <b>{item_total:.2f}₾</b>")
+        else:
+            name = product["name"] if product else _e(parsed.raw_product or "—")
+            item_total = parsed.quantity * parsed.price
+            lines.append(
+                f"🔸 #{sale_id} {name} — {parsed.quantity}ც × {parsed.price:.2f}₾ = <b>{item_total:.2f}₾</b>"
+            )
 
     lines.append("")
     lines.append(f"💰 <b>ჯამი: {grand_total:.2f}₾</b>")
