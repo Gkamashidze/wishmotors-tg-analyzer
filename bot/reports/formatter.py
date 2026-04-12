@@ -14,6 +14,17 @@ PAYMENT_CASH = "cash"
 PAYMENT_TRANSFER = "transfer"
 PAYMENT_CREDIT = "credit"
 
+_TG_LIMIT = 4096
+_TRUNCATION_TAIL = "\n\n<i>⚠️ ... (შეკვეცილია)</i>"
+
+
+def _truncate(text: str) -> str:
+    """Ensure text fits within Telegram's 4096-character message limit."""
+    limit = _TG_LIMIT - len(_TRUNCATION_TAIL)
+    if len(text) <= _TG_LIMIT:
+        return text
+    return text[:limit] + _TRUNCATION_TAIL
+
 
 def _tz() -> pytz.BaseTzInfo:
     return pytz.timezone(config.TIMEZONE)
@@ -91,7 +102,7 @@ def format_sale_confirmation(
         lines.append("<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>")
     if low_stock and new_stock is not None:
         lines.append(f"\n⚠️ <b>გაფრთხილება: მარაგი დაბალია! ({new_stock}ც)</b>")
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 def format_return_confirmation(
@@ -144,7 +155,7 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
         )
 
     lines.append("")
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 # ─── Shared report helpers ────────────────────────────────────────────────────
@@ -270,7 +281,7 @@ def format_weekly_report(
             )
 
     lines += ["", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 # ─── Stock report ─────────────────────────────────────────────────────────────
@@ -301,7 +312,7 @@ def format_stock_report(products: Sequence[Any]) -> str:
     if low:
         lines += ["", f"⚠️ <b>{len(low)} პროდუქტს სჭირდება შეკვეთა!</b>"]
 
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 # ─── Orders report ────────────────────────────────────────────────────────────
@@ -329,7 +340,7 @@ def format_orders_report(orders: Sequence[Any]) -> str:
         "",
         "<i>დახურვა: <code>/completeorder ID</code></i>",
     ]
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 # ─── Diagnostics report ───────────────────────────────────────────────────────
@@ -363,7 +374,7 @@ def format_diagnostics_report(failures: Sequence[Any], total_7d: int, total_30d:
         "",
         "<i>ამ ფრაზების საფუძველზე ბოტი გაუმჯობესდება.</i>",
     ]
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))
 
 
 # ─── Period report ────────────────────────────────────────────────────────────
@@ -389,4 +400,4 @@ def format_period_report(
     ]
     lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.")
     lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
-    return "\n".join(lines)
+    return _truncate("\n".join(lines))

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from aiogram import Router
@@ -103,16 +104,24 @@ async def cmd_stock(message: Message, db: Database) -> None:
 
 @commands_router.message(Command("report"), IsAdmin())
 async def cmd_report(message: Message, db: Database) -> None:
+    if message.from_user and is_rate_limited(message.from_user.id, "report", min_interval=10.0):
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
+        )
+        return
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text="⏳ ანგარიში მუშავდება...",
         parse_mode=_PARSE,
     )
 
-    sales = await db.get_weekly_sales()
-    returns = await db.get_weekly_returns()
-    expenses = await db.get_weekly_expenses()
-    products = await db.get_all_products()
+    sales, returns, expenses, products = await asyncio.gather(
+        db.get_weekly_sales(),
+        db.get_weekly_returns(),
+        db.get_weekly_expenses(),
+        db.get_all_products(),
+    )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
@@ -131,14 +140,25 @@ async def cmd_orders(message: Message, db: Database) -> None:
     )
 
 
+_NISIAS_KEYBOARD_MAX = 25  # Telegram keyboard size limit safety margin
+
+
 def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
-    """Build an inline keyboard with pay buttons for each nisias entry."""
+    """Build an inline keyboard with pay buttons for each nisias entry.
+    Capped at _NISIAS_KEYBOARD_MAX rows to avoid Telegram API payload limits."""
     rows = []
-    for s in sales:
+    for s in sales[:_NISIAS_KEYBOARD_MAX]:
         sale_id = s["id"]
         rows.append([
             InlineKeyboardButton(text=f"💵 ხელზე #{sale_id}",  callback_data=f"np:{sale_id}:cash"),
             InlineKeyboardButton(text=f"🏦 დარიცხა #{sale_id}", callback_data=f"np:{sale_id}:transfer"),
+        ])
+    if len(sales) > _NISIAS_KEYBOARD_MAX:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"... და კიდევ {len(sales) - _NISIAS_KEYBOARD_MAX} ნისია",
+                callback_data="np:0:ignore",
+            )
         ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -163,6 +183,9 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
     try:
         _, sale_id_str, method = (callback.data or "").split(":")
         sale_id = int(sale_id_str)
+        if sale_id == 0:  # "overflow" indicator button
+            await callback.answer()
+            return
         payment_method = method  # "cash" or "transfer"
         label = "ხელზე 💵" if method == "cash" else "დარიცხა 🏦"
     except (ValueError, AttributeError):
@@ -252,9 +275,17 @@ async def cmd_paid(message: Message, db: Database) -> None:
 @commands_router.message(Command("diagnostics"), IsAdmin())
 async def cmd_diagnostics(message: Message, db: Database) -> None:
     """Show parse failure statistics."""
-    failures = await db.get_parse_failure_stats(days=30)
-    total_7d = await db.get_parse_failure_count(days=7)
-    total_30d = await db.get_parse_failure_count(days=30)
+    if message.from_user and is_rate_limited(message.from_user.id, "diagnostics", min_interval=10.0):
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
+        )
+        return
+    failures, total_7d, total_30d = await asyncio.gather(
+        db.get_parse_failure_stats(days=30),
+        db.get_parse_failure_count(days=7),
+        db.get_parse_failure_count(days=30),
+    )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,

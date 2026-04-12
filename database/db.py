@@ -33,7 +33,12 @@ class Database:
         return self._pool
 
     async def init(self) -> None:
-        self._pool = await asyncpg.create_pool(self.dsn, min_size=2, max_size=10)
+        self._pool = await asyncpg.create_pool(
+            self.dsn,
+            min_size=2,
+            max_size=10,
+            command_timeout=30.0,
+        )
         async with self.pool.acquire() as conn:
             await conn.execute(CREATE_TABLES_SQL)
             await conn.execute(MIGRATE_SQL)

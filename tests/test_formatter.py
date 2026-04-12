@@ -20,6 +20,8 @@ os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 
 from bot.reports.formatter import (
+    _TG_LIMIT,
+    _truncate,
     format_orders_report,
     format_period_report,
     format_return_confirmation,
@@ -325,4 +327,50 @@ class TestFormatPeriodReport:
         text = format_period_report(sales, [], [], [], df, dt)
         assert "<script>" not in text
         assert "&lt;script&gt;" in text
+
+
+# ─── _truncate ────────────────────────────────────────────────────────────────
+
+class TestTruncate:
+    def test_short_text_unchanged(self):
+        t = "hello"
+        assert _truncate(t) == t
+
+    def test_exactly_limit_unchanged(self):
+        t = "x" * _TG_LIMIT
+        assert _truncate(t) == t
+
+    def test_over_limit_is_shortened(self):
+        t = "x" * (_TG_LIMIT + 100)
+        result = _truncate(t)
+        assert len(result) <= _TG_LIMIT
+
+    def test_over_limit_has_truncation_marker(self):
+        t = "y" * (_TG_LIMIT + 500)
+        result = _truncate(t)
+        assert "შეკვეცილია" in result
+
+    def test_large_report_fits_within_limit(self):
+        """A stock report with 500 products must not exceed Telegram's limit."""
+        products = [
+            {"name": f"Product {i}", "current_stock": i, "min_stock": 10,
+             "unit_price": float(i), "oem_code": f"OEM{i:05d}"}
+            for i in range(500)
+        ]
+        text = format_stock_report(products)
+        assert len(text) <= _TG_LIMIT
+
+    def test_large_weekly_report_fits(self):
+        """A weekly report with 200 sale lines must not exceed Telegram's limit."""
+        sales = [
+            {"product_name": f"Product {i}", "quantity": 1, "unit_price": 10.0,
+             "payment_method": "cash", "notes": None, "seller_type": "individual"}
+            for i in range(200)
+        ]
+        products = [
+            {"name": f"P{i}", "current_stock": 1, "min_stock": 10, "unit_price": 5.0}
+            for i in range(50)
+        ]
+        text = format_weekly_report(sales, [], [], products)
+        assert len(text) <= _TG_LIMIT
 

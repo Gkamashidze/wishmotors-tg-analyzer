@@ -5,6 +5,7 @@ Flow:
   Calendar: pick start date → pick end date → send report
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -110,10 +111,12 @@ async def handle_quick_period(
 
     await callback.message.edit_text("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
 
-    sales = await db.get_sales_by_period(date_from, date_to)
-    returns = await db.get_returns_by_period(date_from, date_to)
-    expenses = await db.get_expenses_by_period(date_from, date_to)
-    products = await db.get_all_products()
+    sales, returns, expenses, products = await asyncio.gather(
+        db.get_sales_by_period(date_from, date_to),
+        db.get_returns_by_period(date_from, date_to),
+        db.get_expenses_by_period(date_from, date_to),
+        db.get_all_products(),
+    )
 
     text = format_period_report(sales, returns, expenses, products, date_from, date_to)
     await callback.message.edit_text(text, parse_mode=_PARSE)
@@ -171,7 +174,18 @@ async def process_end_date(
     date_to = tz.localize(date.replace(hour=23, minute=59, second=59, microsecond=0))
 
     data = await state.get_data()
-    date_from = datetime.fromisoformat(data["start"])
+    start_iso = data.get("start")
+    if not start_iso:
+        # State was lost (e.g. bot restarted). Guide the user to restart the flow.
+        await state.clear()
+        if not isinstance(callback.message, InaccessibleMessage):
+            await callback.message.answer(
+                "⚠️ სესია ვეღარ მოიძებნა. სცადე თავიდან: /report_period",
+                parse_mode=_PARSE,
+            )
+        await callback.answer()
+        return
+    date_from = datetime.fromisoformat(start_iso)
     await state.clear()
 
     if isinstance(callback.message, InaccessibleMessage):
@@ -188,10 +202,12 @@ async def process_end_date(
 
     loading = await callback.message.answer("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
 
-    sales = await db.get_sales_by_period(date_from, date_to)
-    returns = await db.get_returns_by_period(date_from, date_to)
-    expenses = await db.get_expenses_by_period(date_from, date_to)
-    products = await db.get_all_products()
+    sales, returns, expenses, products = await asyncio.gather(
+        db.get_sales_by_period(date_from, date_to),
+        db.get_returns_by_period(date_from, date_to),
+        db.get_expenses_by_period(date_from, date_to),
+        db.get_all_products(),
+    )
 
     text = format_period_report(sales, returns, expenses, products, date_from, date_to)
     await loading.edit_text(text, parse_mode=_PARSE)
