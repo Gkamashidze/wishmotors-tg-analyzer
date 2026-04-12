@@ -18,7 +18,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/test")
 os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("RAILWAY_ENVIRONMENT", "test")
 
-from database.db import Database
+from database.db import Database  # noqa: E402
 
 
 def _make_db() -> Database:

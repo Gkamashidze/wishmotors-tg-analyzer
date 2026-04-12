@@ -21,12 +21,12 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/test")
 os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 
-from bot.handlers.commands import (
+from bot.handlers.commands import (  # noqa: E402
     cmd_addproduct,
     cmd_deletesale,
     cmd_editproduct,
 )
-from bot.handlers.orders import handle_expense_message, handle_order_message
+from bot.handlers.orders import handle_expense_message, handle_order_message  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 

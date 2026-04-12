@@ -20,7 +20,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/test")
 os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 
-from bot.reports.formatter import (
+from bot.reports.formatter import (  # noqa: E402
     _TG_LIMIT,
     _truncate,
     format_credit_sales_report,
