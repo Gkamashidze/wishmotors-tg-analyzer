@@ -383,7 +383,6 @@ def format_period_report(
     sales: Sequence[Any],
     returns: Sequence[Any],
     expenses: Sequence[Any],
-    products: Sequence[Any],
     date_from: datetime,
     date_to: datetime,
 ) -> str:

@@ -111,14 +111,13 @@ async def handle_quick_period(
 
     await callback.message.edit_text("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
 
-    sales, returns, expenses, products = await asyncio.gather(
+    sales, returns, expenses = await asyncio.gather(
         db.get_sales_by_period(date_from, date_to),
         db.get_returns_by_period(date_from, date_to),
         db.get_expenses_by_period(date_from, date_to),
-        db.get_all_products(),
     )
 
-    text = format_period_report(sales, returns, expenses, products, date_from, date_to)
+    text = format_period_report(sales, returns, expenses, date_from, date_to)
     await callback.message.edit_text(text, parse_mode=_PARSE)
     await callback.answer()
 
@@ -202,13 +201,12 @@ async def process_end_date(
 
     loading = await callback.message.answer("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
 
-    sales, returns, expenses, products = await asyncio.gather(
+    sales, returns, expenses = await asyncio.gather(
         db.get_sales_by_period(date_from, date_to),
         db.get_returns_by_period(date_from, date_to),
         db.get_expenses_by_period(date_from, date_to),
-        db.get_all_products(),
     )
 
-    text = format_period_report(sales, returns, expenses, products, date_from, date_to)
+    text = format_period_report(sales, returns, expenses, date_from, date_to)
     await loading.edit_text(text, parse_mode=_PARSE)
     await callback.answer()

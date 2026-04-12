@@ -280,7 +280,7 @@ class TestFormatPeriodReport:
 
     def test_empty_period_returns_special_message(self):
         d = self._d(2026, 3, 1)
-        text = format_period_report([], [], [], [], d, d)
+        text = format_period_report([], [], [], d, d)
         assert "📭" in text
         assert "არ დაფიქსირებულა" in text
 
@@ -288,7 +288,7 @@ class TestFormatPeriodReport:
         df = self._d(2026, 3, 1)
         dt = self._d(2026, 3, 31)
         sales = [self._sale("სარკე", 2, 30.0)]
-        text = format_period_report(sales, [], [], [], df, dt)
+        text = format_period_report(sales, [], [], df, dt)
         assert "01.03.2026" in text
         assert "31.03.2026" in text
 
@@ -296,7 +296,7 @@ class TestFormatPeriodReport:
         df = self._d(2026, 3, 1)
         dt = self._d(2026, 3, 31)
         sales = [self._sale("A", 2, 50.0), self._sale("B", 1, 30.0)]
-        text = format_period_report(sales, [], [], [], df, dt)
+        text = format_period_report(sales, [], [], df, dt)
         assert "130.00₾" in text   # total revenue
 
     def test_net_income_with_returns_and_expenses(self):
@@ -305,7 +305,7 @@ class TestFormatPeriodReport:
         sales = [self._sale("A", 1, 100.0)]
         returns = [self._return("A", 1, 20.0)]
         expenses = [self._expense("ბენზინი", 10.0)]
-        text = format_period_report(sales, returns, expenses, [], df, dt)
+        text = format_period_report(sales, returns, expenses, df, dt)
         # net = 100 - 20 - 10 = 70
         assert "70.00₾" in text
 
@@ -316,7 +316,7 @@ class TestFormatPeriodReport:
             self._sale("A", 1, 100.0, "cash"),
             self._sale("B", 1, 50.0, "transfer"),
         ]
-        text = format_period_report(sales, [], [], [], df, dt)
+        text = format_period_report(sales, [], [], df, dt)
         assert "100.00₾" in text
         assert "50.00₾" in text
 
@@ -324,7 +324,7 @@ class TestFormatPeriodReport:
         df = self._d(2026, 3, 1)
         dt = self._d(2026, 3, 31)
         sales = [self._sale("<script>alert(1)</script>", 1, 10.0)]
-        text = format_period_report(sales, [], [], [], df, dt)
+        text = format_period_report(sales, [], [], df, dt)
         assert "<script>" not in text
         assert "&lt;script&gt;" in text
 

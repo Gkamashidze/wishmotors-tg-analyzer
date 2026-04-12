@@ -1,3 +1,4 @@
+import html
 import logging
 
 from aiogram import F, Router
@@ -28,6 +29,17 @@ async def handle_order_message(message: Message, db: Database) -> None:
             await db.log_parse_failure(config.ORDERS_TOPIC_ID, text)
             return
 
+        if parsed.quantity == 0:
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text=(
+                    "⚠️ რაოდენობა არ მითითებულია.\n"
+                    "ფორმატი: <code>სახელი Nც</code> ან <code>OEM Nც</code>"
+                ),
+                parse_mode=_PARSE,
+            )
+            return
+
         product = await db.get_product_by_oem(parsed.raw_product)
         if not product:
             product = await db.get_product_by_name(parsed.raw_product)
@@ -45,7 +57,7 @@ async def handle_order_message(message: Message, db: Database) -> None:
             chat_id=message.from_user.id,
             text=(
                 f"📋 <b>შეკვეთა დაფიქსირდა</b>\n"
-                f"📦 პროდუქტი: <b>{product_name}</b>\n"
+                f"📦 პროდუქტი: <b>{html.escape(product_name)}</b>\n"
                 f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც"
             ),
             parse_mode=_PARSE,

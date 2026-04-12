@@ -1,0 +1,17 @@
+# Development + CI dependencies
+# Includes everything in requirements.txt plus dev/test/tool packages
+-r requirements.txt
+
+# Test framework
+pytest==8.4.2
+pytest-asyncio==0.23.8
+
+# Type checking
+mypy==1.10.0
+types-pytz==2024.1.0.20240203
+
+# Linting / formatting
+ruff==0.4.4
+
+# Developer tools (Telegram audit scripts)
+telethon==1.36.0
