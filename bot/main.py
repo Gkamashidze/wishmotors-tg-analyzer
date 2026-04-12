@@ -6,6 +6,7 @@ import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, TelegramObject
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -13,6 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 import config
 from bot.handlers.commands import commands_router
 from bot.handlers.orders import orders_router
+from bot.handlers.period_report import period_router
 from bot.handlers.sales import sales_router
 from bot.reports.formatter import format_weekly_report
 from database.db import Database
@@ -84,11 +86,13 @@ async def main() -> None:
     ])
     logger.info("Bot commands menu registered.")
 
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())
     dp.message.middleware(DatabaseMiddleware(db))
+    dp.callback_query.middleware(DatabaseMiddleware(db))
 
     dp.include_router(sales_router)
     dp.include_router(orders_router)
+    dp.include_router(period_router)
     dp.include_router(commands_router)
 
     tz = pytz.timezone(config.TIMEZONE)

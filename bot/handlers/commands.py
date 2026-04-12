@@ -1,10 +1,5 @@
 import logging
-import re
-from calendar import monthrange
-from datetime import datetime, timedelta
-from typing import Optional, Tuple
 
-import pytz
 from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -12,12 +7,7 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import IsAdmin
-from bot.reports.formatter import (
-    format_orders_report,
-    format_period_report,
-    format_stock_report,
-    format_weekly_report,
-)
+from bot.reports.formatter import format_orders_report, format_stock_report, format_weekly_report
 from database.db import Database
 
 logger = logging.getLogger(__name__)
@@ -51,19 +41,12 @@ _HELP_TEXT = """
 ━━━━━━━━━━━━━━━━━━━━━
 🤖 <b>ბრძანებები:</b>
 /report — კვირის ანგარიში
-/report_period — პერიოდის ანგარიში (იხ. ქვემოთ)
+/report_period — პერიოდის ანგარიში
 /stock — საწყობის მდგომარეობა
 /orders — მომლოდინე შეკვეთები
 /completeorder ID — შეკვეთის დახურვა
 /addproduct — პროდუქტის დამატება
 /help — ეს შეტყობინება
-
-📅 <b>/report_period გამოყენება:</b>
-<code>/report_period week</code>       → ბოლო 7 დღე
-<code>/report_period month</code>      → მიმდინარე თვე
-<code>/report_period lastmonth</code>  → გასული თვე
-<code>/report_period 2026-03</code>    → მარტის სრული თვე
-<code>/report_period 2026-03-01 2026-03-31</code> → კონკრეტული თარიღები
 
 📦 <b>პროდუქტის დამატება:</b>
 <code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>
@@ -146,119 +129,6 @@ async def cmd_complete_order(message: Message, db: Database) -> None:
             parse_mode=_PARSE,
         )
 
-
-# ─── Period report helpers ────────────────────────────────────────────────────
-
-def _parse_period(
-    args: list, tz: pytz.BaseTzInfo
-) -> Optional[Tuple[datetime, datetime]]:
-    """Return (date_from, date_to) in Tbilisi timezone, or None on bad input."""
-    now = datetime.now(tz)
-
-    if not args:
-        return None
-
-    keyword = args[0].lower()
-
-    if keyword == "week":
-        return now - timedelta(days=7), now
-
-    if keyword == "month":
-        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        return date_from, now
-
-    if keyword == "lastmonth":
-        first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        last_of_prev = first_this - timedelta(seconds=1)
-        first_of_prev = last_of_prev.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        end_of_prev = last_of_prev.replace(hour=23, minute=59, second=59, microsecond=0)
-        return first_of_prev, end_of_prev
-
-    # YYYY-MM → full month
-    if len(args) == 1 and re.fullmatch(r"\d{4}-\d{2}", args[0]):
-        year, month = int(args[0][:4]), int(args[0][5:7])
-        if not (1 <= month <= 12):
-            return None
-        _, last_day = monthrange(year, month)
-        date_from = tz.localize(datetime(year, month, 1, 0, 0, 0))
-        date_to = tz.localize(datetime(year, month, last_day, 23, 59, 59))
-        return date_from, date_to
-
-    # YYYY-MM-DD YYYY-MM-DD → specific date range
-    if (
-        len(args) == 2
-        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", args[0])
-        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", args[1])
-    ):
-        try:
-            date_from = tz.localize(datetime.strptime(args[0], "%Y-%m-%d"))
-            date_to = tz.localize(
-                datetime.strptime(args[1], "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-            )
-        except ValueError:
-            return None
-        if date_from > date_to:
-            return None
-        return date_from, date_to
-
-    return None
-
-
-_PERIOD_USAGE = (
-    "❌ <b>არასწორი ფორმატი.</b>\n\n"
-    "გამოიყენეთ:\n"
-    "<code>/report_period week</code>       — ბოლო 7 დღე\n"
-    "<code>/report_period month</code>      — მიმდინარე თვე\n"
-    "<code>/report_period lastmonth</code>  — გასული თვე\n"
-    "<code>/report_period 2026-03</code>    — თვე YYYY-MM ფორმატში\n"
-    "<code>/report_period 2026-03-01 2026-03-31</code> — კონკრეტული თარიღები"
-)
-
-
-@commands_router.message(Command("report_period"), IsAdmin())
-async def cmd_report_period(message: Message, db: Database) -> None:
-    tz = pytz.timezone(config.TIMEZONE)
-    args = (message.text or "").split()[1:]
-    parsed = _parse_period(args, tz)
-
-    if parsed is None:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=_PERIOD_USAGE,
-            parse_mode=_PARSE,
-        )
-        return
-
-    date_from, date_to = parsed
-
-    if date_from > datetime.now(tz):
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="⚠️ პერიოდის დასაწყისი მომავალ თარიღზეა. გთხოვთ, მიუთითოთ წარსული პერიოდი.",
-            parse_mode=_PARSE,
-        )
-        return
-
-    await message.bot.send_message(
-        chat_id=message.from_user.id,
-        text="⏳ ანგარიში მუშავდება...",
-        parse_mode=_PARSE,
-    )
-
-    sales = await db.get_sales_by_period(date_from, date_to)
-    returns = await db.get_returns_by_period(date_from, date_to)
-    expenses = await db.get_expenses_by_period(date_from, date_to)
-    products = await db.get_all_products()
-
-    text = format_period_report(sales, returns, expenses, products, date_from, date_to)
-    await message.bot.send_message(
-        chat_id=message.from_user.id,
-        text=text,
-        parse_mode=_PARSE,
-    )
-
-
-# ─── Add product ──────────────────────────────────────────────────────────────
 
 @commands_router.message(Command("addproduct"), IsAdmin())
 async def cmd_addproduct(message: Message, db: Database) -> None:

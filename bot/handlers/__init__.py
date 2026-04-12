@@ -1,5 +1,7 @@
+from typing import Union
+
 from aiogram.filters import Filter
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 import config
 
@@ -18,9 +20,10 @@ class InTopic(Filter):
 
 
 class IsAdmin(Filter):
-    """Passes only when the sender's user ID is in the ADMIN_IDS whitelist."""
+    """Passes only when the sender's user ID is in the ADMIN_IDS whitelist.
+    Works for both Message and CallbackQuery events."""
 
-    async def __call__(self, message: Message) -> bool:
+    async def __call__(self, event: Union[Message, CallbackQuery]) -> bool:
         return bool(
-            message.from_user and message.from_user.id in config.ADMIN_IDS
+            event.from_user and event.from_user.id in config.ADMIN_IDS
         )
