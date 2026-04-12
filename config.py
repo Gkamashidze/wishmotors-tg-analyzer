@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,6 +28,11 @@ _raw_admin_ids = _require("ADMIN_IDS")
 ADMIN_IDS: set[int] = {int(x.strip()) for x in _raw_admin_ids.split(",") if x.strip()}
 
 TIMEZONE: str = os.getenv("TIMEZONE", "Asia/Tbilisi")
+
+# Optional: Redis URL for FSM state persistence across bot restarts.
+# When set, calendar widget state survives restarts; otherwise MemoryStorage is used.
+# Example: REDIS_URL=redis://localhost:6379/0
+REDIS_URL: Optional[str] = os.getenv("REDIS_URL")
 REPORT_WEEKDAY: str = os.getenv("REPORT_WEEKDAY", "sun")
 REPORT_HOUR: int = int(os.getenv("REPORT_HOUR", "22"))
 REPORT_MINUTE: int = int(os.getenv("REPORT_MINUTE", "0"))

@@ -15,6 +15,7 @@ import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, TelegramObject
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -132,7 +133,16 @@ async def main() -> None:
     ])
     logger.info("Bot commands menu registered.")
 
-    dp = Dispatcher(storage=MemoryStorage())
+    storage: BaseStorage
+    if config.REDIS_URL:
+        from aiogram.fsm.storage.redis import RedisStorage  # type: ignore[import]
+        storage = RedisStorage.from_url(config.REDIS_URL)
+        logger.info("FSM storage: Redis (state persists across restarts)")
+    else:
+        storage = MemoryStorage()
+        logger.info("FSM storage: MemoryStorage (set REDIS_URL for persistence)")
+
+    dp = Dispatcher(storage=storage)
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
 
