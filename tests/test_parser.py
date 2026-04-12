@@ -375,3 +375,63 @@ class TestParseOrderMessage:
     def test_qty_only_various(self):
         assert parse_order_message("10ც") is not None
         assert parse_order_message("50ც") is not None
+
+
+# ─── parse_sale_message — new real-world formats ─────────────────────────────
+
+class TestRealWorldFormats:
+    def test_product_price_credit_no_qty(self):
+        """'სარკე 30₾' — product + price, no qty, no payment → credit, qty=1."""
+        result = parse_sale_message("სარკე 30₾")
+        assert result is not None
+        assert result.raw_product == "სარკე"
+        assert result.price == 30.0
+        assert result.quantity == 1
+        assert result.payment_method == PAYMENT_CREDIT
+
+    def test_product_llc_in_product_field(self):
+        """'უპორნები შპსდან 350ლ' — LLC keyword before price, no qty → llc, credit."""
+        result = parse_sale_message("უპორნები შპსდან 350ლ")
+        assert result is not None
+        assert result.raw_product == "უპორნები"
+        assert result.price == 350.0
+        assert result.quantity == 1
+        assert result.seller_type == "llc"
+        assert result.payment_method == PAYMENT_CREDIT
+
+    def test_product_no_currency_symbol(self):
+        """'ხუნდები 50' — no ₾/ლ symbol → qty=1, credit."""
+        result = parse_sale_message("ხუნდები 50")
+        assert result is not None
+        assert result.raw_product == "ხუნდები"
+        assert result.price == 50.0
+        assert result.quantity == 1
+        assert result.payment_method == PAYMENT_CREDIT
+
+    def test_split_payment_cash_plus_remaining(self):
+        """'ხელზე 300 დარჩა 100ლ' → total=400₾, cash payment."""
+        result = parse_sale_message("ხელზე 300 დარჩა 100ლ")
+        assert result is not None
+        assert result.price == 400.0
+        assert result.payment_method == PAYMENT_CASH
+
+    def test_split_payment_without_currency_on_remaining(self):
+        """'ხელზე 200 დარჩა 50' — no ₾ on either amount."""
+        result = parse_sale_message("ხელზე 200 დარჩა 50")
+        assert result is not None
+        assert result.price == 250.0
+        assert result.payment_method == PAYMENT_CASH
+
+    def test_phone_number_ignored(self):
+        """'+995 ...' phone numbers must return None silently."""
+        assert parse_sale_message("+995 592 15 90 52") is None
+        assert parse_sale_message("+995-599-123456") is None
+
+    def test_llc_before_qty_in_pattern_a(self):
+        """'სარკე შპსდან 2ც 80₾' — LLC keyword before quantity."""
+        result = parse_sale_message("სარკე შპსდან 2ც 80₾")
+        assert result is not None
+        assert result.raw_product == "სარკე"
+        assert result.seller_type == "llc"
+        assert result.quantity == 2
+        assert result.price == 80.0

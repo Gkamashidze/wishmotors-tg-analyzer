@@ -193,6 +193,22 @@ _ORDER_PRODUCT_ONLY = re.compile(
     r"^[^\d₾ლ$\-].{3,}$", re.UNICODE
 )
 
+# Phone number (international format starting with +): silently ignored in sales topic.
+_PHONE_RE = re.compile(r"^\+[\d\s\-().]{8,}$", re.UNICODE)
+
+# Split payment: "ხელზე 300 დარჩა 100ლ" → paid + remaining = total, cash.
+_SALE_SPLIT_RE = re.compile(
+    r"^ხელ\S*\s+(?P<paid>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s+დარჩ\S*\s+(?P<remaining>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s*$",
+    re.UNICODE | re.IGNORECASE,
+)
+
+# Pattern F: product + price (no currency symbol), qty=1, credit (ნისია).
+# Covers "ხუნდები 50" style — product name starts with a non-digit/non-symbol char.
+_SALE_F = re.compile(
+    r"^(?P<product>[^\d₾ლ$\+\-].+?)\s+(?P<price>\d+(?:[.,]\d+)?)\s*$",
+    re.UNICODE,
+)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -270,7 +286,25 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
       no payment text         → PAYMENT_CREDIT (ნისია)
     """
     text = _normalize_text(text.strip())
+
+    # Phone numbers (e.g. "+995 592 15 90 52"): silently ignore — customer contact info.
+    if _PHONE_RE.match(text):
+        return None
+
     is_return = bool(_RETURN_RE.search(text))
+
+    # Split payment: "ხელზე 300 დარჩა 100ლ" → 300 cash paid + 100 remaining = 400₾ total.
+    m = _SALE_SPLIT_RE.match(text)
+    if m:
+        paid = _parse_price(m.group("paid"))
+        remaining = _parse_price(m.group("remaining"))
+        return ParsedSale(
+            raw_product=f"ხელზე {paid:.0f}₾ + დარჩა {remaining:.0f}₾",
+            quantity=1,
+            price=paid + remaining,
+            payment_method=PAYMENT_CASH,
+            is_return=False,
+        )
 
     # Pattern B: explicit კოდი: prefix
     m = _SALE_B.search(text)
@@ -289,9 +323,14 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     # Pattern A: full free-form "product Nც PRICEლ [rest]"
     m = _SALE_A.match(text)
     if m:
+        product_raw = m.group("product").strip()
         payment, seller, customer = _parse_rest(m.group("rest"))
+        # LLC keyword may appear before the quantity (e.g., "სარკე შპსდან 1ც 30₾")
+        if seller == "individual" and _LLC_RE.search(product_raw):
+            seller = "llc"
+            product_raw = _LLC_RE.sub("", product_raw).strip()
         return ParsedSale(
-            raw_product=m.group("product").strip(),
+            raw_product=product_raw,
             quantity=int(float(m.group("qty"))),
             price=_parse_price(m.group("price")),
             payment_method=payment,
@@ -328,21 +367,40 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             customer_name=customer,
         )
 
-    # Pattern E: product+price with explicit payment keyword "ტროსი 150 ლ ხელზე"
-    # Payment keyword is REQUIRED to distinguish sales from expenses.
+    # Pattern E: product + price, payment optional (no keyword → credit/ნისია).
+    # Since this runs only for messages in the sales topic, credit default is safe.
     m = _SALE_E.match(text)
     if m:
+        product_raw = m.group("product").strip()
         payment, seller, customer = _parse_rest(m.group("rest"))
-        if payment in (PAYMENT_CASH, PAYMENT_TRANSFER):
-            return ParsedSale(
-                raw_product=m.group("product").strip(),
-                quantity=1,
-                price=_parse_price(m.group("price")),
-                payment_method=payment,
-                is_return=is_return,
-                seller_type=seller,
-                customer_name=customer,
-            )
+        # LLC keyword may appear in the product field before the price
+        # e.g., "უპორნები შპსდან 350ლ" → product="უპორნები", seller=llc
+        if seller == "individual" and _LLC_RE.search(product_raw):
+            seller = "llc"
+            product_raw = _LLC_RE.sub("", product_raw).strip()
+        return ParsedSale(
+            raw_product=product_raw,
+            quantity=1,
+            price=_parse_price(m.group("price")),
+            payment_method=payment,
+            is_return=is_return,
+            seller_type=seller,
+            customer_name=customer,
+        )
+
+    # Pattern F: product + price (no currency symbol), qty=1, credit.
+    # Covers "ხუნდები 50" style where the ₾/ლ symbol is omitted.
+    m = _SALE_F.match(text)
+    if m:
+        return ParsedSale(
+            raw_product=m.group("product").strip(),
+            quantity=1,
+            price=_parse_price(m.group("price")),
+            payment_method=PAYMENT_CREDIT,
+            is_return=is_return,
+            seller_type="individual",
+            customer_name="",
+        )
 
     return None
 
