@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message
 
 import config
-from bot.handlers import InTopic
+from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import parse_sale_message
 from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
 from database.db import Database
@@ -20,18 +20,16 @@ _PARSE = ParseMode.HTML
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
 
-@sales_router.message(InTopic(config.SALES_TOPIC_ID), F.text)
+@sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     parsed = parse_sale_message(text)
 
     if not parsed:
-        # Not a recognised sale format — owner might be typing a note, ignore.
         return
 
     raw = parsed.raw_product
 
-    # Try OEM lookup first (exact), then fall back to fuzzy name search
     product = await db.get_product_by_oem(raw)
     if not product:
         product = await db.get_product_by_name(raw)
@@ -52,13 +50,12 @@ async def handle_sales_text(message: Message, db: Database) -> None:
 
 
 async def _record_sale(message: Message, db: Database, product: dict, parsed) -> None:
-    await db.create_sale(
+    _sale_id, new_stock = await db.create_sale(
         product_id=product["id"],
         quantity=parsed.quantity,
-        sale_price=parsed.price,
+        unit_price=parsed.price,
         payment_method=parsed.payment_method,
     )
-    new_stock = await db.update_stock(product["id"], -parsed.quantity)
     low = new_stock <= product["min_stock"]
 
     await message.reply(
@@ -82,13 +79,12 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed) ->
 async def _record_return(message: Message, db: Database, product: dict, parsed) -> None:
     refund = parsed.price * parsed.quantity
 
-    await db.create_return(
+    _return_id, new_stock = await db.create_return(
         product_id=product["id"],
         quantity=parsed.quantity,
         refund_amount=refund,
         notes="დაბრუნება",
     )
-    new_stock = await db.update_stock(product["id"], parsed.quantity)
 
     await message.reply(
         format_return_confirmation(
@@ -103,7 +99,7 @@ async def _record_return(message: Message, db: Database, product: dict, parsed) 
 
 # ─── Capital topic: Excel stock uploads ───────────────────────────────────────
 
-@sales_router.message(InTopic(config.CAPITAL_TOPIC_ID), F.document)
+@sales_router.message(InTopic(config.CAPITAL_TOPIC_ID), IsAdmin(), F.document)
 async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
     doc = message.document
     if not doc or not doc.file_name:
@@ -112,6 +108,14 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
     if not doc.file_name.lower().endswith((".xlsx", ".xls")):
         await message.reply(
             "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    if doc.file_size and doc.file_size > config.MAX_EXCEL_BYTES:
+        mb = config.MAX_EXCEL_BYTES // (1024 * 1024)
+        await message.reply(
+            f"❌ ფაილი ძალიან დიდია. მაქსიმალური ზომა: <b>{mb} MB</b>.",
             parse_mode=_PARSE,
         )
         return
@@ -150,7 +154,13 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
             if not name:
                 continue
 
-            await db.upsert_product(name=name, oem_code=oem, stock=stock, price=price)
+            await db.upsert_product(
+                name=name,
+                oem_code=oem,
+                stock=stock,
+                min_stock=config.MIN_STOCK_THRESHOLD,
+                price=price,
+            )
             updated += 1
         except Exception as exc:
             logger.error("Row error %s: %s", row, exc)

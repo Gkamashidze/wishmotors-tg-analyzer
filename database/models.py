@@ -1,68 +1,61 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
-# ─── SQL schema ───────────────────────────────────────────────────────────────
+# ─── SQL schema (PostgreSQL) ──────────────────────────────────────────────────
 
 CREATE_TABLES_SQL = """
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS products (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     name          TEXT    NOT NULL,
-    oem_code      TEXT,
+    oem_code      TEXT    UNIQUE,
     current_stock INTEGER NOT NULL DEFAULT 0,
     min_stock     INTEGER NOT NULL DEFAULT 20,
-    unit_price    REAL    NOT NULL DEFAULT 0,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    unit_price    NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_oem  ON products(oem_code);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 
 CREATE TABLE IF NOT EXISTS sales (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id     INTEGER,
+    id             SERIAL PRIMARY KEY,
+    product_id     INTEGER REFERENCES products(id),
     quantity       INTEGER NOT NULL,
-    sale_price     REAL    NOT NULL,
+    unit_price     NUMERIC(12, 2) NOT NULL,
     payment_method TEXT    NOT NULL DEFAULT 'cash',
-    sold_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes          TEXT,
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    sold_at        TIMESTAMPTZ DEFAULT NOW(),
+    notes          TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_sold_at    ON sales(sold_at);
 CREATE INDEX IF NOT EXISTS idx_sales_product_id ON sales(product_id);
 
 CREATE TABLE IF NOT EXISTS returns (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    sale_id             INTEGER,
-    product_id          INTEGER NOT NULL,
+    id                  SERIAL PRIMARY KEY,
+    sale_id             INTEGER REFERENCES sales(id),
+    product_id          INTEGER NOT NULL REFERENCES products(id),
     quantity            INTEGER NOT NULL,
-    refund_amount       REAL    NOT NULL,
-    exchange_product_id INTEGER,
-    returned_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes               TEXT,
-    FOREIGN KEY (sale_id)             REFERENCES sales(id),
-    FOREIGN KEY (product_id)          REFERENCES products(id),
-    FOREIGN KEY (exchange_product_id) REFERENCES products(id)
+    refund_amount       NUMERIC(12, 2) NOT NULL,
+    exchange_product_id INTEGER REFERENCES products(id),
+    returned_at         TIMESTAMPTZ DEFAULT NOW(),
+    notes               TEXT
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id      INTEGER,
+    id              SERIAL PRIMARY KEY,
+    product_id      INTEGER REFERENCES products(id),
     quantity_needed INTEGER NOT NULL,
     status          TEXT    NOT NULL DEFAULT 'pending',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes           TEXT,
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    notes           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS expenses (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    amount      REAL NOT NULL,
+    id          SERIAL PRIMARY KEY,
+    amount      NUMERIC(12, 2) NOT NULL,
     description TEXT,
     category    TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 """
 
@@ -84,17 +77,7 @@ class Sale:
     id: int
     product_id: Optional[int]
     quantity: int
-    sale_price: float
+    unit_price: float
     payment_method: str
     sold_at: str
     notes: Optional[str]
-
-
-@dataclass
-class ParsedSale:
-    raw_product: str
-    quantity: int
-    price: float
-    payment_method: str
-    is_return: bool = False
-    notes: str = ""

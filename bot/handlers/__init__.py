@@ -15,3 +15,12 @@ class InTopic(Filter):
             message.chat.id == config.GROUP_ID
             and message.message_thread_id == self.topic_id
         )
+
+
+class IsAdmin(Filter):
+    """Passes only when the sender's user ID is in the ADMIN_IDS whitelist."""
+
+    async def __call__(self, message: Message) -> bool:
+        return bool(
+            message.from_user and message.from_user.id in config.ADMIN_IDS
+        )

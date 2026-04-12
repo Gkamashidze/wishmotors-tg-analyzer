@@ -5,7 +5,9 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from bot.reports.formatter import format_stock_report, format_weekly_report
+import config
+from bot.handlers import IsAdmin
+from bot.reports.formatter import format_orders_report, format_stock_report, format_weekly_report
 from database.db import Database
 
 logger = logging.getLogger(__name__)
@@ -21,8 +23,8 @@ _HELP_TEXT = """
 <code>8390132500 2ც 45₾ გადარიცხვა</code>
 <code>კოდი: 8390132500, 1ც, 35₾</code>
 
-↩️ <b>დაბრუნება (Sales topic):</b>
-<code>დაბრუნება: 8390132500 1ც 45₾</code>
+↩️ <b>დაბრუნება (Sales topic — same format + სიტყვა "დაბრუნება"):</b>
+<code>დაბრუნება 8390132500 1ც 45₾</code>
 
 📋 <b>შეკვეთა (Orders topic):</b>
 <code>8390132500 5ც</code>
@@ -40,11 +42,13 @@ _HELP_TEXT = """
 🤖 <b>ბრძანებები:</b>
 /report — კვირის ანგარიში
 /stock — საწყობის მდგომარეობა
+/orders — მომლოდინე შეკვეთები
+/completeorder ID — შეკვეთის დახურვა
 /addproduct — პროდუქტის დამატება
 /help — ეს შეტყობინება
 
 📦 <b>პროდუქტის დამატება:</b>
-<code>/addproduct სახელი_OEM_მარაგი_ფასი</code>
+<code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>
 სახელში გამოიყენეთ _ სფეისის ნაცვლად.
 
 მაგალითი:
@@ -52,18 +56,18 @@ _HELP_TEXT = """
 """.strip()
 
 
-@commands_router.message(Command("help"))
+@commands_router.message(Command("help"), IsAdmin())
 async def cmd_help(message: Message) -> None:
     await message.answer(_HELP_TEXT, parse_mode=_PARSE)
 
 
-@commands_router.message(Command("stock"))
+@commands_router.message(Command("stock"), IsAdmin())
 async def cmd_stock(message: Message, db: Database) -> None:
     products = await db.get_all_products()
     await message.answer(format_stock_report(products), parse_mode=_PARSE)
 
 
-@commands_router.message(Command("report"))
+@commands_router.message(Command("report"), IsAdmin())
 async def cmd_report(message: Message, db: Database) -> None:
     await message.answer("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
 
@@ -78,12 +82,42 @@ async def cmd_report(message: Message, db: Database) -> None:
     )
 
 
-@commands_router.message(Command("addproduct"))
+@commands_router.message(Command("orders"), IsAdmin())
+async def cmd_orders(message: Message, db: Database) -> None:
+    orders = await db.get_pending_orders()
+    await message.answer(format_orders_report(orders), parse_mode=_PARSE)
+
+
+@commands_router.message(Command("completeorder"), IsAdmin())
+async def cmd_complete_order(message: Message, db: Database) -> None:
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer(
+            "❌ მიუთითეთ შეკვეთის ID.\n"
+            "მაგალითი: <code>/completeorder 5</code>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    order_id = int(parts[1])
+    done = await db.complete_order(order_id)
+
+    if done:
+        await message.answer(
+            f"✅ შეკვეთა #{order_id} დახურულია.",
+            parse_mode=_PARSE,
+        )
+    else:
+        await message.answer(
+            f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა ან უკვე დახურულია.",
+            parse_mode=_PARSE,
+        )
+
+
+@commands_router.message(Command("addproduct"), IsAdmin())
 async def cmd_addproduct(message: Message, db: Database) -> None:
     args = (message.text or "").split()[1:]
 
-    # Expect at least: name oem stock price  (4 tokens)
-    # Name tokens end where the last 3 numeric-ish tokens begin.
     if len(args) < 4:
         await message.answer(
             "❌ <b>არასწორი ფორმატი.</b>\n\n"
@@ -111,7 +145,6 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         )
         return
 
-    # Prevent duplicates
     existing = await db.get_product_by_oem(oem) if oem else None
     if not existing:
         existing = await db.get_product_by_name(name)
@@ -128,7 +161,7 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         name=name,
         oem_code=oem,
         stock=stock,
-        min_stock=20,
+        min_stock=config.MIN_STOCK_THRESHOLD,
         price=price,
     )
 

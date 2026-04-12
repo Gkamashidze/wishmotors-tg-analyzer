@@ -64,9 +64,9 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 async def main() -> None:
-    db = Database(config.DATABASE_PATH)
+    db = Database(dsn=config.DATABASE_URL, timezone=config.TIMEZONE)
     await db.init()
-    logger.info("Database initialised at %s", config.DATABASE_PATH)
+    logger.info("Database pool ready.")
 
     bot = Bot(
         token=config.BOT_TOKEN,
@@ -108,6 +108,7 @@ async def main() -> None:
         await dp.start_polling(bot, skip_updates=True)
     finally:
         scheduler.shutdown(wait=False)
+        await db.close()
         await bot.session.close()
         logger.info("Bot stopped.")
 

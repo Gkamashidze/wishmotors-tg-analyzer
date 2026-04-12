@@ -5,7 +5,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message
 
 import config
-from bot.handlers import InTopic
+from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import parse_expense_message, parse_order_message
 from database.db import Database
 
@@ -17,13 +17,13 @@ _PARSE = ParseMode.HTML
 
 # ─── Orders topic ─────────────────────────────────────────────────────────────
 
-@orders_router.message(InTopic(config.ORDERS_TOPIC_ID), F.text)
+@orders_router.message(InTopic(config.ORDERS_TOPIC_ID), IsAdmin(), F.text)
 async def handle_order_message(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     parsed = parse_order_message(text)
 
     if not parsed:
-        return  # unrecognised note — ignore silently
+        return
 
     product = await db.get_product_by_oem(parsed.raw_product)
     if not product:
@@ -48,13 +48,13 @@ async def handle_order_message(message: Message, db: Database) -> None:
 
 # ─── Expenses topic ───────────────────────────────────────────────────────────
 
-@orders_router.message(InTopic(config.EXPENSES_TOPIC_ID), F.text)
+@orders_router.message(InTopic(config.EXPENSES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_expense_message(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     parsed = parse_expense_message(text)
 
     if not parsed:
-        return  # unrecognised note — ignore silently
+        return
 
     await db.create_expense(
         amount=parsed.amount,

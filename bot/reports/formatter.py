@@ -8,11 +8,15 @@ from typing import Dict, List
 
 import pytz
 
-_TZ = pytz.timezone("Asia/Tbilisi")
+import config
+
+
+def _tz() -> pytz.BaseTzInfo:
+    return pytz.timezone(config.TIMEZONE)
 
 
 def _now() -> datetime:
-    return datetime.now(_TZ)
+    return datetime.now(_tz())
 
 
 def _e(text: object) -> str:
@@ -31,29 +35,28 @@ def format_weekly_report(
     now = _now()
     week_start = now - timedelta(days=7)
 
-    total_revenue = sum(s["sale_price"] * s["quantity"] for s in sales)
+    total_revenue = sum(s["unit_price"] * s["quantity"] for s in sales)
     total_returns = sum(r["refund_amount"] for r in returns)
     total_expenses = sum(e["amount"] for e in expenses)
     net_income = total_revenue - total_returns - total_expenses
 
     cash_revenue = sum(
-        s["sale_price"] * s["quantity"]
+        s["unit_price"] * s["quantity"]
         for s in sales
         if s.get("payment_method") == "cash"
     )
     transfer_revenue = sum(
-        s["sale_price"] * s["quantity"]
+        s["unit_price"] * s["quantity"]
         for s in sales
         if s.get("payment_method") == "transfer"
     )
 
-    # Aggregate by product
     by_product: Dict[str, Dict] = {}
     for s in sales:
         key = s.get("product_name") or s.get("notes") or "უცნობი"
         entry = by_product.setdefault(key, {"qty": 0, "revenue": 0.0})
         entry["qty"] += s["quantity"]
-        entry["revenue"] += s["sale_price"] * s["quantity"]
+        entry["revenue"] += float(s["unit_price"]) * s["quantity"]
 
     low_stock = [p for p in products if p["current_stock"] <= p["min_stock"]]
 
@@ -71,7 +74,6 @@ def format_weekly_report(
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
 
-    # Sales breakdown
     if by_product:
         lines += ["", "📦 <b>გაყიდული პროდუქტები:</b>"]
         for name, data in sorted(by_product.items(), key=lambda x: -x[1]["revenue"]):
@@ -82,25 +84,22 @@ def format_weekly_report(
     else:
         lines += ["", "📦 ამ კვირაში გაყიდვა არ მომხდარა."]
 
-    # Returns
     if returns:
         lines += ["", "↩️ <b>დაბრუნებები:</b>"]
         for r in returns:
             name = r.get("product_name") or "უცნობი"
             lines.append(
-                f"• {_e(name)}: {r['quantity']}ც — {r['refund_amount']:.2f}₾"
+                f"• {_e(name)}: {r['quantity']}ც — {float(r['refund_amount']):.2f}₾"
             )
 
-    # Expenses
     if expenses:
         lines += ["", "🧾 <b>ხარჯები:</b>"]
         for e in expenses:
             desc = e.get("description") or "—"
-            lines.append(f"• {_e(desc)}: {e['amount']:.2f}₾")
+            lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
 
     lines.append("\n━━━━━━━━━━━━━━━━━━━━━")
 
-    # Low-stock warnings
     if low_stock:
         lines += ["", "⚠️ <b>დაბალი მარაგი:</b>"]
         for p in low_stock:
@@ -132,17 +131,43 @@ def format_stock_report(products: List[Dict]) -> str:
         oem_part = f" <code>{_e(p['oem_code'])}</code>" if p.get("oem_code") else ""
         warn_part = " ⚠️" if is_low else ""
 
+        lines.append(f"{icon} <b>{_e(p['name'])}</b>{oem_part}")
         lines.append(
-            f"{icon} <b>{_e(p['name'])}</b>{oem_part}"
-        )
-        lines.append(
-            f"   მარაგი: {p['current_stock']}ც  |  ფასი: {p['unit_price']:.2f}₾{warn_part}"
+            f"   მარაგი: {p['current_stock']}ც  |  ფასი: {float(p['unit_price']):.2f}₾{warn_part}"
         )
 
     low = [p for p in products if p["current_stock"] <= p["min_stock"]]
     if low:
         lines += ["", f"⚠️ <b>{len(low)} პროდუქტს სჭირდება შეკვეთა!</b>"]
 
+    return "\n".join(lines)
+
+
+# ─── Orders report ────────────────────────────────────────────────────────────
+
+def format_orders_report(orders: List[Dict]) -> str:
+    if not orders:
+        return "📋 მომლოდინე შეკვეთა არ არის."
+
+    now = _now()
+    lines: List[str] = [
+        "📋 <b>მომლოდინე შეკვეთები</b>",
+        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
+        "",
+    ]
+
+    for o in orders:
+        name = o.get("product_name") or o.get("notes") or "უცნობი"
+        oem = f" <code>{_e(o['oem_code'])}</code>" if o.get("oem_code") else ""
+        lines.append(
+            f"🔹 <b>#{o['id']}</b> — {_e(name)}{oem}\n"
+            f"   საჭირო: {o['quantity_needed']}ც"
+        )
+
+    lines += [
+        "",
+        "<i>დახურვა: <code>/completeorder ID</code></i>",
+    ]
     return "\n".join(lines)
 
 
