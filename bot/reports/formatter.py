@@ -105,6 +105,39 @@ def format_sale_confirmation(
     return _truncate("\n".join(lines))
 
 
+def format_batch_confirmation(
+    customer_name: Optional[str],
+    results: List[Any],  # list of (ParsedSale, product_dict | None, sale_id) or None
+    grand_total: float,
+    failed_lines: List[str],
+) -> str:
+    """Confirmation for a multi-line batch sale entry."""
+    lines: List[str] = ["✅ <b>პაკეტი ჩაიწერა</b>"]
+    if customer_name:
+        lines.append(f"👤 <b>{_e(customer_name)}</b>")
+    lines.append("")
+
+    for item in results:
+        parsed, product, sale_id = item
+        name = product["name"] if product else _e(parsed.raw_product or "—")
+        item_total = parsed.quantity * parsed.price
+        lines.append(
+            f"🔸 #{sale_id} {name} — {parsed.quantity}ც × {parsed.price:.2f}₾ = <b>{item_total:.2f}₾</b>"
+        )
+
+    lines.append("")
+    lines.append(f"💰 <b>ჯამი: {grand_total:.2f}₾</b>")
+    lines.append("📋 <b>ნისია — გახსოვდეს!</b>")
+
+    if failed_lines:
+        lines.append("")
+        lines.append(f"⚠️ ვერ ამოიცნო ({len(failed_lines)} სტრ.):")
+        for fl in failed_lines:
+            lines.append(f"  • <code>{_e(fl)}</code>")
+
+    return _truncate("\n".join(lines))
+
+
 def format_return_confirmation(
     product_name: str,
     qty: int,

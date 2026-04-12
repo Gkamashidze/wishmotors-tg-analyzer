@@ -13,9 +13,14 @@ import config
 from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import (
     ParsedSale,
+    parse_batch_sales,
     parse_sale_message,
 )
-from bot.reports.formatter import format_sale_confirmation, format_return_confirmation
+from bot.reports.formatter import (
+    format_batch_confirmation,
+    format_sale_confirmation,
+    format_return_confirmation,
+)
 from database.db import Database
 from database.models import ProductRow
 
@@ -32,6 +37,11 @@ _MAX_IMPORT_ROWS = 2_000  # Safety limit per Excel import
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
     try:
+        # Multi-line → batch handler (one customer, many items)
+        if "\n" in text:
+            await _handle_batch_sales(message, db, text)
+            return
+
         parsed = parse_sale_message(text)
 
         if not parsed:
@@ -66,6 +76,55 @@ async def handle_sales_text(message: Message, db: Database) -> None:
             text="❌ სისტემური შეცდომა. გთხოვთ, სცადოთ ხელახლა.",
             parse_mode=_PARSE,
         )
+
+
+async def _handle_batch_sales(message: Message, db: Database, text: str) -> None:
+    """Process a multi-line message — each line is a separate sale, customer shared."""
+    customer_name, parsed_list = parse_batch_sales(text)
+
+    if not parsed_list:
+        await db.log_parse_failure(config.SALES_TOPIC_ID, text)
+        return
+
+    results = []
+    failed_lines = []
+    grand_total = 0.0
+
+    for i, parsed in enumerate(parsed_list):
+        if parsed is None:
+            # Determine the original line for the error report
+            raw_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+            offset = 1 if customer_name else 0
+            failed_lines.append(raw_lines[offset + i] if (offset + i) < len(raw_lines) else "?")
+            continue
+
+        raw = parsed.raw_product
+        product = await db.get_product_by_oem(raw) if raw else None
+        if not product and raw:
+            product = await db.get_product_by_name(raw)
+
+        sale_id, _ = await db.create_sale(
+            product_id=product["id"] if product else None,
+            quantity=parsed.quantity,
+            unit_price=parsed.price,
+            payment_method=parsed.payment_method,
+            seller_type=parsed.seller_type,
+            customer_name=parsed.customer_name or None,
+            notes=raw if not product else None,
+        )
+        grand_total += parsed.quantity * parsed.price
+        results.append((parsed, product, sale_id))
+
+    if not results:
+        # All lines failed — log and bail
+        await db.log_parse_failure(config.SALES_TOPIC_ID, text)
+        return
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_batch_confirmation(customer_name, results, grand_total, failed_lines),
+        parse_mode=_PARSE,
+    )
 
 
 async def _record_sale(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:

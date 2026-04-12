@@ -124,11 +124,13 @@ _COMMA_PRICE_RE = re.compile(r"(\d+),(\d+)\s*([₾ლ])")
 
 # ─── Regex patterns ───────────────────────────────────────────────────────────
 
-# Pattern A: "product Nც [/] PRICEლ/₾ [rest...]"
+# Pattern A: "product Nც [/] [ჯამში] PRICEლ/₾ [rest...]"
 # Accepts slash separator between qty and price: 1ც/30₾
+# Accepts "ჯამში" before price to indicate total price (unit = total / qty)
 _SALE_A = re.compile(
     r"^(?P<product>.+?)\s+"
     r"(?P<qty>\d+(?:\.\d+)?)\s*ც\s*[/]?\s*"
+    r"(?P<total_flag>ჯამში\s+)?"
     r"(?P<price>\d+(?:\.\d+)?)\s*[₾ლ]"
     r"(?:\s+(?P<rest>.+))?"
     r"\s*$",
@@ -320,10 +322,14 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             customer_name=customer,
         )
 
-    # Pattern A: full free-form "product Nც PRICEლ [rest]"
+    # Pattern A: full free-form "product Nც [ჯამში] PRICEლ [rest]"
     m = _SALE_A.match(text)
     if m:
         product_raw = m.group("product").strip()
+        qty = int(float(m.group("qty")))
+        raw_price = _parse_price(m.group("price"))
+        # "ჯამში" means the price is the total; derive unit price
+        unit_price = (raw_price / qty) if (m.group("total_flag") and qty > 0) else raw_price
         payment, seller, customer = _parse_rest(m.group("rest"))
         # LLC keyword may appear before the quantity (e.g., "სარკე შპსდან 1ც 30₾")
         if seller == "individual" and _LLC_RE.search(product_raw):
@@ -331,8 +337,8 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             product_raw = _LLC_RE.sub("", product_raw).strip()
         return ParsedSale(
             raw_product=product_raw,
-            quantity=int(float(m.group("qty"))),
-            price=_parse_price(m.group("price")),
+            quantity=qty,
+            price=unit_price,
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
@@ -446,6 +452,43 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
         )
 
     return None
+
+
+def parse_batch_sales(text: str) -> Tuple[Optional[str], List[Optional[ParsedSale]]]:
+    """
+    Parse a multi-line sales message where all items share one customer.
+
+    Format:
+      იმედა:          ← optional customer name header (first line, no price)
+      პადვესნოი 1ც 150ლ
+      136001 2ც ჯამში 360ლ
+      ...
+
+    Returns (customer_name, [ParsedSale | None, ...]).
+    customer_name is None when the first line is already a valid sale.
+    None entries in the list mark lines that could not be parsed.
+    """
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+        return None, []
+
+    customer_name: Optional[str] = None
+    sale_lines = lines
+
+    # If first line doesn't parse as a sale, treat it as customer name header
+    first_clean = lines[0].rstrip(":")
+    if not parse_sale_message(first_clean):
+        customer_name = first_clean
+        sale_lines = lines[1:]
+
+    results: List[Optional[ParsedSale]] = []
+    for line in sale_lines:
+        parsed = parse_sale_message(line)
+        if parsed is not None and not parsed.customer_name and customer_name:
+            parsed.customer_name = customer_name
+        results.append(parsed)
+
+    return customer_name, results
 
 
 def parse_order_message(text: str) -> Optional[ParsedOrder]:

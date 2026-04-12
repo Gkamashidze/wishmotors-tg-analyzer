@@ -7,6 +7,7 @@ from bot.parsers.message_parser import (
     PAYMENT_CASH,
     PAYMENT_CREDIT,
     PAYMENT_TRANSFER,
+    parse_batch_sales,
     parse_expense_message,
     parse_order_message,
     parse_sale_message,
@@ -431,3 +432,90 @@ class TestRealWorldFormats:
         assert result.seller_type == "llc"
         assert result.quantity == 2
         assert result.price == 80.0
+
+
+# ─── ჯამში (total price) support ─────────────────────────────────────────────
+
+class TestJumshiTotalPrice:
+    def test_jumshi_divides_by_qty(self):
+        """'136001 2ც ჯამში 360ლ' → unit price = 180."""
+        result = parse_sale_message("136001 2ც ჯამში 360ლ")
+        assert result is not None
+        assert result.quantity == 2
+        assert result.price == 180.0
+
+    def test_jumshi_single_unit_stays_same(self):
+        """'221002 1ც ჯამში 100ლ' → unit price = 100 (1/1)."""
+        result = parse_sale_message("221002 1ც ჯამში 100ლ")
+        assert result is not None
+        assert result.quantity == 1
+        assert result.price == 100.0
+
+    def test_jumshi_credit_payment(self):
+        """No payment keyword → credit (ნისია)."""
+        result = parse_sale_message("09003 2ც ჯამში 280ლ")
+        assert result is not None
+        assert result.payment_method == PAYMENT_CREDIT
+
+    def test_without_jumshi_unchanged(self):
+        """Regular format still works — no regression."""
+        result = parse_sale_message("136001 2ც 180ლ")
+        assert result is not None
+        assert result.price == 180.0
+
+
+# ─── parse_batch_sales ────────────────────────────────────────────────────────
+
+class TestParseBatchSales:
+    def test_header_extracted_as_customer(self):
+        """First line without price → customer name; rest are sales."""
+        text = "იმედა:\nპადვესნოი 1ც 150ლ\n136001 2ც ჯამში 360ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "იმედა"
+        assert len(items) == 2
+        assert all(i is not None for i in items)
+
+    def test_customer_propagated_to_all_items(self):
+        """Customer name from header applied to every line."""
+        text = "გიო:\nსარკე 1ც 50ლ\nნათურა 2ც 30ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "გიო"
+        for item in items:
+            assert item is not None
+            assert item.customer_name == "გიო"
+
+    def test_no_header_when_first_line_is_sale(self):
+        """First line looks like a sale → no customer extracted."""
+        text = "სარკე 1ც 50ლ\nნათურა 2ც 30ლ"
+        name, items = parse_batch_sales(text)
+        assert name is None
+        assert len(items) == 2
+
+    def test_unparseable_line_returns_none_entry(self):
+        """Line that can't be parsed → None in the result list."""
+        text = "გიო:\nსარკე 1ც 50ლ\nეს ვერ ამოიცნობება !!!"
+        _, items = parse_batch_sales(text)
+        assert items[0] is not None
+        assert items[1] is None
+
+    def test_jumshi_in_batch(self):
+        """'ჯამში' format works correctly inside a batch."""
+        text = "იმედა:\n136001 2ც ჯამში 360ლ\n209000 1ც 35ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "იმედა"
+        assert items[0] is not None
+        assert items[0].price == 180.0   # 360 / 2
+        assert items[1] is not None
+        assert items[1].price == 35.0
+
+    def test_empty_message_returns_empty(self):
+        """Empty text → empty results."""
+        _, items = parse_batch_sales("   \n  \n")
+        assert items == []
+
+    def test_header_without_colon(self):
+        """Customer name without trailing colon also works."""
+        text = "ლაშა\nსარკე 1ც 50ლ"
+        name, items = parse_batch_sales(text)
+        assert name == "ლაშა"
+        assert len(items) == 1
