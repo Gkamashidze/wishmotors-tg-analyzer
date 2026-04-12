@@ -35,3 +35,7 @@ Thumbs.db
 # ── Logs ──────────────────────────────────────────────────────────
 *.log
 logs/
+
+# ── Telethon session (personal credentials) ───────────────────────
+tools/*.session
+tools/*.session-journal

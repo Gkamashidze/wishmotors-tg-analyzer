@@ -6,3 +6,4 @@ python-dotenv==1.0.1
 openpyxl==3.1.2
 pytz==2024.1
 types-pytz==2024.1.0.20240203
+telethon==1.36.0
