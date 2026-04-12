@@ -38,10 +38,13 @@ async def handle_order_message(message: Message, db: Database) -> None:
         notes=text,
     )
 
-    await message.reply(
-        f"📋 <b>შეკვეთა დაფიქსირდა</b>\n"
-        f"📦 პროდუქტი: <b>{product_name}</b>\n"
-        f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც",
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"📋 <b>შეკვეთა დაფიქსირდა</b>\n"
+            f"📦 პროდუქტი: <b>{product_name}</b>\n"
+            f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც"
+        ),
         parse_mode=_PARSE,
     )
 
@@ -62,9 +65,12 @@ async def handle_expense_message(message: Message, db: Database) -> None:
         category=parsed.category,
     )
 
-    await message.reply(
-        f"🧾 <b>ხარჯი დაფიქსირდა</b>\n"
-        f"💰 თანხა: <b>{parsed.amount:.2f}₾</b>\n"
-        f"📝 აღწერა: {parsed.description}",
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"🧾 <b>ხარჯი დაფიქსირდა</b>\n"
+            f"💰 თანხა: <b>{parsed.amount:.2f}₾</b>\n"
+            f"📝 აღწერა: {parsed.description}"
+        ),
         parse_mode=_PARSE,
     )

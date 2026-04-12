@@ -58,26 +58,35 @@ _HELP_TEXT = """
 
 @commands_router.message(Command("help"), IsAdmin())
 async def cmd_help(message: Message) -> None:
-    await message.answer(_HELP_TEXT, parse_mode=_PARSE)
+    await message.bot.send_message(chat_id=message.from_user.id, text=_HELP_TEXT, parse_mode=_PARSE)
 
 
 @commands_router.message(Command("stock"), IsAdmin())
 async def cmd_stock(message: Message, db: Database) -> None:
     products = await db.get_all_products()
-    await message.answer(format_stock_report(products), parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_stock_report(products),
+        parse_mode=_PARSE,
+    )
 
 
 @commands_router.message(Command("report"), IsAdmin())
 async def cmd_report(message: Message, db: Database) -> None:
-    await message.answer("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="⏳ ანგარიში მუშავდება...",
+        parse_mode=_PARSE,
+    )
 
     sales = await db.get_weekly_sales()
     returns = await db.get_weekly_returns()
     expenses = await db.get_weekly_expenses()
     products = await db.get_all_products()
 
-    await message.answer(
-        format_weekly_report(sales, returns, expenses, products),
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_weekly_report(sales, returns, expenses, products),
         parse_mode=_PARSE,
     )
 
@@ -85,16 +94,20 @@ async def cmd_report(message: Message, db: Database) -> None:
 @commands_router.message(Command("orders"), IsAdmin())
 async def cmd_orders(message: Message, db: Database) -> None:
     orders = await db.get_pending_orders()
-    await message.answer(format_orders_report(orders), parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_orders_report(orders),
+        parse_mode=_PARSE,
+    )
 
 
 @commands_router.message(Command("completeorder"), IsAdmin())
 async def cmd_complete_order(message: Message, db: Database) -> None:
     parts = (message.text or "").split()
     if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer(
-            "❌ მიუთითეთ შეკვეთის ID.\n"
-            "მაგალითი: <code>/completeorder 5</code>",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ მიუთითეთ შეკვეთის ID.\nმაგალითი: <code>/completeorder 5</code>",
             parse_mode=_PARSE,
         )
         return
@@ -103,13 +116,15 @@ async def cmd_complete_order(message: Message, db: Database) -> None:
     done = await db.complete_order(order_id)
 
     if done:
-        await message.answer(
-            f"✅ შეკვეთა #{order_id} დახურულია.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"✅ შეკვეთა #{order_id} დახურულია.",
             parse_mode=_PARSE,
         )
     else:
-        await message.answer(
-            f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა ან უკვე დახურულია.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა ან უკვე დახურულია.",
             parse_mode=_PARSE,
         )
 
@@ -119,13 +134,16 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
     args = (message.text or "").split()[1:]
 
     if len(args) < 4:
-        await message.answer(
-            "❌ <b>არასწორი ფორმატი.</b>\n\n"
-            "გამოიყენეთ:\n"
-            "<code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>\n\n"
-            "მაგალითი:\n"
-            "<code>/addproduct მარჭვენა_რეფლექტორი 8390132500 50 30.00</code>\n\n"
-            "სახელში _ სფეისის ნაცვლად.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "❌ <b>არასწორი ფორმატი.</b>\n\n"
+                "გამოიყენეთ:\n"
+                "<code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>\n\n"
+                "მაგალითი:\n"
+                "<code>/addproduct მარჭვენა_რეფლექტორი 8390132500 50 30.00</code>\n\n"
+                "სახელში _ სფეისის ნაცვლად."
+            ),
             parse_mode=_PARSE,
         )
         return
@@ -139,8 +157,9 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         if not name:
             raise ValueError("empty name")
     except (ValueError, IndexError):
-        await message.answer(
-            "❌ შეამოწმეთ ფორმატი. <b>მარაგი</b> მთელი რიცხვია, <b>ფასი</b> — ათობითი.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ შეამოწმეთ ფორმატი. <b>მარაგი</b> მთელი რიცხვია, <b>ფასი</b> — ათობითი.",
             parse_mode=_PARSE,
         )
         return
@@ -150,9 +169,12 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         existing = await db.get_product_by_name(name)
 
     if existing:
-        await message.answer(
-            f"⚠️ პროდუქტი უკვე არსებობს: <b>{existing['name']}</b> (ID: {existing['id']})\n"
-            f"მარაგის განახლებისთვის გამოიყენეთ Excel ატვირთვა Capital topic-ში.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                f"⚠️ პროდუქტი უკვე არსებობს: <b>{existing['name']}</b> (ID: {existing['id']})\n"
+                f"მარაგის განახლებისთვის გამოიყენეთ Excel ატვირთვა Capital topic-ში."
+            ),
             parse_mode=_PARSE,
         )
         return
@@ -165,12 +187,15 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
         price=price,
     )
 
-    await message.answer(
-        f"✅ <b>პროდუქტი დამატებულია!</b>\n"
-        f"📦 სახელი: {name}\n"
-        f"🔑 OEM: {oem or '—'}\n"
-        f"📊 საწყობი: {stock}ც\n"
-        f"💰 ფასი: {price:.2f}₾\n"
-        f"🆔 ID: {product_id}",
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"✅ <b>პროდუქტი დამატებულია!</b>\n"
+            f"📦 სახელი: {name}\n"
+            f"🔑 OEM: {oem or '—'}\n"
+            f"📊 საწყობი: {stock}ც\n"
+            f"💰 ფასი: {price:.2f}₾\n"
+            f"🆔 ID: {product_id}"
+        ),
         parse_mode=_PARSE,
     )

@@ -38,8 +38,9 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         # პროდუქტი ბაზაში არ არის (საწყისი ნაშთები ჯერ არ არის ატვირთული).
         # გაყიდვა მაინც ჩაიწერება — product_id=None, პროდუქტის სახელი notes-ში.
         if parsed.is_return:
-            await message.reply(
-                f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text=f"⚠️ პროდუქტი <b>{raw}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
                 parse_mode=_PARSE,
             )
             return
@@ -61,8 +62,9 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed) ->
     )
     low = new_stock <= product["min_stock"]
 
-    await message.reply(
-        format_sale_confirmation(
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_sale_confirmation(
             product_name=product["name"],
             qty=parsed.quantity,
             price=parsed.price,
@@ -94,13 +96,16 @@ async def _record_sale_freeform(
         notes=product_name,
     )
 
-    await message.reply(
-        f"✅ <b>გაყიდვა დაფიქსირდა</b>\n"
-        f"📦 პროდუქტი: {product_name}\n"
-        f"🔢 რაოდენობა: {parsed.quantity}ც\n"
-        f"💰 ფასი: {parsed.price:.2f}₾ × {parsed.quantity} = <b>{total:.2f}₾</b>\n"
-        f"💳 გადახდა: {payment_str}\n"
-        f"<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>",
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"✅ <b>გაყიდვა დაფიქსირდა</b>\n"
+            f"📦 პროდუქტი: {product_name}\n"
+            f"🔢 რაოდენობა: {parsed.quantity}ც\n"
+            f"💰 ფასი: {parsed.price:.2f}₾ × {parsed.quantity} = <b>{total:.2f}₾</b>\n"
+            f"💳 გადახდა: {payment_str}\n"
+            f"<i>⚠️ პროდუქტი ბაზაში არ არის — მარაგი არ განახლებულა</i>"
+        ),
         parse_mode=_PARSE,
     )
 
@@ -115,8 +120,9 @@ async def _record_return(message: Message, db: Database, product: dict, parsed) 
         notes="დაბრუნება",
     )
 
-    await message.reply(
-        format_return_confirmation(
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_return_confirmation(
             product_name=product["name"],
             qty=parsed.quantity,
             refund=refund,
@@ -135,21 +141,27 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
         return
 
     if not doc.file_name.lower().endswith((".xlsx", ".xls")):
-        await message.reply(
-            "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
             parse_mode=_PARSE,
         )
         return
 
     if doc.file_size and doc.file_size > config.MAX_EXCEL_BYTES:
         mb = config.MAX_EXCEL_BYTES // (1024 * 1024)
-        await message.reply(
-            f"❌ ფაილი ძალიან დიდია. მაქსიმალური ზომა: <b>{mb} MB</b>.",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=f"❌ ფაილი ძალიან დიდია. მაქსიმალური ზომა: <b>{mb} MB</b>.",
             parse_mode=_PARSE,
         )
         return
 
-    await message.reply("⏳ ფაილი მუშავდება...", parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="⏳ ფაილი მუშავდება...",
+        parse_mode=_PARSE,
+    )
 
     file_info = await bot.get_file(doc.file_id)
     buf = BytesIO()
@@ -161,9 +173,9 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
         ws = wb.active
     except Exception as exc:
         logger.error("Excel parse error: %s", exc)
-        await message.reply(
-            "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
-            "სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>",
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\nსვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>",
             parse_mode=_PARSE,
         )
         return
@@ -199,4 +211,8 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
     if errors:
         summary += f"\n⚠️ გამოტოვებული სტრიქონები: {errors}"
 
-    await message.reply(summary, parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=summary,
+        parse_mode=_PARSE,
+    )
