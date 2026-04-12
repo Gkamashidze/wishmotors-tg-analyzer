@@ -1,6 +1,14 @@
 import asyncio
 import logging
+import os
+import sys
 from typing import Any, Awaitable, Callable, Dict
+
+# Guard: prevent accidental local runs that conflict with Railway
+if not os.getenv("RAILWAY_ENVIRONMENT"):
+    print("🚫 ბოტის ლოკალური გაშვება დაბლოკილია.")
+    print("   გაუშვი მხოლოდ Railway-ზე, კონფლიქტის თავიდან ასაცილებლად.")
+    sys.exit(0)
 
 import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
