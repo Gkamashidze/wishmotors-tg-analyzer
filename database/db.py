@@ -203,6 +203,25 @@ class Database:
 
         return sale_id, new_stock
 
+    async def delete_sale(self, sale_id: int) -> Optional[Dict]:
+        """Delete a sale and restore stock if a product was linked.
+        Returns the deleted sale record, or None if not found."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                sale = await conn.fetchrow("SELECT * FROM sales WHERE id = $1", sale_id)
+                if not sale:
+                    return None
+                sale_dict = dict(sale)
+                if sale_dict.get("product_id"):
+                    await conn.execute(
+                        """UPDATE products
+                           SET current_stock = current_stock + $1
+                           WHERE id = $2""",
+                        sale_dict["quantity"], sale_dict["product_id"],
+                    )
+                await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
+                return sale_dict
+
     async def mark_sale_paid(self, sale_id: int, payment_method: str) -> bool:
         """Mark a credit (ნისია) sale as paid. Returns True if updated."""
         async with self.pool.acquire() as conn:
@@ -237,6 +256,37 @@ class Database:
                    ORDER BY s.sold_at ASC""",
             )
             return self._rows(rows)
+
+    async def edit_product(
+        self,
+        product_id: int,
+        name: Optional[str] = None,
+        oem_code: Optional[str] = None,
+        price: Optional[float] = None,
+        min_stock: Optional[int] = None,
+    ) -> Optional[Dict]:
+        """Update one or more product fields. Only provided (non-None) fields change.
+        Returns the updated product, or None if not found."""
+        updates: List[str] = []
+        values: List[Any] = []
+        idx = 1
+        if name is not None:
+            updates.append(f"name = ${idx}"); values.append(name); idx += 1
+        if oem_code is not None:
+            updates.append(f"oem_code = ${idx}"); values.append(oem_code or None); idx += 1
+        if price is not None:
+            updates.append(f"unit_price = ${idx}"); values.append(price); idx += 1
+        if min_stock is not None:
+            updates.append(f"min_stock = ${idx}"); values.append(min_stock); idx += 1
+        if not updates:
+            return await self.get_product_by_id(product_id)
+        values.append(product_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE products SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
+                *values,
+            )
+            return self._row(row)
 
     # ─── Returns (atomic: record return + restore stock) ──────────────────────
 

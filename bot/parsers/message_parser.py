@@ -36,7 +36,7 @@ Order format:
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 PAYMENT_CASH = "cash"
 PAYMENT_TRANSFER = "transfer"
@@ -69,6 +69,30 @@ class ParsedOrder:
     raw_product: str
     quantity: int
     notes: str = ""
+
+
+# ─── Expense category detection ──────────────────────────────────────────────
+
+_CATEGORY_RULES: List[tuple] = [
+    (re.compile(r"ბენზინ|საწვავ|ნავთ|fuel|petrol|gas(?:oline)?", re.UNICODE | re.IGNORECASE), "fuel"),
+    (re.compile(r"საბაჟ|customs?|tax(?:es)?|გადასახ|ბაჟ", re.UNICODE | re.IGNORECASE), "customs"),
+    (re.compile(r"დელივ|კურიერ|გაგზავნ|მიტან|deliver|courier|shipping|postal|ფოსტ", re.UNICODE | re.IGNORECASE), "delivery"),
+    (re.compile(r"სერვის|სარემონტ|შეკეთ|repair|service|მოვლ", re.UNICODE | re.IGNORECASE), "maintenance"),
+    (re.compile(r"რეკლამ|advertis|marketing|მარკეტ|promotion", re.UNICODE | re.IGNORECASE), "marketing"),
+    (re.compile(r"ოფის|office|კანცელარ|stationer", re.UNICODE | re.IGNORECASE), "office"),
+    (re.compile(r"კომუნალ|utility|utilities|electric|წყალ|გაზ(?:ი)?$|ელ\.?ენ", re.UNICODE | re.IGNORECASE), "utilities"),
+    (re.compile(r"ხელფას|salary|სახელფ|მუშა|employee|staff", re.UNICODE | re.IGNORECASE), "salary"),
+    (re.compile(r"სადაზღვ|insurance|დაზღვ", re.UNICODE | re.IGNORECASE), "insurance"),
+    (re.compile(r"ტრანსპ|transport|მანქან|car|auto|სატვ", re.UNICODE | re.IGNORECASE), "transport"),
+]
+
+
+def detect_expense_category(description: str) -> Optional[str]:
+    """Return the first matching category key for the given expense description, or None."""
+    for pattern, category in _CATEGORY_RULES:
+        if pattern.search(description):
+            return category
+    return None
 
 
 # ─── Keyword patterns ─────────────────────────────────────────────────────────
@@ -338,23 +362,29 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
     # Negative shorthand: "-11 დელივო" or "-20ლ საბაჟო"
     m = _EXPENSE_NEGATIVE.match(text)
     if m:
+        desc = m.group("desc").strip()
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
-            description=m.group("desc").strip(),
+            description=desc,
+            category=detect_expense_category(desc),
         )
 
     m = _EXPENSE_AMOUNT_FIRST.match(text)
     if m:
+        desc = m.group("desc").strip()
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
-            description=m.group("desc").strip(),
+            description=desc,
+            category=detect_expense_category(desc),
         )
 
     m = _EXPENSE_DESC_FIRST.match(text)
     if m:
+        desc = m.group("desc").strip()
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
-            description=m.group("desc").strip(),
+            description=desc,
+            category=detect_expense_category(desc),
         )
 
     return None

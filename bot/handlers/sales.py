@@ -101,6 +101,22 @@ async def _record_sale(message: Message, db: Database, product: dict, parsed: Pa
             "Low stock alert: %s — %d units remaining", product["name"], new_stock
         )
 
+    if new_stock == 0:
+        await db.create_order(
+            product_id=product["id"],
+            quantity_needed=product["min_stock"],
+            notes=f"ავტო: {product['name']} — 0-ზე ჩამოვიდა",
+        )
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                f"🔔 <b>ავტოშეკვეთა!</b>\n"
+                f"📦 {product['name']} — საწყობი 0-ზე ჩამოვიდა.\n"
+                f"📋 შეკვეთა ავტომატურად შეიქმნა ({product['min_stock']}ც)."
+            ),
+            parse_mode=_PARSE,
+        )
+
 
 async def _record_sale_freeform(
     message: Message, db: Database, product_name: str, parsed: ParsedSale

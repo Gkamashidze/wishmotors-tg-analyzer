@@ -7,6 +7,7 @@ from aiogram.types import Message
 import config
 from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import parse_expense_message, parse_order_message
+from bot.reports.formatter import _category_label
 from database.db import Database
 
 logger = logging.getLogger(__name__)
@@ -76,12 +77,15 @@ async def handle_expense_message(message: Message, db: Database) -> None:
             category=parsed.category,
         )
 
+        cat = _category_label(parsed.category)
+        cat_line = f"\n🏷 კატეგორია: {cat}" if cat else ""
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text=(
                 f"🧾 <b>ხარჯი დაფიქსირდა</b>\n"
                 f"💰 თანხა: <b>{parsed.amount:.2f}₾</b>\n"
                 f"📝 აღწერა: {parsed.description}"
+                f"{cat_line}"
             ),
             parse_mode=_PARSE,
         )

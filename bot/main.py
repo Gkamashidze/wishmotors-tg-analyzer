@@ -61,11 +61,25 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
         products = await db.get_all_products()
 
         text = format_weekly_report(sales, returns, expenses, products)
+
+        # Send to group
         await bot.send_message(
             chat_id=config.GROUP_ID,
             text=text,
             parse_mode=ParseMode.HTML,
         )
+
+        # Also DM each admin
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as dm_exc:
+                logger.warning("Could not DM admin %d: %s", admin_id, dm_exc)
+
         logger.info("Weekly report sent successfully.")
     except Exception as exc:
         logger.error("Failed to send weekly report: %s", exc)
@@ -86,16 +100,19 @@ async def main() -> None:
     await bot.set_my_commands([
         # ── 📊 ანგარიშები ──────────────────────────────
         BotCommand(command="report",        description="📊 კვირის ანგარიში"),
-        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში"),
+        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),
         # ── 🏪 საწყობი ────────────────────────────────
         BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
         BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
+        BotCommand(command="editproduct",   description="✏️ პროდუქტის რედაქტირება — ID ველი"),
         # ── 📋 შეკვეთები ──────────────────────────────
         BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
         BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — ID საჭიროა"),
         # ── 💳 ნისია ──────────────────────────────────
-        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები"),
+        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები (ღილაკებით)"),
         BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
+        # ── 🗑 გასწორება ──────────────────────────────
+        BotCommand(command="deletesale",    description="🗑 გაყიდვის წაშლა — /deletesale ID"),
         # ── 🔧 სისტემა ────────────────────────────────
         BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),

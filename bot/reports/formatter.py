@@ -40,6 +40,24 @@ def _seller_label(seller_type: str) -> str:
     return "შპს" if seller_type == "llc" else "ფზ"
 
 
+_CATEGORY_LABELS = {
+    "fuel":        "⛽ საწვავი",
+    "customs":     "🛃 საბაჟო",
+    "delivery":    "🚚 მიტანა",
+    "maintenance": "🔧 სერვისი",
+    "marketing":   "📣 რეკლამა",
+    "office":      "🖊 ოფისი",
+    "utilities":   "💡 კომუნალი",
+    "salary":      "👷 ხელფასი",
+    "insurance":   "🛡 სადაზღვევო",
+    "transport":   "🚗 ტრანსპორტი",
+}
+
+
+def _category_label(category: Optional[str]) -> str:
+    return _CATEGORY_LABELS.get(category or "", "") if category else ""
+
+
 # ─── Confirmation messages ────────────────────────────────────────────────────
 
 def format_sale_confirmation(
@@ -125,10 +143,7 @@ def format_credit_sales_report(sales: List[Dict]) -> str:
             f"   👤 {_e(customer)}"
         )
 
-    lines += [
-        "",
-        "<i>გადახდის შემდეგ: <code>/paid ID ხელზე</code> ან <code>/paid ID დარიცხა</code></i>",
-    ]
+    lines.append("")
     return "\n".join(lines)
 
 
