@@ -107,6 +107,10 @@ _TRANSFER_RE = re.compile(
 )
 _LLC_RE = re.compile(r"შპს\s*-?\s*დან|შპსდან", re.UNICODE | re.IGNORECASE)
 _RETURN_RE = re.compile(r"დაბრუნება|გაცვლა", re.UNICODE | re.IGNORECASE)
+# "ნისია" / "ნისიები" used inline (e.g. "სარკე 1ც 30₾ ნისიები") → credit, not customer name
+_CREDIT_KEYWORD_RE = re.compile(r"^ნისი", re.UNICODE | re.IGNORECASE)
+# "დარჩა 100ლ" split-payment leftover — strip from customer name
+_DARCHA_STRIP_RE = re.compile(r"\s*\bდარჩ\S*(?:\s+\d+[₾ლ]?)?\s*", re.UNICODE)
 
 # Emoji strip
 _EMOJI_RE = re.compile(
@@ -292,9 +296,13 @@ def _parse_rest(rest: Optional[str]) -> Tuple[str, str, str]:
                 payment = PAYMENT_TRANSFER
                 payment_found = True
                 continue
+            if _CREDIT_KEYWORD_RE.match(token):
+                payment = PAYMENT_CREDIT
+                payment_found = True
+                continue
         remaining.append(token)
 
-    customer = " ".join(remaining).strip()
+    customer = _DARCHA_STRIP_RE.sub(" ", " ".join(remaining)).strip()
     return payment, seller, customer
 
 
