@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.enums import ParseMode
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 wizard_router = Router(name="wizard")
 
 _PARSE = ParseMode.HTML
-_PRIVATE = F.chat.type == "private"
+_PRIVATE = F.chat.type == ChatType.PRIVATE
 
 # ─── Shared helpers ────────────────────────────────────────────────────────────
 
