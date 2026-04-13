@@ -150,6 +150,7 @@ _NISIAS_KEYBOARD_MAX = 30  # max rows safety margin (2 rows per named customer)
 
 class NisiasStates(StatesGroup):
     waiting_partial_amount = State()
+    waiting_rename_customer = State()
 
 
 def _customer_key(name: str) -> str:
@@ -180,10 +181,10 @@ def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
     for cname in named:
         label = (cname[:10] + "…") if len(cname) > 11 else cname
         key = _customer_key(cname)
-        # Two buttons per customer: full payment (cash) + partial payment
         rows.append([
             InlineKeyboardButton(text=f"✅ სრულად — {label}", callback_data=f"npc:{key}:cash"),
             InlineKeyboardButton(text=f"💸 ნაწილობრივ — {label}", callback_data=f"npp:{key}"),
+            InlineKeyboardButton(text="✏️", callback_data=f"npr:{key}"),
         ])
 
     # Per-sale rows for unnamed sales (no grouping possible)
@@ -305,6 +306,70 @@ async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db
         f"<i>მაგ: <code>150</code> ან <code>75.50</code></i>",
         parse_mode=_PARSE,
     )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("npr:"), IsAdmin())
+async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Start customer rename flow: npr:{customer_hash}"""
+    try:
+        _, customer_hash = (callback.data or "").split(":", 1)
+    except ValueError:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    all_sales = await db.get_credit_sales()
+    target_customer: Optional[str] = None
+    for s in all_sales:
+        cname = s.get("customer_name")
+        if cname and _customer_key(cname) == customer_hash:
+            target_customer = cname
+            break
+
+    if not target_customer:
+        await callback.answer("⚠️ კლიენტი ვერ მოიძებნა.", show_alert=True)
+        return
+
+    await state.set_state(NisiasStates.waiting_rename_customer)
+    await state.update_data(old_customer_name=target_customer)
+    await callback.answer()
+
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+    await callback.message.reply(
+        f"✏️ <b>{html.escape(target_customer)}</b>\n\n"
+        f"ახალი სახელი ან ტელ. ნომერი მიწერე:",
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(NisiasStates.waiting_rename_customer, IsAdmin())
+async def handle_rename_customer(message: Message, state: FSMContext, db: Database) -> None:
+    """Receive new customer name and update all their credit sales."""
+    new_name = (message.text or "").strip()
+    if not new_name:
+        await message.reply("❌ სახელი ცარიელია. სცადე ხელახლა.")
+        return
+
+    data = await state.get_data()
+    old_name: str = data.get("old_customer_name", "")
+    await state.clear()
+
+    updated = await db.rename_customer(old_name, new_name)
+    logger.info(
+        "AUDIT: admin %d renamed customer %r → %r (%d sales)",
+        message.from_user.id, old_name, new_name, updated,
+    )
+
+    await message.reply(
+        f"✅ <b>{html.escape(old_name)}</b> → <b>{html.escape(new_name)}</b>\n"
+        f"განახლდა: {updated} ჩანაწერი",
+        parse_mode=_PARSE,
+    )
+
+    sales = await db.get_credit_sales()
+    text = format_credit_sales_report(sales)
+    keyboard = _nisias_keyboard(sales) if sales else None
+    await message.answer(text, parse_mode=_PARSE, reply_markup=keyboard)
 
 
 @commands_router.message(NisiasStates.waiting_partial_amount, IsAdmin())

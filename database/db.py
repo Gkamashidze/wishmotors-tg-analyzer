@@ -259,6 +259,16 @@ class Database:
             )
             return int(result.split()[-1])
 
+    async def rename_customer(self, old_name: str, new_name: str) -> int:
+        """Rename a customer across all their credit sales. Returns count of updated rows."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """UPDATE sales SET customer_name = $1
+                   WHERE customer_name = $2""",
+                new_name, old_name,
+            )
+            return int(result.split()[-1])
+
     async def apply_partial_payment(self, customer_name: str, amount: float) -> float:
         """Apply a partial payment to a customer's credit sales (oldest-first).
 
