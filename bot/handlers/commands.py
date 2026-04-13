@@ -396,6 +396,37 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True)
 
 
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("ds:"), IsAdmin())
+async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
+    """Delete a sale from the inline button on confirmation message: ds:{sale_id}"""
+    try:
+        sale_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    deleted = await db.delete_sale(sale_id)
+    if not deleted:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True)
+        return
+
+    logger.info(
+        "AUDIT: admin %d deleted sale #%d via inline button (product_id=%s, qty=%s, price=%s)",
+        callback.from_user.id, sale_id,
+        deleted.get("product_id"), deleted.get("quantity"), deleted.get("unit_price"),
+    )
+
+    total = float(deleted["unit_price"]) * deleted["quantity"]
+    await callback.answer(f"🗑 #{sale_id} წაიშალა — {total:.2f}₾", show_alert=False)
+
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception as exc:
+        logger.debug("Could not remove keyboard after sale deletion: %s", exc)
+
+
 @commands_router.message(Command("paid"), IsAdmin())
 async def cmd_paid(message: Message, db: Database) -> None:
     """Mark a credit sale as paid. Usage: /paid ID ხელზე  or  /paid ID დარიცხა"""

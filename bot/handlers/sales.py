@@ -7,7 +7,7 @@ import openpyxl
 import pytz
 from aiogram import F, Router, Bot
 from aiogram.enums import ParseMode
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
@@ -30,6 +30,25 @@ sales_router = Router(name="sales")
 
 _PARSE = ParseMode.HTML
 _MAX_IMPORT_ROWS = 2_000  # Safety limit per Excel import
+
+
+def _delete_keyboard(sale_id: int) -> InlineKeyboardMarkup:
+    """Single delete button for one sale confirmation."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"🗑 წაშლა #{sale_id}", callback_data=f"ds:{sale_id}")
+    ]])
+
+
+def _delete_keyboard_batch(sale_ids: list[int]) -> InlineKeyboardMarkup:
+    """Delete buttons for a batch confirmation — pairs per row."""
+    rows = []
+    for i in range(0, len(sale_ids), 2):
+        row = [
+            InlineKeyboardButton(text=f"🗑 #{sid}", callback_data=f"ds:{sid}")
+            for sid in sale_ids[i:i + 2]
+        ]
+        rows.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
@@ -133,10 +152,12 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
         await db.log_parse_failure(config.SALES_TOPIC_ID, text)
         return
 
+    sale_ids = [sale_id for _, _, sale_id in results]
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=format_batch_confirmation(customer_name, results, grand_total, failed_lines),
         parse_mode=_PARSE,
+        reply_markup=_delete_keyboard_batch(sale_ids),
     )
 
 
@@ -166,10 +187,12 @@ async def _handle_dual_sale(message: Message, db: Database, dual: list) -> None:
         grand_total += parsed.quantity * parsed.price
         results.append((parsed, product, sale_id))
 
+    sale_ids = [sale_id for _, _, sale_id in results]
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=format_batch_confirmation(customer_name, results, grand_total, []),
         parse_mode=_PARSE,
+        reply_markup=_delete_keyboard_batch(sale_ids),
     )
 
 
@@ -198,6 +221,7 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
             sale_id=sale_id,
         ),
         parse_mode=_PARSE,
+        reply_markup=_delete_keyboard(sale_id),
     )
 
     if low:
@@ -251,6 +275,7 @@ async def _record_sale_freeform(
             unknown_product=True,
         ),
         parse_mode=_PARSE,
+        reply_markup=_delete_keyboard(sale_id),
     )
 
 
