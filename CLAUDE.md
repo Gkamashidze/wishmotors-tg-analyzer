@@ -15,4 +15,17 @@ Georgian-language Telegram bot for auto parts sales tracking (wishmotors).
 
 ### Autonomous Execution
 
-You must act autonomously for routine non-destructive tasks. Do NOT ask for permission to read files, explore directories, or apply standard code fixes. Just do it and report the result. Only ask for explicit confirmation for destructive actions, running external API calls, or making major architectural shifts.
+Act autonomously without asking for permission for ANY of the following:
+- Reading files, exploring directories, searching code
+- Editing or creating files (1–10+ files)
+- Installing or removing packages/dependencies
+- Running tests, linters, formatters, type checkers
+- Making commits and pushing to GitHub
+- Running external API calls or shell commands
+- Refactoring, architectural changes, configuration changes
+- Multi-file changes of any size
+
+**The ONE exception — always ask before:**
+- Deleting files, directories, database records, or any data permanently
+
+Report what was done after the fact. Never ask "should I go ahead?" for anything except deletion.
