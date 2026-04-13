@@ -117,6 +117,7 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
     results = []
     failed_lines = []
     grand_total = 0.0
+    partial_payment: float = 0.0  # cash already received ("მომცა X დარჩა Y")
 
     raw_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     offset = 1 if customer_name else 0
@@ -128,6 +129,11 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
             continue
 
         for parsed in item_group:
+            # Split-payment line ("მომცა 300 დარჩა 100") — apply after all sales recorded
+            if parsed.is_split_payment:
+                partial_payment += parsed.split_paid
+                continue
+
             raw = parsed.raw_product
             product = await db.get_product_by_oem(raw) if raw else None
             if not product and raw:
@@ -148,9 +154,12 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
             results.append((parsed, product, sale_id))
 
     if not results:
-        # All lines failed — log and bail
         await db.log_parse_failure(config.SALES_TOPIC_ID, text)
         return
+
+    # Apply cash partial payment against the customer's new credit sales
+    if partial_payment > 0 and customer_name:
+        await db.apply_partial_payment(customer_name, partial_payment)
 
     sale_ids = [sale_id for _, _, sale_id in results]
     await message.bot.send_message(

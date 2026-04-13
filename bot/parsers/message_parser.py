@@ -55,6 +55,9 @@ class ParsedSale:
     seller_type: str = "individual"   # individual (ფზ) | llc (შპს)
     customer_name: str = ""
     notes: str = ""
+    # Split-payment marker fields (set when "მომცა/ხელზე X დარჩა Y" is parsed)
+    is_split_payment: bool = False
+    split_paid: float = 0.0   # cash portion already received
 
 
 @dataclass
@@ -205,11 +208,14 @@ _PHONE_RE = re.compile(
     re.UNICODE,
 )
 
-# Split payment: "ხელზე 300 დარჩა 100ლ" → paid + remaining = total, cash.
+# Split payment: "ხელზე 300 დარჩა 100ლ" or "მომცა 300ლ დარჩა 100ლ" → paid cash + remaining credit.
 _SALE_SPLIT_RE = re.compile(
-    r"^ხელ\S*\s+(?P<paid>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s+დარჩ\S*\s+(?P<remaining>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s*$",
+    r"^(?:ხელ\S*|მომც\S*)\s+(?P<paid>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s+დარჩ\S*\s+(?P<remaining>\d+(?:[.,]\d+)?)\s*[₾ლ]?\s*$",
     re.UNICODE | re.IGNORECASE,
 )
+
+# Nisias batch header: "ნისიები:" or "ნისია:" alone on a line — credit indicator, skip.
+_NISIAS_HEADER_RE = re.compile(r"^ნისი\S*\s*:?\s*$", re.UNICODE | re.IGNORECASE)
 
 # Pattern F: product + price (no currency symbol), qty=1, credit (ნისია).
 # Covers "ხუნდები 50" style — product name starts with a non-digit/non-symbol char.
@@ -321,7 +327,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
 
     is_return = bool(_RETURN_RE.search(text))
 
-    # Split payment: "ხელზე 300 დარჩა 100ლ" → 300 cash paid + 100 remaining = 400₾ total.
+    # Split payment: "ხელზე/მომცა 300 დარჩა 100ლ" → paid 300 cash, 100 credit remaining.
     m = _SALE_SPLIT_RE.match(text)
     if m:
         paid = _parse_price(m.group("paid"))
@@ -332,6 +338,8 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             price=paid + remaining,
             payment_method=PAYMENT_CASH,
             is_return=False,
+            is_split_payment=True,
+            split_paid=paid,
         )
 
     # Pattern B: explicit კოდი: prefix
@@ -539,15 +547,24 @@ def parse_batch_sales(
     """
     Parse a multi-line sales message where all items share one customer.
 
-    Format:
-      იმედა:                         ← optional customer name header
-      პადვესნოი 1ც 150ლ              ← single sale
-      136001 2ც ჯამში 360ლ           ← single sale with total price
-      008b03 და 108000 1-1ც ჯამში 210 ← dual sale → two ParsedSale entries
+    Supported formats:
+      იმედა:                          ← customer name header (old format)
+      პადვესნოი 1ც 150ლ               ← single sale
+
+      ნისიები:                        ← credit indicator — skipped
+      კოხტაშვილი:                     ← customer name on next line
+      136001 2ც ჯამში 360ლ            ← sales...
+
+      ნისიები:                        ← credit indicator — skipped
+      595254272                        ← phone number as customer
+      109000 ... 1ც 180ლ
+
+      008b03 და 108000 1-1ც ჯამში 210  ← dual sale → two ParsedSale entries
+      მომცა 300ლ დარჩა 100ლ           ← split payment line
 
     Returns (customer_name, items) where each item is:
       None              — line could not be parsed
-      [ParsedSale]      — single sale
+      [ParsedSale]      — single sale (last may be a split-payment marker)
       [sale1, sale2]    — dual sale (X და Y format)
     """
     lines = [line.strip() for line in text.split("\n") if line.strip()]
@@ -555,17 +572,25 @@ def parse_batch_sales(
         return None, []
 
     customer_name: Optional[str] = None
-    sale_lines = lines
 
-    # If first line doesn't parse as any kind of sale, treat it as customer header
+    # Skip standalone "ნისიები:" / "ნისია:" credit indicator
+    if _NISIAS_HEADER_RE.match(lines[0]):
+        lines = lines[1:]
+        if not lines:
+            return None, []
+
+    # First non-sale line becomes the customer header
     first_clean = lines[0].rstrip(":")
     if not parse_sale_message(first_clean) and not parse_dual_sale_message(first_clean):
         customer_name = first_clean
         sale_lines = lines[1:]
+    else:
+        sale_lines = lines
 
     results: List[Optional[List[ParsedSale]]] = []
     for line in sale_lines:
-        # Silently skip standalone phone numbers — contact info, not a sale
+        # Silently skip standalone phone numbers in sale lines (contact info, not a sale).
+        # Note: phones on the customer-name line are already captured above.
         if _PHONE_RE.match(_normalize_text(line)):
             continue
 
