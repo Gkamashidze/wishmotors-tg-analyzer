@@ -284,30 +284,18 @@ def _build_report_body(
     expenses: Sequence[Any],
     no_sales_label: str,
 ) -> List[str]:
-    """Build the common body lines (metrics + products + returns + expenses)."""
-    individual_revenue = m["total_revenue"] - m["llc_revenue"]
+    """Build the common body lines (metrics + returns + expenses)."""
     lines: List[str] = [
         "━━━━━━━━━━━━━━━━━━━━━",
         f"💰 მთლიანი შემოსავალი: <b>{m['total_revenue']:.2f}₾</b>",
         f"   💵 ხელზე: {m['cash_revenue']:.2f}₾",
         f"   🏦 დარიცხა: {m['transfer_revenue']:.2f}₾",
         f"   📋 ნისია: {m['credit_revenue']:.2f}₾",
-        f"   🏢 შპს: {m['llc_revenue']:.2f}₾  |  ფზ: {individual_revenue:.2f}₾",
         f"↩️ დაბრუნებები: {m['total_returns']:.2f}₾",
         f"🧾 ხარჯები: {m['total_expenses']:.2f}₾",
         f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
-
-    if m["by_product"]:
-        lines += ["", "📦 <b>გაყიდული პროდუქტები:</b>"]
-        for name, data in sorted(m["by_product"].items(), key=lambda x: -x[1]["revenue"]):
-            lines.append(
-                f"🔹 <b>{_e(name)}</b>\n"
-                f"   გაყიდული: {data['qty']}ც  |  შემოსავალი: {data['revenue']:.2f}₾"
-            )
-    else:
-        lines += ["", no_sales_label]
 
     if returns:
         lines += ["", "↩️ <b>დაბრუნებები:</b>"]
