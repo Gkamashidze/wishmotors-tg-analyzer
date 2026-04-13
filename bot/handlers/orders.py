@@ -8,7 +8,7 @@ from aiogram.types import Message
 import config
 from bot.handlers import InTopic, IsAdmin
 from bot.parsers.message_parser import parse_expense_message, parse_order_message
-from bot.reports.formatter import _category_label
+from bot.reports.formatter import _category_label, format_topic_expense
 from database.db import Database
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ async def handle_expense_message(message: Message, db: Database) -> None:
             await db.log_parse_failure(config.EXPENSES_TOPIC_ID, text)
             return
 
-        await db.create_expense(
+        expense_id = await db.create_expense(
             amount=parsed.amount,
             description=parsed.description,
             category=parsed.category,
@@ -101,6 +101,21 @@ async def handle_expense_message(message: Message, db: Database) -> None:
             ),
             parse_mode=_PARSE,
         )
+
+        try:
+            await message.bot.send_message(
+                chat_id=config.GROUP_ID,
+                message_thread_id=config.EXPENSES_TOPIC_ID,
+                text=format_topic_expense(
+                    amount=parsed.amount,
+                    category=parsed.category,
+                    description=parsed.description,
+                    expense_id=expense_id,
+                ),
+                parse_mode=_PARSE,
+            )
+        except Exception as _te:
+            logger.warning("Failed to post expense to topic: %s", _te)
     except Exception:
         logger.exception("Unexpected error in handle_expense_message: %r", text)
         await message.bot.send_message(

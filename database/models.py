@@ -76,6 +76,9 @@ CREATE INDEX IF NOT EXISTS idx_parse_failures_time  ON parse_failures(created_at
 # Applied once at startup to add new columns / constraints to existing tables (idempotent).
 # Constraints are added NOT VALID so they apply to future rows without scanning existing data.
 MIGRATE_SQL = """
+-- Allow stock to go negative (wizard sales on unloaded inventory visible as negative)
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_current_stock_check;
+
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS seller_type   TEXT NOT NULL DEFAULT 'individual';
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name TEXT;
 

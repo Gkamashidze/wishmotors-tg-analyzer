@@ -23,6 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 import config
 from bot.handlers.commands import commands_router
+from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
 from bot.handlers.period_report import period_router
 from bot.handlers.sales import sales_router
@@ -130,6 +131,8 @@ async def main() -> None:
         # ── 🔧 სისტემა ────────────────────────────────
         BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
+        # ── ✏️ ვიზარდი ────────────────────────────────
+        BotCommand(command="new",           description="✏️ ახალი: გაყიდვა / ნისია / ხარჯი"),
     ])
     logger.info("Bot commands menu registered.")
 
@@ -146,6 +149,7 @@ async def main() -> None:
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
 
+    dp.include_router(wizard_router)
     dp.include_router(sales_router)
     dp.include_router(orders_router)
     dp.include_router(period_router)

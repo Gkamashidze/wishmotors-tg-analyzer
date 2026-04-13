@@ -19,6 +19,7 @@ SALES_TOPIC_ID: int = int(_require("SALES_TOPIC_ID"))
 ORDERS_TOPIC_ID: int = int(_require("ORDERS_TOPIC_ID"))
 EXPENSES_TOPIC_ID: int = int(_require("EXPENSES_TOPIC_ID"))
 CAPITAL_TOPIC_ID: int = int(_require("CAPITAL_TOPIC_ID"))
+NISIAS_TOPIC_ID: int = int(_require("NISIAS_TOPIC_ID"))
 
 DATABASE_URL: str = _require("DATABASE_URL")
 

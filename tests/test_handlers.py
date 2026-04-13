@@ -17,6 +17,7 @@ os.environ.setdefault("SALES_TOPIC_ID", "2")
 os.environ.setdefault("ORDERS_TOPIC_ID", "3")
 os.environ.setdefault("EXPENSES_TOPIC_ID", "4")
 os.environ.setdefault("CAPITAL_TOPIC_ID", "5")
+os.environ.setdefault("NISIAS_TOPIC_ID", "6")
 os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/test")
 os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
@@ -135,8 +136,10 @@ class TestHandleExpenseMessage:
         msg = _msg("20₾ საბაჟო")
         db = _db()
         await handle_expense_message(msg, db)
-        msg.bot.send_message.assert_called_once()
-        text = _sent_text(msg)
+        # Handler now sends DM + topic mirror (2 calls)
+        assert msg.bot.send_message.call_count >= 1
+        first_call_kwargs = msg.bot.send_message.call_args_list[0].kwargs
+        text = first_call_kwargs.get("text", "")
         assert "ხარჯი დაფიქსირდა" in text
         assert "20.00₾" in text
 

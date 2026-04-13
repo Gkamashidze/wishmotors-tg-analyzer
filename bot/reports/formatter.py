@@ -433,3 +433,48 @@ def format_period_report(
     lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.")
     lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
     return _truncate("\n".join(lines))
+
+
+# ─── Topic sharing — compact one-liners posted to group topics ─────────────────
+
+def format_topic_sale(
+    product_name: str,
+    qty: int,
+    price: float,
+    payment: str,
+    sale_id: int,
+    customer_name: Optional[str] = None,
+    unknown_product: bool = False,
+) -> str:
+    total = qty * price
+    pay = _payment_label(payment)
+    cust = f" | 👤 {_e(customer_name)}" if customer_name else ""
+    warn = " ⚠️ (ბაზაში არ არის)" if unknown_product else ""
+    return f"📦 <b>{_e(product_name)}</b>{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | {pay}{cust} | <code>#{sale_id}</code>"
+
+
+def format_topic_nisia(
+    customer_name: str,
+    product_name: str,
+    qty: int,
+    price: float,
+    sale_id: int,
+    unknown_product: bool = False,
+) -> str:
+    total = qty * price
+    warn = " ⚠️" if unknown_product else ""
+    return (
+        f"📋 <b>ნისია</b> | 👤 {_e(customer_name)}\n"
+        f"📦 {_e(product_name)}{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | <code>#{sale_id}</code>"
+    )
+
+
+def format_topic_expense(
+    amount: float,
+    category: Optional[str],
+    description: Optional[str],
+    expense_id: int,
+) -> str:
+    cat = _category_label(category) or "📝 სხვა"
+    desc = f" — {_e(description)}" if description else ""
+    return f"🧾 {cat}{desc}: <b>{amount:.2f}₾</b> | <code>#{expense_id}</code>"

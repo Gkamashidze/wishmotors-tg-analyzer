@@ -94,6 +94,20 @@ class Database:
             )
             return self._row(row)  # type: ignore[return-value]
 
+    async def search_products(self, query: str, limit: int = 6) -> List[ProductRow]:
+        """Search by OEM (partial match) or name. OEM matches ranked first."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT *,
+                          CASE WHEN oem_code ILIKE $1 THEN 0 ELSE 1 END AS _rank
+                   FROM products
+                   WHERE oem_code ILIKE $1 OR name ILIKE $1
+                   ORDER BY _rank, name
+                   LIMIT $2""",
+                f"%{query.strip()}%", limit,
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
     async def get_all_products(self) -> List[ProductRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM products ORDER BY name")
@@ -206,7 +220,7 @@ class Database:
                 if product_id is not None:
                     stock_row = await conn.fetchrow(
                         """UPDATE products
-                           SET current_stock = GREATEST(current_stock - $1, 0)
+                           SET current_stock = current_stock - $1
                            WHERE id = $2
                            RETURNING current_stock""",
                         quantity, product_id,

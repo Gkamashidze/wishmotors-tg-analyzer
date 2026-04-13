@@ -21,6 +21,8 @@ from bot.reports.formatter import (
     format_batch_confirmation,
     format_sale_confirmation,
     format_return_confirmation,
+    format_topic_sale,
+    format_topic_nisia,
 )
 from database.db import Database
 from database.models import ProductRow
@@ -233,6 +235,25 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
         reply_markup=_delete_keyboard(sale_id),
     )
 
+    # Mirror to topic
+    topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
+    try:
+        await message.bot.send_message(
+            chat_id=config.GROUP_ID,
+            message_thread_id=topic_id,
+            text=format_topic_sale(
+                product_name=product["name"],
+                qty=parsed.quantity,
+                price=parsed.price,
+                payment=parsed.payment_method,
+                sale_id=sale_id,
+                customer_name=parsed.customer_name or None,
+            ),
+            parse_mode=_PARSE,
+        )
+    except Exception as _te:
+        logger.warning("Failed to post sale to topic: %s", _te)
+
     if low:
         logger.warning(
             "Low stock alert: %s — %d units remaining", product["name"], new_stock
@@ -286,6 +307,25 @@ async def _record_sale_freeform(
         parse_mode=_PARSE,
         reply_markup=_delete_keyboard(sale_id),
     )
+
+    topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
+    try:
+        await message.bot.send_message(
+            chat_id=config.GROUP_ID,
+            message_thread_id=topic_id,
+            text=format_topic_sale(
+                product_name=product_name,
+                qty=parsed.quantity,
+                price=parsed.price,
+                payment=parsed.payment_method,
+                sale_id=sale_id,
+                customer_name=parsed.customer_name or None,
+                unknown_product=True,
+            ),
+            parse_mode=_PARSE,
+        )
+    except Exception as _te:
+        logger.warning("Failed to post freeform sale to topic: %s", _te)
 
 
 async def _record_return(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:
