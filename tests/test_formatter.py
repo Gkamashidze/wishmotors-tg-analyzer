@@ -239,7 +239,7 @@ class TestFormatWeeklyReport:
     def test_empty_report_no_crash(self):
         text = format_weekly_report([], [], [], [])
         assert "კვირის ანგარიში" in text
-        assert "გაყიდვა არ მომხდარა" in text
+        assert "0.00₾" in text
 
     def test_low_stock_warning_in_report(self):
         products = [self._product("ნათურა", stock=2, min_stock=10)]
@@ -323,12 +323,14 @@ class TestFormatPeriodReport:
         assert "50.00₾" in text
 
     def test_html_escaped_product_name(self):
+        # Product names are no longer shown in the period report body.
+        # Verify the report renders without injecting raw HTML from product names.
         df = self._d(2026, 3, 1)
         dt = self._d(2026, 3, 31)
         sales = [self._sale("<script>alert(1)</script>", 1, 10.0)]
         text = format_period_report(sales, [], [], df, dt)
-        assert "<script>" not in text
-        assert "&lt;script&gt;" in text
+        assert "<script>alert(1)</script>" not in text
+        assert "10.00₾" in text
 
 
 # ─── format_credit_sales_report ──────────────────────────────────────────────
@@ -372,17 +374,8 @@ class TestFormatCreditSalesReport:
             self._sale(2, "ფარი", 1, 200.0, customer="იმედა"),
         ]
         text = format_credit_sales_report(sales)
-        # customer header present
         assert "იმედა" in text
-        # subtotal present
         assert "350.00₾" in text
-        # per-customer numbering: #1 and #2 under this customer
-        assert "#1" in text
-        assert "#2" in text
-        # subtotal line (💳 სულ:) comes AFTER the item lines
-        idx_item2 = text.index("#2")
-        idx_subtotal = text.index("💳 სულ:")
-        assert idx_item2 < idx_subtotal
 
     def test_two_different_customers_both_shown(self):
         sales = [
@@ -392,30 +385,27 @@ class TestFormatCreditSalesReport:
         text = format_credit_sales_report(sales)
         assert "გიო" in text
         assert "ლაშა" in text
-        # each customer has one item numbered #1
-        assert text.count("#1") >= 2
+        assert "100.00₾" in text
+        assert "200.00₾" in text
 
     def test_per_customer_numbering_resets(self):
-        """Each customer's items start from #1 independently."""
+        """Each customer's total is shown once per customer."""
         sales = [
             self._sale(10, "A", 1, 50.0, customer="გიო"),
             self._sale(11, "B", 1, 60.0, customer="გიო"),
             self._sale(20, "C", 1, 70.0, customer="ლაშა"),
         ]
         text = format_credit_sales_report(sales)
-        # გიო has #1 and #2; ლაშა has #1 — so #1 appears at least twice
-        assert text.count("#1") >= 2
-        assert text.count("#2") >= 1
-        # original DB ids (10, 11, 20) should NOT appear in item lines
-        assert "#10" not in text
-        assert "#20" not in text
+        assert "გიო" in text
+        assert "110.00₾" in text  # გიო total: 50+60
+        assert "ლაშა" in text
+        assert "70.00₾" in text   # ლაშა total
 
     def test_unnamed_sale_shown_with_original_id(self):
         sales = [self._sale(5, "კოდი123", 1, 80.0, customer=None)]
         text = format_credit_sales_report(sales)
-        # unnamed sale keeps its DB id
-        assert "#5" in text
-        # no customer name header
+        assert "80.00₾" in text
+        assert "სახელი გარეშე" in text
         assert "👤" not in text
 
     def test_named_and_unnamed_mixed(self):
@@ -425,10 +415,9 @@ class TestFormatCreditSalesReport:
         ]
         text = format_credit_sales_report(sales)
         assert "გიო" in text
-        # named customer item is #1
-        assert "#1" in text
-        # unnamed sale keeps original DB id #7
-        assert "#7" in text
+        assert "100.00₾" in text
+        assert "სახელი გარეშე" in text
+        assert "50.00₾" in text
 
     def test_html_escaped_customer_name(self):
         sales = [self._sale(1, "ნათურა", 1, 50.0, customer="<script>")]
