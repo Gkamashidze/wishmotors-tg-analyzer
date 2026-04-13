@@ -97,6 +97,29 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Topic message tracking for deletion/restore
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
+
+-- Soft-deleted sales kept for 24h restore window
+CREATE TABLE IF NOT EXISTS deleted_sales (
+    id               SERIAL PRIMARY KEY,
+    original_sale_id INTEGER,
+    product_id       INTEGER,
+    quantity         INTEGER NOT NULL,
+    unit_price       NUMERIC(12, 2) NOT NULL,
+    payment_method   TEXT NOT NULL DEFAULT 'credit',
+    seller_type      TEXT NOT NULL DEFAULT 'individual',
+    customer_name    TEXT,
+    sold_at          TIMESTAMPTZ,
+    notes            TEXT,
+    topic_id         INTEGER,
+    deleted_at       TIMESTAMPTZ DEFAULT NOW(),
+    expires_at       TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_deleted_sales_expires ON deleted_sales(expires_at);
+
 DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;

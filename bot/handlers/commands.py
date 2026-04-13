@@ -463,33 +463,137 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
 
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("ds:"), IsAdmin())
 async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
-    """Delete a sale from the inline button on confirmation message: ds:{sale_id}"""
+    """Delete a sale: soft-deletes to deleted_sales (24h restore window), removes topic message."""
     try:
         sale_id = int((callback.data or "").split(":")[1])
     except (IndexError, ValueError):
         await callback.answer("❌ შეცდომა", show_alert=True)
         return
 
-    deleted = await db.delete_sale(sale_id)
+    deleted = await db.soft_delete_sale(sale_id)
     if not deleted:
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True)
         return
 
     logger.info(
-        "AUDIT: admin %d deleted sale #%d via inline button (product_id=%s, qty=%s, price=%s)",
+        "AUDIT: admin %d deleted sale #%d (product_id=%s, qty=%s, price=%s)",
         callback.from_user.id, sale_id,
         deleted.get("product_id"), deleted.get("quantity"), deleted.get("unit_price"),
     )
 
+    # Delete the topic message if we know where it was posted
+    topic_id  = deleted.get("topic_id")
+    topic_msg = deleted.get("topic_message_id")
+    if topic_id and topic_msg:
+        try:
+            await callback.bot.delete_message(
+                chat_id=config.GROUP_ID, message_id=topic_msg
+            )
+        except Exception as exc:
+            logger.debug("Could not delete topic message for sale #%d: %s", sale_id, exc)
+
     total = float(deleted["unit_price"]) * deleted["quantity"]
+    deleted_id = deleted["deleted_id"]
+
     await callback.answer(f"🗑 #{sale_id} წაიშალა — {total:.2f}₾", show_alert=False)
 
     if isinstance(callback.message, InaccessibleMessage):
         return
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
+        restore_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="↩️ აღდგენა (24სთ)", callback_data=f"rs:{deleted_id}")
+        ]])
+        await callback.message.edit_text(
+            f"🗑 <b>გაყიდვა #{sale_id} წაიშალა</b>\n"
+            f"💰 {deleted['quantity']}ც × {float(deleted['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
+            "<i>24 საათის განმავლობაში შეგიძლია აღადგინო.</i>",
+            parse_mode=_PARSE,
+            reply_markup=restore_kb,
+        )
     except Exception as exc:
-        logger.debug("Could not remove keyboard after sale deletion: %s", exc)
+        logger.debug("Could not update message after sale deletion: %s", exc)
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("rs:"), IsAdmin())
+async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
+    """Restore a soft-deleted sale within 24h: rs:{deleted_id}"""
+    try:
+        deleted_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    ds = await db.get_deleted_sale(deleted_id)
+    if not ds:
+        await callback.answer("⚠️ ვადა გავიდა ან ჩანაწერი ვერ მოიძებნა.", show_alert=True)
+        return
+
+    new_sale_id = await db.restore_deleted_sale(deleted_id)
+    if not new_sale_id:
+        await callback.answer("⚠️ 24 საათი გავიდა — აღდგენა შეუძლებელია.", show_alert=True)
+        return
+
+    logger.info(
+        "AUDIT: admin %d restored deleted sale (original #%d → new #%d)",
+        callback.from_user.id, ds.get("original_sale_id", "?"), new_sale_id,
+    )
+
+    # Re-post to topic
+    topic_id  = ds.get("topic_id")
+    new_topic_msg_id: Optional[int] = None
+    if topic_id:
+        try:
+            from bot.reports.formatter import format_topic_sale, format_topic_nisia
+            product_name = ds.get("notes") or f"გაყიდვა #{new_sale_id}"
+            is_nisia = ds.get("payment_method") == "credit"
+            customer = ds.get("customer_name")
+
+            if is_nisia and customer:
+                text = format_topic_nisia(
+                    customer_name=customer,
+                    product_name=product_name,
+                    qty=ds["quantity"],
+                    price=float(ds["unit_price"]),
+                    sale_id=new_sale_id,
+                )
+            else:
+                text = format_topic_sale(
+                    product_name=product_name,
+                    qty=ds["quantity"],
+                    price=float(ds["unit_price"]),
+                    payment=ds["payment_method"],
+                    sale_id=new_sale_id,
+                    customer_name=customer,
+                )
+            r = await callback.bot.send_message(
+                chat_id=config.GROUP_ID,
+                message_thread_id=topic_id,
+                text=text,
+                parse_mode=_PARSE,
+            )
+            new_topic_msg_id = r.message_id
+        except Exception as exc:
+            logger.warning("Could not re-post restored sale to topic: %s", exc)
+
+    if new_topic_msg_id:
+        await db.update_sale_topic_message(new_sale_id, topic_id, new_topic_msg_id)
+
+    total = ds["quantity"] * float(ds["unit_price"])
+    await callback.answer(f"✅ #{new_sale_id} აღდგენილია", show_alert=False)
+
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+    try:
+        await callback.message.edit_text(
+            f"✅ <b>გაყიდვა #{new_sale_id} აღდგენილია</b>\n"
+            f"💰 {ds['quantity']}ც × {float(ds['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>",
+            parse_mode=_PARSE,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"🗑 წაშლა #{new_sale_id}", callback_data=f"ds:{new_sale_id}")
+            ]]),
+        )
+    except Exception as exc:
+        logger.debug("Could not update message after restore: %s", exc)
 
 
 @commands_router.message(Command("paid"), IsAdmin())

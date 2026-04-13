@@ -205,10 +205,10 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
         reply_markup=_kb([_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}")]),
     )
 
-    # Mirror to topic
+    # Mirror to topic and save message_id for later deletion
     topic_id = config.NISIAS_TOPIC_ID if payment == "credit" else config.SALES_TOPIC_ID
     try:
-        await callback.bot.send_message(
+        topic_msg = await callback.bot.send_message(
             chat_id=config.GROUP_ID,
             message_thread_id=topic_id,
             text=format_topic_sale(
@@ -221,6 +221,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
             ),
             parse_mode=_PARSE,
         )
+        await db.update_sale_topic_message(sale_id, topic_id, topic_msg.message_id)
     except Exception as exc:
         logger.warning("Failed to post sale to topic: %s", exc)
 
@@ -340,7 +341,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
     )
 
     try:
-        await callback.bot.send_message(
+        topic_msg = await callback.bot.send_message(
             chat_id=config.GROUP_ID,
             message_thread_id=config.NISIAS_TOPIC_ID,
             text=format_topic_nisia(
@@ -353,6 +354,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
             ),
             parse_mode=_PARSE,
         )
+        await db.update_sale_topic_message(sale_id, config.NISIAS_TOPIC_ID, topic_msg.message_id)
     except Exception as exc:
         logger.warning("Failed to post nisia to topic: %s", exc)
 
@@ -412,7 +414,7 @@ async def expense_category(callback: CallbackQuery, state: FSMContext) -> None:
         )
         return
 
-    label = next((l for l, k in _EXPENSE_CATEGORIES if k == key), key)
+    label = next((lbl for lbl, k in _EXPENSE_CATEGORIES if k == key), key)
     await state.update_data(category=key, category_label=label)
     await state.set_state(ExpenseWizard.amount)
     await callback.message.edit_text(

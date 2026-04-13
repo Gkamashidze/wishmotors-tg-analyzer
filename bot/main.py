@@ -55,6 +55,16 @@ class DatabaseMiddleware(BaseMiddleware):
 
 # ─── Scheduled weekly report ──────────────────────────────────────────────────
 
+async def _purge_expired_deleted_sales(db: Database) -> None:
+    """Hourly cleanup: remove deleted_sales records past their 24h restore window."""
+    try:
+        count = await db.purge_expired_deleted_sales()
+        if count:
+            logger.info("Purged %d expired deleted_sales records.", count)
+    except Exception as exc:
+        logger.warning("Failed to purge expired deleted sales: %s", exc)
+
+
 async def _purge_old_parse_failures(db: Database) -> None:
     """Nightly cleanup: remove parse_failures older than 90 days."""
     try:
@@ -174,6 +184,13 @@ async def main() -> None:
         trigger=CronTrigger(hour=3, minute=0, timezone=tz),
         kwargs={"db": db},
         id="purge_parse_failures",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _purge_expired_deleted_sales,
+        trigger=CronTrigger(minute=30, timezone=tz),  # every hour at :30
+        kwargs={"db": db},
+        id="purge_deleted_sales",
         replace_existing=True,
     )
     scheduler.start()

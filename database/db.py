@@ -627,3 +627,107 @@ class Database:
             )
             # asyncpg returns "DELETE N" as a string
             return int(result.split()[-1])
+
+    # ─── Topic message tracking ───────────────────────────────────────────────
+
+    async def update_sale_topic_message(
+        self, sale_id: int, topic_id: int, topic_message_id: int
+    ) -> None:
+        """Store the group-topic message ID so it can be deleted later."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sales SET topic_id=$1, topic_message_id=$2 WHERE id=$3",
+                topic_id, topic_message_id, sale_id,
+            )
+
+    # ─── Soft-delete & restore ────────────────────────────────────────────────
+
+    async def soft_delete_sale(self, sale_id: int) -> Optional[Dict[str, Any]]:
+        """Move a sale to deleted_sales (24h restore window), restore stock.
+        Returns the archived row (with topic_id / topic_message_id), or None."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                sale = await conn.fetchrow("SELECT * FROM sales WHERE id=$1", sale_id)
+                if not sale:
+                    return None
+                sale_dict = dict(sale)
+
+                expires = self._now() + timedelta(hours=24)
+                archived = await conn.fetchrow(
+                    """INSERT INTO deleted_sales
+                           (original_sale_id, product_id, quantity, unit_price,
+                            payment_method, seller_type, customer_name,
+                            sold_at, notes, topic_id, expires_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                       RETURNING id""",
+                    sale_dict["id"],
+                    sale_dict.get("product_id"),
+                    sale_dict["quantity"],
+                    sale_dict["unit_price"],
+                    sale_dict["payment_method"],
+                    sale_dict.get("seller_type", "individual"),
+                    sale_dict.get("customer_name"),
+                    sale_dict.get("sold_at"),
+                    sale_dict.get("notes"),
+                    sale_dict.get("topic_id"),
+                    expires,
+                )
+                sale_dict["deleted_id"] = archived["id"]
+
+                if sale_dict.get("product_id"):
+                    await conn.execute(
+                        "UPDATE products SET current_stock=current_stock+$1 WHERE id=$2",
+                        sale_dict["quantity"], sale_dict["product_id"],
+                    )
+                await conn.execute("DELETE FROM sales WHERE id=$1", sale_id)
+
+        return sale_dict
+
+    async def get_deleted_sale(self, deleted_id: int) -> Optional[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM deleted_sales WHERE id=$1", deleted_id
+            )
+            return dict(row) if row else None
+
+    async def restore_deleted_sale(self, deleted_id: int) -> Optional[int]:
+        """Re-insert a deleted sale into sales, decrement stock.
+        Returns the new sale_id, or None if not found / expired."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                ds = await conn.fetchrow(
+                    "SELECT * FROM deleted_sales WHERE id=$1 AND expires_at > NOW()",
+                    deleted_id,
+                )
+                if not ds:
+                    return None
+                d = dict(ds)
+
+                row = await conn.fetchrow(
+                    """INSERT INTO sales
+                           (product_id, quantity, unit_price, payment_method,
+                            seller_type, customer_name, sold_at, notes)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                       RETURNING id""",
+                    d.get("product_id"), d["quantity"], d["unit_price"],
+                    d["payment_method"], d.get("seller_type", "individual"),
+                    d.get("customer_name"), d.get("sold_at"), d.get("notes"),
+                )
+                new_sale_id = row["id"]
+
+                if d.get("product_id"):
+                    await conn.execute(
+                        "UPDATE products SET current_stock=current_stock-$1 WHERE id=$2",
+                        d["quantity"], d["product_id"],
+                    )
+                await conn.execute("DELETE FROM deleted_sales WHERE id=$1", deleted_id)
+
+        return new_sale_id
+
+    async def purge_expired_deleted_sales(self) -> int:
+        """Delete expired restore records (>24h). Returns count removed."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM deleted_sales WHERE expires_at < NOW()"
+            )
+            return int(result.split()[-1])
