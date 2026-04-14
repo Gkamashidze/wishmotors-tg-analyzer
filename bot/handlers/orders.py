@@ -7,7 +7,12 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
-from bot.parsers.message_parser import parse_expense_message, parse_order_message
+from bot.parsers.message_parser import (
+    ORDER_PRIORITY_LOW,
+    ORDER_PRIORITY_URGENT,
+    parse_expense_message,
+    parse_order_message,
+)
 from bot.reports.formatter import _category_label, format_topic_expense
 from database.db import Database
 
@@ -15,6 +20,12 @@ logger = logging.getLogger(__name__)
 orders_router = Router(name="orders")
 
 _PARSE = ParseMode.HTML
+
+_PRIORITY_LABEL = {
+    ORDER_PRIORITY_URGENT: "🔴 სასწრაფო — ახლავე",
+    "normal": "🟡 ჩვეულებრივი",
+    ORDER_PRIORITY_LOW: "🟢 ლოდინი — ჯერ არ მჭირდება",
+}
 
 
 # ─── Orders topic ─────────────────────────────────────────────────────────────
@@ -50,15 +61,19 @@ async def handle_order_message(message: Message, db: Database) -> None:
         await db.create_order(
             product_id=product_id,
             quantity_needed=parsed.quantity,
+            priority=parsed.priority,
             notes=text,
         )
 
+        priority_label = _PRIORITY_LABEL.get(parsed.priority, "🟡 ჩვეულებრივი")
+        qty_line = f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც\n" if parsed.quantity else ""
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text=(
                 f"📋 <b>შეკვეთა დაფიქსირდა</b>\n"
                 f"📦 პროდუქტი: <b>{html.escape(product_name)}</b>\n"
-                f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც"
+                f"{qty_line}"
+                f"⏱ პრიორიტეტი: {priority_label}"
             ),
             parse_mode=_PARSE,
         )

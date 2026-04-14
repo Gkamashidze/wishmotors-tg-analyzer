@@ -458,25 +458,34 @@ class Database:
         self,
         product_id: Optional[int],
         quantity_needed: int,
+        priority: str = "normal",
         notes: Optional[str] = None,
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """INSERT INTO orders (product_id, quantity_needed, notes)
-                   VALUES ($1, $2, $3)
+                """INSERT INTO orders (product_id, quantity_needed, priority, notes)
+                   VALUES ($1, $2, $3, $4)
                    RETURNING id""",
-                product_id, quantity_needed, notes,
+                product_id, quantity_needed, priority, notes,
             )
             return row["id"]
 
     async def get_pending_orders(self) -> List[OrderRow]:
+        """Return pending orders sorted by priority (urgent first), then date."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT o.*, p.name AS product_name, p.oem_code
                    FROM orders o
                    LEFT JOIN products p ON o.product_id = p.id
                    WHERE o.status = 'pending'
-                   ORDER BY o.created_at DESC""",
+                   ORDER BY
+                     CASE o.priority
+                       WHEN 'urgent' THEN 1
+                       WHEN 'normal' THEN 2
+                       WHEN 'low'    THEN 3
+                       ELSE 2
+                     END,
+                     o.created_at DESC""",
             )
             return self._rows(rows)  # type: ignore[return-value]
 

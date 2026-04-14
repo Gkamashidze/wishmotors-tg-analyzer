@@ -67,10 +67,16 @@ class ParsedExpense:
     category: Optional[str] = None
 
 
+ORDER_PRIORITY_URGENT = "urgent"
+ORDER_PRIORITY_NORMAL = "normal"
+ORDER_PRIORITY_LOW = "low"
+
+
 @dataclass
 class ParsedOrder:
     raw_product: str
     quantity: int
+    priority: str = ORDER_PRIORITY_NORMAL  # urgent | normal | low
     notes: str = ""
 
 
@@ -188,12 +194,12 @@ _EXPENSE_NEGATIVE = re.compile(
     r"^-\s*(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ$]?\s*(?P<desc>\S.*)$", re.UNICODE
 )
 
-# Order: "product Nც" (no price)
+# Order: "product Nც [priority]" (no price)
 _ORDER_RE = re.compile(
-    r"^(?P<product>.+?)\s+(?P<qty>\d+)\s*ც\s*$", re.UNICODE
+    r"^(?P<product>.+?)\s+(?P<qty>\d+)\s*ც(?:\s+(?P<priority_kw>\S+))?\s*$", re.UNICODE
 )
-# Order: just "Nც" alone (reply to a product message)
-_ORDER_QTY_ONLY = re.compile(r"^\d+\s*ც$", re.UNICODE)
+# Order: just "Nც [priority]" alone (reply to a product message)
+_ORDER_QTY_ONLY = re.compile(r"^\d+\s*ც(?:\s+\S+)?\s*$", re.UNICODE)
 
 # Order: product name only, no quantity (qty stored as 0)
 # Must have at least 2 Georgian characters to avoid false positives.
@@ -201,6 +207,19 @@ _ORDER_QTY_ONLY = re.compile(r"^\d+\s*ც$", re.UNICODE)
 _ORDER_PRODUCT_ONLY = re.compile(
     r"^[^\d₾ლ$\-].{3,}$", re.UNICODE
 )
+
+# Priority keyword detection
+_PRIORITY_URGENT_RE = re.compile(r"სასწრაფ", re.UNICODE | re.IGNORECASE)
+_PRIORITY_LOW_RE = re.compile(r"ლოდინ|არ\s+მჭირდება", re.UNICODE | re.IGNORECASE)
+
+
+def _detect_priority(text: str) -> str:
+    """Return order priority based on keyword in text."""
+    if _PRIORITY_URGENT_RE.search(text):
+        return ORDER_PRIORITY_URGENT
+    if _PRIORITY_LOW_RE.search(text):
+        return ORDER_PRIORITY_LOW
+    return ORDER_PRIORITY_NORMAL
 
 # Phone number — silently ignored in sales topic (contact info, not a sale).
 # Covers: +995 592 15 90 52  |  592159052  |  555 12 34 56  |  032 2 XX XX XX
@@ -629,29 +648,42 @@ def parse_order_message(text: str) -> Optional[ParsedOrder]:
     Parse a re-order note.
 
     Supported formats:
-      '8390132500 5ც'     — OEM + quantity
-      'მარჭვენა სარკე 2ც' — product name + quantity
-      '20ც'               — quantity only (reply to a product message)
+      '8390132500 5ც'              — OEM + quantity (normal priority)
+      '8390132500 5ც სასწრაფო'    — OEM + quantity + urgent
+      'მარჭვენა სარკე 2ც ლოდინი'  — product name + quantity + low priority
+      '20ც'                        — quantity only (reply to a product message)
+
+    Priority keywords:
+      სასწრაფო  → urgent  (🔴)
+      (nothing) → normal  (🟡)
+      ლოდინი    → low     (🟢)
     """
     text = _normalize_text(text.strip())
+    priority = _detect_priority(text)
 
-    # Quantity-only: "20ც" (reply context — product unknown)
+    # Quantity-only: "20ც [priority]" (reply context — product unknown)
     if _ORDER_QTY_ONLY.match(text):
-        qty = int(text.replace("ც", "").strip())
-        return ParsedOrder(raw_product="", quantity=qty, notes=text)
+        qty_str = re.match(r"^(\d+)\s*ც", text)
+        qty = int(qty_str.group(1)) if qty_str else 0
+        return ParsedOrder(raw_product="", quantity=qty, priority=priority, notes=text)
 
-    # Product + quantity
+    # Product + quantity [+ priority keyword]
     m = _ORDER_RE.match(text)
     if m:
+        product = m.group("product").strip()
+        # Strip trailing priority keyword from product name if it leaked in
+        product = _PRIORITY_URGENT_RE.sub("", product).strip()
+        product = _PRIORITY_LOW_RE.sub("", product).strip()
         return ParsedOrder(
-            raw_product=m.group("product").strip(),
+            raw_product=product,
             quantity=int(m.group("qty")),
+            priority=priority,
             notes=text,
         )
 
     # Product name only (no quantity — qty=0 means "need some amount")
     # Requires at least 4 chars, no price symbol, starts with letter.
     if _ORDER_PRODUCT_ONLY.match(text) and "₾" not in text and "$" not in text:
-        return ParsedOrder(raw_product=text, quantity=0, notes=text)
+        return ParsedOrder(raw_product=text, quantity=0, priority=priority, notes=text)
 
     return None

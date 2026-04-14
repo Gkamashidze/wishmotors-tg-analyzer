@@ -124,6 +124,9 @@ CREATE INDEX IF NOT EXISTS idx_deleted_sales_expires ON deleted_sales(expires_at
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 
+-- Order priority: urgent | normal | low
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
+
 DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -177,6 +180,7 @@ class OrderRow(TypedDict):
     product_id: Optional[int]
     quantity_needed: int
     status: str
+    priority: str  # urgent | normal | low
     created_at: object  # datetime
     notes: Optional[str]
     product_name: Optional[str]
