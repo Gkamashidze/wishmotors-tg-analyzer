@@ -123,30 +123,27 @@ async def main() -> None:
     )
 
     await bot.set_my_commands([
-        # ── 📊 ანგარიშები ──────────────────────────────
-        BotCommand(command="report",        description="📊 კვირის ანგარიში"),
-        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),
-        # ── 🏪 საწყობი ────────────────────────────────
+        # ── ✏️ შეყვანა ────────────────────────────────
+        BotCommand(command="new",           description="✏️ გაყიდვა / ნისია / ხარჯი"),
+        BotCommand(command="deletesale",    description="🗑 გაყიდვის წაშლა — /deletesale ID"),
+        # ── 💳 ნისია ──────────────────────────────────
+        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები"),
+        BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
+        # ── 📦 საწყობი ────────────────────────────────
         BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
         BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
         BotCommand(command="import",        description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"),
         BotCommand(command="editproduct",   description="✏️ პროდუქტის რედაქტირება — ID ველი"),
-        # ── 📋 შეკვეთები ──────────────────────────────
         BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
         BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — ID საჭიროა"),
-        # ── 💳 ნისია ──────────────────────────────────
-        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები (ღილაკებით)"),
-        BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
-        # ── 💵 ხელზე ──────────────────────────────────
+        # ── 💰 ანგარიში და ფული ───────────────────────
+        BotCommand(command="report",        description="📊 კვირის ანგარიში"),
+        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),
         BotCommand(command="cash",          description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"),
-        BotCommand(command="deposit",       description="🏦 ბანკში შეტანა — /deposit 500 შენიშვნა"),
-        # ── 🗑 გასწორება ──────────────────────────────
-        BotCommand(command="deletesale",    description="🗑 გაყიდვის წაშლა — /deletesale ID"),
+        BotCommand(command="deposit",       description="🏦 ბანკში შეტანა"),
         # ── 🔧 სისტემა ────────────────────────────────
         BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
-        # ── ✏️ ვიზარდი ────────────────────────────────
-        BotCommand(command="new",           description="✏️ ახალი: გაყიდვა / ნისია / ხარჯი"),
     ])
     logger.info("Bot commands menu registered.")
 
