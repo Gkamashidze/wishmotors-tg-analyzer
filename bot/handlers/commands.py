@@ -1,15 +1,18 @@
 import asyncio
 import hashlib
 import html
+import io
 import logging
 from typing import Optional
+
+import openpyxl
 
 from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
 from bot.handlers import IsAdmin, is_rate_limited
@@ -1000,5 +1003,96 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
             f"💰 ფასი: {price:.2f}₾\n"
             f"🆔 ID: {product_id}"
         ),
+        parse_mode=_PARSE,
+    )
+
+
+# ─── /import — Excel product import ──────────────────────────────────────────
+
+class ImportState(StatesGroup):
+    waiting_file = State()
+
+
+@commands_router.message(Command("import"), IsAdmin())
+async def cmd_import(message: Message, state: FSMContext) -> None:
+    """Start Excel import wizard."""
+    await state.set_state(ImportState.waiting_file)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            "📂 <b>Excel-ის იმპორტი</b>\n\n"
+            "გამოაგზავნე <b>.xlsx</b> ფაილი სვეტებით:\n"
+            "<code>OEM კოდი | დასახელება | რაოდენობა | ერთ. ზომა</code>\n\n"
+            "პირველი სტრიქონი — სათაური (გამოტოვდება)."
+        ),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(StateFilter(ImportState.waiting_file), IsAdmin())
+async def import_file_received(message: Message, state: FSMContext, db: "Database") -> None:
+    """Handle the uploaded Excel file."""
+    doc: Optional[Document] = message.document
+    if not doc or not (doc.file_name or "").lower().endswith(".xlsx"):
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="⚠️ გამოაგზავნე <b>.xlsx</b> ფაილი.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    await state.clear()
+    status_msg = await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="⏳ ვამუშავებ ფაილს...",
+        parse_mode=_PARSE,
+    )
+
+    # Download file bytes
+    file = await message.bot.get_file(doc.file_id)
+    buf = io.BytesIO()
+    await message.bot.download_file(file.file_path, destination=buf)
+    buf.seek(0)
+
+    # Parse Excel
+    try:
+        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+        ws = wb.active
+        rows_data = []
+        skipped = 0
+        for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True)):
+            oem_raw, name_raw, qty_raw, unit_raw = (row[0], row[1], row[2], row[3]) if len(row) >= 4 else (None, None, None, None)
+            name = str(name_raw).strip() if name_raw else ""
+            if not name:
+                skipped += 1
+                continue
+            try:
+                qty = int(float(str(qty_raw).replace(",", "."))) if qty_raw is not None else 0
+            except (ValueError, TypeError):
+                qty = 0
+            rows_data.append({
+                "oem_code": str(oem_raw).strip() if oem_raw else None,
+                "name": name,
+                "current_stock": qty,
+                "unit": str(unit_raw).strip() if unit_raw else "ც",
+            })
+        wb.close()
+    except Exception as e:
+        await status_msg.edit_text(
+            f"❌ ფაილი ვერ წავიკითხე: {html.escape(str(e))}",
+            parse_mode=_PARSE,
+        )
+        return
+
+    if not rows_data:
+        await status_msg.edit_text("⚠️ ფაილი ცარიელია ან ყველა სტრიქონი გამოტოვდა.", parse_mode=_PARSE)
+        return
+
+    added, updated = await db.upsert_products_bulk(rows_data)
+    skip_line = f"\n⏭ გამოტოვებული: {skipped}" if skipped else ""
+    await status_msg.edit_text(
+        f"✅ <b>იმპორტი დასრულდა</b>\n\n"
+        f"➕ დამატებული: <b>{added}</b>\n"
+        f"🔄 განახლებული: <b>{updated}</b>{skip_line}",
         parse_mode=_PARSE,
     )

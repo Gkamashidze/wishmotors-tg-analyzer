@@ -96,16 +96,25 @@ class Database:
             return self._row(row)  # type: ignore[return-value]
 
     async def search_products(self, query: str, limit: int = 6) -> List[ProductRow]:
-        """Search by OEM (partial match) or name. OEM matches ranked first."""
+        """Search by OEM (partial/suffix match) or name. Suffix matches ranked highest."""
+        q = query.strip()
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT *,
-                          CASE WHEN oem_code ILIKE $1 THEN 0 ELSE 1 END AS _rank
+                          CASE
+                            WHEN oem_code ILIKE $2 THEN 0
+                            WHEN oem_code ILIKE $3 THEN 1
+                            WHEN oem_code ILIKE $1 THEN 2
+                            ELSE 3
+                          END AS _rank
                    FROM products
                    WHERE oem_code ILIKE $1 OR name ILIKE $1
                    ORDER BY _rank, name
-                   LIMIT $2""",
-                f"%{query.strip()}%", limit,
+                   LIMIT $4""",
+                f"%{q}%",   # $1 contains
+                q,          # $2 exact
+                f"%{q}",    # $3 ends-with (suffix — last 4/6 digits)
+                limit,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -177,6 +186,46 @@ class Database:
                 name, None, stock, min_stock, price,
             )
             return row["id"]
+
+    async def upsert_products_bulk(
+        self, rows: list[dict]
+    ) -> tuple[int, int]:
+        """Bulk upsert products from Excel import.
+
+        Each dict must have: name, oem_code, current_stock, unit.
+        Returns (added, updated) counts.
+        """
+        added = updated = 0
+        async with self.pool.acquire() as conn:
+            for row in rows:
+                oem = row.get("oem_code") or None
+                if oem:
+                    result = await conn.fetchval(
+                        """WITH upsert AS (
+                             INSERT INTO products (name, oem_code, current_stock, unit)
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT (oem_code) DO UPDATE
+                               SET name          = EXCLUDED.name,
+                                   current_stock = EXCLUDED.current_stock,
+                                   unit          = EXCLUDED.unit
+                             RETURNING (xmax = 0) AS inserted
+                           )
+                           SELECT inserted FROM upsert""",
+                        row["name"], oem, row["current_stock"], row["unit"],
+                    )
+                    if result:
+                        added += 1
+                    else:
+                        updated += 1
+                else:
+                    await conn.execute(
+                        """INSERT INTO products (name, current_stock, unit)
+                           VALUES ($1, $2, $3)
+                           ON CONFLICT DO NOTHING""",
+                        row["name"], row["current_stock"], row["unit"],
+                    )
+                    added += 1
+        return added, updated
 
     async def update_stock(self, product_id: int, delta: int) -> int:
         """Apply +/- delta to current_stock. Stock never goes below 0.

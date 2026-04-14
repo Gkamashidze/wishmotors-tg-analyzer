@@ -129,6 +129,7 @@ async def main() -> None:
         # ── 🏪 საწყობი ────────────────────────────────
         BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
         BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
+        BotCommand(command="import",        description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"),
         BotCommand(command="editproduct",   description="✏️ პროდუქტის რედაქტირება — ID ველი"),
         # ── 📋 შეკვეთები ──────────────────────────────
         BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),

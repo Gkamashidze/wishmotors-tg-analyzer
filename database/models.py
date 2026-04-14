@@ -135,6 +135,9 @@ CREATE TABLE IF NOT EXISTS cash_deposits (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Unit of measure for products (ც, კგ, მ, კომპლ. etc.)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ც';
+
 -- Order priority: urgent | normal | low
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
 
@@ -156,6 +159,7 @@ class ProductRow(TypedDict):
     current_stock: int
     min_stock: int
     unit_price: float
+    unit: str
     created_at: object  # datetime in practice
 
 
