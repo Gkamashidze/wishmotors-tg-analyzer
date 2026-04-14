@@ -24,6 +24,7 @@ from bot.reports.formatter import (
     format_weekly_report,
 )
 from database.db import Database
+from database.models import ProductRow
 
 logger = logging.getLogger(__name__)
 commands_router = Router(name="commands")
@@ -1001,7 +1002,7 @@ async def editproduct_pick(callback: CallbackQuery, state: FSMContext, db: Datab
     await callback.answer()
 
 
-async def _editproduct_show_fields(message: Message, state: FSMContext, p: dict) -> None:
+async def _editproduct_show_fields(message: Message, state: FSMContext, p: ProductRow) -> None:
     await state.set_state(EditProductState.field)
     oem = p.get("oem_code") or "—"
     buttons = [
