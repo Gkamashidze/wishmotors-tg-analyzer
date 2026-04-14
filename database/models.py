@@ -124,6 +124,17 @@ CREATE INDEX IF NOT EXISTS idx_deleted_sales_expires ON deleted_sales(expires_at
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 
+-- Cash payment tracking for expenses (cash reduces hand balance; transfer does not)
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cash';
+
+-- Cash deposits: records when hand cash is transferred to bank
+CREATE TABLE IF NOT EXISTS cash_deposits (
+    id          SERIAL PRIMARY KEY,
+    amount      NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+    note        TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Order priority: urgent | normal | low
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
 
@@ -199,6 +210,13 @@ class ParseFailureRow(TypedDict):
     message_text: str
     occurrences: int
     last_seen: object  # datetime
+
+
+class CashDepositRow(TypedDict):
+    id: int
+    amount: float
+    note: Optional[str]
+    created_at: object  # datetime
 
 
 # ─── Dataclasses (kept for backwards compatibility and future use) ────────────

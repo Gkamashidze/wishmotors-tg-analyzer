@@ -253,6 +253,7 @@ def _build_report_body(
     returns: Sequence[Any],
     expenses: Sequence[Any],
     no_sales_label: str,
+    cash_on_hand: Optional[Dict[str, float]] = None,
 ) -> List[str]:
     """Build the common body lines (metrics + returns + expenses)."""
     lines: List[str] = [
@@ -266,6 +267,16 @@ def _build_report_body(
         f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
+    if cash_on_hand is not None:
+        lines += [
+            "",
+            "🏧 <b>ხელზე ბალანსი (სულ):</b>",
+            f"   📈 ნაღდი გაყიდვები: +{cash_on_hand['cash_sales']:.2f}₾",
+            f"   📉 ნაღდი ხარჯები: −{cash_on_hand['cash_expenses']:.2f}₾",
+            f"   🏦 ბანკში შეტანილი: −{cash_on_hand['deposits']:.2f}₾",
+            f"   💼 <b>სულ ხელზე: {cash_on_hand['balance']:.2f}₾</b>",
+            "━━━━━━━━━━━━━━━━━━━━━",
+        ]
 
     if returns:
         lines += ["", "↩️ <b>დაბრუნებები:</b>"]
@@ -291,6 +302,7 @@ def format_weekly_report(
     returns: Sequence[Any],
     expenses: Sequence[Any],
     products: Sequence[Any],
+    cash_on_hand: Optional[Dict[str, float]] = None,
 ) -> str:
     now = _now()
     week_start = now - timedelta(days=7)
@@ -302,7 +314,7 @@ def format_weekly_report(
         f"📅 {week_start.strftime('%d.%m.%Y')} — {now.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.")
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.", cash_on_hand)
     lines.append("")
 
     if low_stock:
@@ -418,6 +430,7 @@ def format_period_report(
     expenses: Sequence[Any],
     date_from: datetime,
     date_to: datetime,
+    cash_on_hand: Optional[Dict[str, float]] = None,
 ) -> str:
     if not sales and not returns and not expenses:
         return "📭 არჩეულ პერიოდში გაყიდვები არ დაფიქსირებულა"
@@ -430,9 +443,30 @@ def format_period_report(
         f"📅 {date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.")
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.", cash_on_hand)
     lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
     return _truncate("\n".join(lines))
+
+
+# ─── Cash on hand ────────────────────────────────────────────────────────────
+
+def format_cash_on_hand(data: Dict[str, float]) -> str:
+    """Standalone /cash command message."""
+    now = _now()
+    balance = data["balance"]
+    sign = "✅" if balance >= 0 else "⚠️"
+    lines: List[str] = [
+        "🏧 <b>ხელზე არსებული თანხა</b>",
+        f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"📈 ნაღდი გაყიდვები:    <b>+{data['cash_sales']:.2f}₾</b>",
+        f"📉 ნაღდი ხარჯები:      <b>−{data['cash_expenses']:.2f}₾</b>",
+        f"🏦 ბანკში შეტანილი:    <b>−{data['deposits']:.2f}₾</b>",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"{sign} <b>სულ ხელზე: {balance:.2f}₾</b>",
+    ]
+    return "\n".join(lines)
 
 
 # ─── Topic sharing — compact one-liners posted to group topics ─────────────────

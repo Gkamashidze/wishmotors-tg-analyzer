@@ -14,6 +14,7 @@ from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButt
 import config
 from bot.handlers import IsAdmin, is_rate_limited
 from bot.reports.formatter import (
+    format_cash_on_hand,
     format_credit_sales_report,
     format_diagnostics_report,
     format_orders_report,
@@ -121,16 +122,75 @@ async def cmd_report(message: Message, db: Database) -> None:
         parse_mode=_PARSE,
     )
 
-    sales, returns, expenses, products = await asyncio.gather(
+    sales, returns, expenses, products, cash = await asyncio.gather(
         db.get_weekly_sales(),
         db.get_weekly_returns(),
         db.get_weekly_expenses(),
         db.get_all_products(),
+        db.get_cash_on_hand(),
     )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=format_weekly_report(sales, returns, expenses, products),
+        text=format_weekly_report(sales, returns, expenses, products, cash),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(Command("cash"), IsAdmin())
+async def cmd_cash(message: Message, db: Database) -> None:
+    """Show current cash-on-hand balance."""
+    data = await db.get_cash_on_hand()
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=format_cash_on_hand(data),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(Command("deposit"), IsAdmin())
+async def cmd_deposit(message: Message, db: Database) -> None:
+    """Record cash deposited to bank.  Usage: /deposit 500  or  /deposit 500 BOG-ში"""
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "💡 გამოყენება:\n"
+                "<code>/deposit 500</code>\n"
+                "<code>/deposit 500 BOG-ში შევიტანე</code>"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    rest = args[1].strip()
+    parts = rest.split(maxsplit=1)
+    raw_amount = parts[0].replace(",", ".").replace("₾", "").replace("ლ", "")
+    note: Optional[str] = parts[1].strip() if len(parts) > 1 else None
+
+    try:
+        amount = float(raw_amount)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="⚠️ სწორი თანხა ჩაწერე, მაგ: <code>/deposit 500</code>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    deposit_id = await db.create_cash_deposit(amount, note)
+    cash = await db.get_cash_on_hand()
+    note_line = f"\n📝 {html.escape(note)}" if note else ""
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"✅ <b>ბანკში შეტანა #{deposit_id} დაფიქსირდა</b>\n"
+            f"💰 <b>{amount:.2f}₾</b>{note_line}\n\n"
+            f"💼 დარჩენილი ხელზე: <b>{cash['balance']:.2f}₾</b>"
+        ),
         parse_mode=_PARSE,
     )
 

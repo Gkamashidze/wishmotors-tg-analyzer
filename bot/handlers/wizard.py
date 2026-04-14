@@ -110,11 +110,12 @@ class NisiaWizard(StatesGroup):
 
 
 class ExpenseWizard(StatesGroup):
-    category   = State()   # inline buttons
-    custom_cat = State()   # freeform when "სხვა" chosen
-    amount     = State()
-    description = State()
-    confirm    = State()
+    category        = State()   # inline buttons
+    custom_cat      = State()   # freeform when "სხვა" chosen
+    amount          = State()
+    payment_method  = State()   # ნაღდი / გადარიცხვა
+    description     = State()
+    confirm         = State()
 
 
 class SaleEditWizard(StatesGroup):
@@ -506,7 +507,7 @@ def _category_kb() -> InlineKeyboardMarkup:
 async def expense_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(ExpenseWizard.category)
     await callback.message.edit_text(
-        "💸 <b>ხარჯი — ნაბიჯი 1/3</b>\n\nაირჩიე კატეგორია:",
+        "💸 <b>ხარჯი — ნაბიჯი 1/4</b>\n\nაირჩიე კატეგორია:",
         parse_mode=_PARSE,
         reply_markup=_category_kb(),
     )
@@ -528,7 +529,7 @@ async def expense_category(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(category=key, category_label=label)
     await state.set_state(ExpenseWizard.amount)
     await callback.message.edit_text(
-        f"💸 <b>ხარჯი — ნაბიჯი 2/3</b>\n"
+        f"💸 <b>ხარჯი — ნაბიჯი 2/4</b>\n"
         f"🏷 კატეგორია: {label}\n\n"
         "ჩაწერე თანხა (₾):",
         parse_mode=_PARSE,
@@ -545,7 +546,7 @@ async def expense_custom_category(message: Message, state: FSMContext) -> None:
     await state.update_data(category="other", category_label=cat_text)
     await state.set_state(ExpenseWizard.amount)
     await message.answer(
-        f"💸 <b>ხარჯი — ნაბიჯი 2/3</b>\n"
+        f"💸 <b>ხარჯი — ნაბიჯი 2/4</b>\n"
         f"🏷 კატეგორია: {_e(cat_text)}\n\n"
         "ჩაწერე თანხა (₾):",
         parse_mode=_PARSE,
@@ -564,9 +565,30 @@ async def expense_amount(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(amount=amount)
-    await state.set_state(ExpenseWizard.description)
+    await state.set_state(ExpenseWizard.payment_method)
     await message.answer(
-        "💸 <b>ხარჯი — ნაბიჯი 3/3</b>\n\n"
+        "💸 <b>ხარჯი — ნაბიჯი 3/4</b>\n\n"
+        "როგორ გადაიხადე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb(
+            [_btn("💵 ნაღდი",       "wiz:exp:pay:cash"),
+             _btn("🏦 გადარიცხვა", "wiz:exp:pay:transfer")],
+            _CANCEL_ROW,
+        ),
+    )
+
+
+@wizard_router.callback_query(
+    F.data.in_({"wiz:exp:pay:cash", "wiz:exp:pay:transfer"}),
+    IsAdmin(),
+    StateFilter(ExpenseWizard.payment_method),
+)
+async def expense_payment_method(callback: CallbackQuery, state: FSMContext) -> None:
+    pm = "cash" if callback.data == "wiz:exp:pay:cash" else "transfer"
+    await state.update_data(payment_method=pm)
+    await state.set_state(ExpenseWizard.description)
+    await callback.message.edit_text(
+        "💸 <b>ხარჯი — ნაბიჯი 4/4</b>\n\n"
         "დაამატე მოკლე <b>აღწერა</b> (სურვილისამებრ):",
         parse_mode=_PARSE,
         reply_markup=_kb(
@@ -599,23 +621,26 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
     category: str               = d.get("category") or "other"
     category_label: str         = d.get("category_label", "")
     description: Optional[str]  = d.get("description")
+    payment_method: str         = d.get("payment_method") or "cash"
 
     db_category = None if category == "other" else category
     expense_id = await db.create_expense(
         amount=amount,
         description=description or category_label,
         category=db_category,
+        payment_method=payment_method,
     )
 
     # Ready for another expense in the same session
     await state.set_state(ExpenseWizard.category)
     await state.set_data({})
 
+    pm_label = "💵 ნაღდი" if payment_method == "cash" else "🏦 გადარიცხვა"
     desc_line = f"\n📝 {_e(description)}" if description else ""
     await callback.message.edit_text(
         f"✅ <b>ხარჯი #{expense_id} დაფიქსირდა</b>\n"
         f"🏷 {_e(category_label)}\n"
-        f"💰 <b>{amount:.2f}₾</b>"
+        f"💰 <b>{amount:.2f}₾</b>  {pm_label}"
         f"{desc_line}",
         parse_mode=_PARSE,
         reply_markup=_expense_action_kb(expense_id),

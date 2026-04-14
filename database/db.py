@@ -8,6 +8,7 @@ import pytz
 from database.models import (
     CREATE_TABLES_SQL,
     MIGRATE_SQL,
+    CashDepositRow,
     ExpenseRow,
     OrderRow,
     ParseFailureRow,
@@ -505,11 +506,13 @@ class Database:
         amount: float,
         description: Optional[str] = None,
         category: Optional[str] = None,
+        payment_method: str = "cash",
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "INSERT INTO expenses (amount, description, category) VALUES ($1, $2, $3) RETURNING id",
-                amount, description, category,
+                """INSERT INTO expenses (amount, description, category, payment_method)
+                   VALUES ($1, $2, $3, $4) RETURNING id""",
+                amount, description, category, payment_method,
             )
             return row["id"]
 
@@ -520,6 +523,53 @@ class Database:
                    WHERE created_at >= $1
                    ORDER BY created_at DESC""",
                 self._week_ago(),
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
+    # ─── Cash on hand ────────────────────────────────────────────────────────
+
+    async def create_cash_deposit(self, amount: float, note: Optional[str] = None) -> int:
+        """Record cash being deposited to the bank. Reduces hand balance."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO cash_deposits (amount, note) VALUES ($1, $2) RETURNING id",
+                amount, note,
+            )
+            return row["id"]
+
+    async def get_cash_on_hand(self) -> Dict[str, float]:
+        """Return a breakdown: cash_sales, cash_expenses, deposits, and net balance."""
+        async with self.pool.acquire() as conn:
+            sales_row = await conn.fetchrow(
+                """SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
+                   FROM sales WHERE payment_method = 'cash'"""
+            )
+            exp_row = await conn.fetchrow(
+                """SELECT COALESCE(SUM(amount), 0) AS total
+                   FROM expenses WHERE payment_method = 'cash'"""
+            )
+            dep_row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits"
+            )
+        cash_sales = float(sales_row["total"])
+        cash_expenses = float(exp_row["total"])
+        deposits = float(dep_row["total"])
+        return {
+            "cash_sales": cash_sales,
+            "cash_expenses": cash_expenses,
+            "deposits": deposits,
+            "balance": cash_sales - cash_expenses - deposits,
+        }
+
+    async def get_cash_deposits_by_period(
+        self, start: datetime, end: datetime
+    ) -> List[CashDepositRow]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM cash_deposits
+                   WHERE created_at >= $1 AND created_at < $2
+                   ORDER BY created_at DESC""",
+                start, end,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
