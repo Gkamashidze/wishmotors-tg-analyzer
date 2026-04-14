@@ -136,6 +136,9 @@ async def main() -> None:
         # ── 💳 ნისია ──────────────────────────────────
         BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები (ღილაკებით)"),
         BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
+        # ── 💵 ხელზე ──────────────────────────────────
+        BotCommand(command="cash",          description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"),
+        BotCommand(command="deposit",       description="🏦 ბანკში შეტანა — /deposit 500 შენიშვნა"),
         # ── 🗑 გასწორება ──────────────────────────────
         BotCommand(command="deletesale",    description="🗑 გაყიდვის წაშლა — /deletesale ID"),
         # ── 🔧 სისტემა ────────────────────────────────
