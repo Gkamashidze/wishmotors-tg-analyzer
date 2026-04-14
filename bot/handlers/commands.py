@@ -19,7 +19,6 @@ from bot.handlers import IsAdmin, is_rate_limited
 from bot.reports.formatter import (
     format_cash_on_hand,
     format_credit_sales_report,
-    format_diagnostics_report,
     format_orders_report,
     format_stock_report,
     format_weekly_report,
@@ -657,85 +656,230 @@ async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
         logger.debug("Could not update message after restore: %s", exc)
 
 
+
+# ─── /paid wizard ─────────────────────────────────────────────────────────────
+
+class PaidWizardState(StatesGroup):
+    select_type   = State()   # full or partial buttons
+    enter_amount  = State()   # partial: type amount
+    select_method = State()   # partial: cash or transfer
+
+
 @commands_router.message(Command("paid"), IsAdmin())
-async def cmd_paid(message: Message, db: Database) -> None:
-    """Mark a credit sale as paid. Usage: /paid ID ხელზე  or  /paid ID დარიცხა"""
-    if message.from_user and is_rate_limited(message.from_user.id, "paid"):
-        await message.bot.send_message(  # type: ignore[union-attr]
-            chat_id=message.from_user.id,
-            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
-        )
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 3 or not parts[1].isdigit():
+async def cmd_paid(message: Message, state: FSMContext, db: Database) -> None:
+    """Show all individual nisias as selectable buttons."""
+    await state.clear()
+    sales = await db.get_credit_sales()
+    if not sales:
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text=(
-                "❌ ფორმატი:\n"
-                "<code>/paid ID ხელზე</code>\n"
-                "<code>/paid ID დარიცხა</code>\n\n"
-                "ID-ს ნახვა: /nisias"
-            ),
+            text="✅ გადაუხდელი ნისია არ არის.",
             parse_mode=_PARSE,
         )
         return
 
-    sale_id = int(parts[1])
-    payment_word = parts[2].lower()
+    buttons = []
+    for s in sales[:30]:
+        name = (s.get("product_name") or s.get("notes") or "—")[:22]
+        total = float(s["unit_price"]) * s["quantity"]
+        customer = (s.get("customer_name") or "—")[:14]
+        label = f"#{s['id']} {name} — {total:.0f}₾ | {customer}"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"pw_sel:{s['id']}")])
 
-    if any(k in payment_word for k in ("ხელ", "ნაღ", "ქეშ")):
-        payment_method = "cash"
-        label = "ხელზე 💵"
-    elif any(k in payment_word for k in ("დარ", "გადარ", "ბარათ", "კარტ", "transfer")):
-        payment_method = "transfer"
-        label = "დარიცხა 🏦"
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="💳 <b>ნისიების სია — აირჩიე:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_sel:"), IsAdmin())
+async def paid_select_nisia(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    sale_id = int((callback.data or "").split(":")[1])
+    sales = await db.get_credit_sales()
+    sale = next((s for s in sales if s["id"] == sale_id), None)
+    if not sale:
+        await callback.answer("ნისია ვერ მოიძებნა", show_alert=True)
+        return
+
+    total = float(sale["unit_price"]) * sale["quantity"]
+    name = sale.get("product_name") or sale.get("notes") or "—"
+    customer = sale.get("customer_name") or "—"
+
+    await state.update_data(pw_sale_id=sale_id, pw_total=total, pw_name=name, pw_customer=customer)
+    await state.set_state(PaidWizardState.select_type)
+
+    buttons = [
+        [InlineKeyboardButton(text=f"✅ სრულად ({total:.2f}₾)", callback_data="pw_type:full")],
+        [InlineKeyboardButton(text="💸 ნაწილობრივ", callback_data="pw_type:partial")],
+        [InlineKeyboardButton(text="❌ გაუქმება", callback_data="pw_cancel")],
+    ]
+    await callback.message.edit_text(
+        f"💳 <b>#{sale_id} — {html.escape(name)}</b>\n"
+        f"👤 {html.escape(customer)}\n"
+        f"💰 სულ: <b>{total:.2f}₾</b>\n\n"
+        "სრული გადახდა თუ ნაწილობრივი?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+    await callback.answer()
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_type:"), IsAdmin())
+async def paid_select_type(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    ptype = (callback.data or "").split(":")[1]
+    data = await state.get_data()
+
+    if ptype == "full":
+        buttons = [
+            [InlineKeyboardButton(text="💵 ხელზე", callback_data="pw_method:cash")],
+            [InlineKeyboardButton(text="🏦 დარიცხა", callback_data="pw_method:transfer")],
+            [InlineKeyboardButton(text="❌ გაუქმება", callback_data="pw_cancel")],
+        ]
+        await state.update_data(pw_amount=data.get("pw_total"))
+        await callback.message.edit_text(
+            f"💳 <b>#{data['pw_sale_id']}</b> — სრული გადახდა\n\nგადახდის მეთოდი:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+            parse_mode=_PARSE,
+        )
     else:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="❌ გადახდის მეთოდი არ ვიცი. გამოიყენეთ: <code>ხელზე</code> ან <code>დარიცხა</code>",
+        await state.set_state(PaidWizardState.enter_amount)
+        await callback.message.edit_text(
+            f"💳 <b>#{data['pw_sale_id']}</b>\n"
+            f"💰 სულ: {data['pw_total']:.2f}₾\n\n"
+            "რამდენი გადაიხადა? <i>(₾)</i>",
             parse_mode=_PARSE,
         )
+    await callback.answer()
+
+
+@commands_router.message(StateFilter(PaidWizardState.enter_amount), IsAdmin())
+async def paid_enter_amount(message: Message, state: FSMContext) -> None:
+    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    try:
+        amount = float(raw)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.reply("❌ სწორი თანხა ჩაწერე, მაგ: <code>150</code>", parse_mode=_PARSE)
         return
 
-    updated = await db.mark_sale_paid(sale_id, payment_method)
-    if updated:
-        logger.info(
-            "AUDIT: admin %d marked sale #%d as paid (%s) via /paid command",
-            message.from_user.id, sale_id, payment_method,
-        )
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=f"✅ ნისია <b>#{sale_id}</b> გადახდილია — {label}",
+    await state.update_data(pw_amount=amount)
+    await state.set_state(PaidWizardState.select_method)
+    buttons = [
+        [InlineKeyboardButton(text="💵 ხელზე", callback_data="pw_method:cash")],
+        [InlineKeyboardButton(text="🏦 დარიცხა", callback_data="pw_method:transfer")],
+        [InlineKeyboardButton(text="❌ გაუქმება", callback_data="pw_cancel")],
+    ]
+    await message.answer(
+        f"გადახდილი: <b>{amount:.2f}₾</b>\n\nგადახდის მეთოდი:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_method:"), IsAdmin())
+async def paid_select_method(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    method = (callback.data or "").split(":")[1]
+    data = await state.get_data()
+    await state.clear()
+
+    sale_id = data["pw_sale_id"]
+    amount = data["pw_amount"]
+    method_label = "ხელზე 💵" if method == "cash" else "დარიცხა 🏦"
+
+    remaining = await db.pay_sale(sale_id, amount, method)
+
+    if remaining < 0:
+        await callback.message.edit_text("⚠️ ნისია ვერ მოიძებნა ან უკვე გადახდილია.", parse_mode=_PARSE)
+    elif remaining == 0:
+        await callback.message.edit_text(
+            f"✅ <b>ნისია #{sale_id} სრულად გადახდილია</b>\n💳 {method_label}",
             parse_mode=_PARSE,
         )
     else:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=f"⚠️ გაყიდვა #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.",
+        await callback.message.edit_text(
+            f"✅ <b>ნისია #{sale_id}</b>\n"
+            f"💸 გადახდა: <b>{amount:.2f}₾</b> — {method_label}\n"
+            f"💳 დარჩა: <b>{remaining:.2f}₾</b>",
             parse_mode=_PARSE,
         )
+    await callback.answer()
+
+
+@commands_router.callback_query(lambda c: c.data == "pw_cancel", IsAdmin())
+async def paid_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    await state.clear()
+    await callback.message.edit_text("❌ გაუქმდა.", parse_mode=_PARSE)
+    await callback.answer()
+
+
 
 
 @commands_router.message(Command("diagnostics"), IsAdmin())
 async def cmd_diagnostics(message: Message, db: Database) -> None:
-    """Show parse failure statistics."""
+    """Show recent parse failures individually with full detail."""
     if message.from_user and is_rate_limited(message.from_user.id, "diagnostics", min_interval=10.0):
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
         )
         return
-    failures, total_7d, total_30d = await asyncio.gather(
-        db.get_parse_failure_stats(days=30),
-        db.get_parse_failure_count(days=7),
-        db.get_parse_failure_count(days=30),
-    )
 
-    await message.bot.send_message(
-        chat_id=message.from_user.id,
-        text=format_diagnostics_report(failures, total_7d, total_30d),
-        parse_mode=_PARSE,
-    )
+    failures = await db.get_recent_parse_failures(limit=20)
+    if not failures:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="✅ ბოლო 20 შეტყობინება — ხარვეზი არ დაფიქსირებულა.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    import pytz
+    tz = pytz.timezone("Asia/Tbilisi")
+    parts: list[str] = [f"🔍 <b>ვერ ამოცნობილი ({len(failures)})</b>"]
+    for f_ in failures:
+        dt = f_["created_at"]
+        dt_str = dt.astimezone(tz).strftime("%d.%m %H:%M") if hasattr(dt, "astimezone") else str(dt)[:16]
+        topic = f_["topic_id"]
+        text_esc = html.escape(str(f_["message_text"]).strip())
+        parts.append(
+            f"──────────────\n"
+            f"🕐 {dt_str}  |  📌 Topic #{topic}\n"
+            f"<code>{text_esc}</code>"
+        )
+
+    full = "\n".join(parts)
+    if len(full) <= 4096:
+        await message.bot.send_message(chat_id=message.from_user.id, text=full, parse_mode=_PARSE)
+        return
+
+    # Split into chunks under 4096 chars
+    chunk_parts: list[str] = []
+    chunk_len = 0
+    for p in parts:
+        if chunk_len + len(p) + 1 > 3900 and chunk_parts:
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text="\n".join(chunk_parts),
+                parse_mode=_PARSE,
+            )
+            chunk_parts = []
+            chunk_len = 0
+        chunk_parts.append(p)
+        chunk_len += len(p) + 1
+    if chunk_parts:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="\n".join(chunk_parts),
+            parse_mode=_PARSE,
+        )
+
 
 
 @commands_router.message(Command("deletesale"), IsAdmin())
@@ -800,187 +944,333 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
     )
 
 
+
+# ─── /editproduct wizard ──────────────────────────────────────────────────────
+
+class EditProductState(StatesGroup):
+    search = State()
+    field  = State()
+    value  = State()
+
+
 @commands_router.message(Command("editproduct"), IsAdmin())
-async def cmd_editproduct(message: Message, db: Database) -> None:
-    """Edit a product field. Usage: /editproduct ID field value
-    Fields: name | oem | price | minstock"""
-    if message.from_user and is_rate_limited(message.from_user.id, "editproduct"):
-        await message.bot.send_message(  # type: ignore[union-attr]
-            chat_id=message.from_user.id,
-            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
-        )
-        return
-    parts = (message.text or "").split(None, 3)  # max 4 parts
-    if len(parts) < 4 or not parts[1].isdigit():
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                "❌ <b>ფორმატი:</b>\n"
-                "<code>/editproduct ID ველი მნიშვნელობა</code>\n\n"
-                "<b>ველები:</b>\n"
-                "• <code>name</code> — სახელი\n"
-                "• <code>oem</code> — OEM კოდი\n"
-                "• <code>price</code> — ფასი (₾)\n"
-                "• <code>minstock</code> — მინ. მარაგი\n\n"
-                "<b>მაგალითები:</b>\n"
-                "<code>/editproduct 3 price 45.50</code>\n"
-                "<code>/editproduct 3 name მარჯვენა სარკე</code>"
-            ),
-            parse_mode=_PARSE,
-        )
-        return
+async def cmd_editproduct(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(EditProductState.search)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="🔍 <b>OEM კოდი ჩაწერე:</b>",
+        parse_mode=_PARSE,
+    )
 
-    product_id = int(parts[1])
-    field = parts[2].lower().strip()
-    value_str = parts[3].strip()
 
-    product = await db.get_product_by_id(product_id)
-    if not product:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=f"⚠️ პროდუქტი #{product_id} ვერ მოიძებნა.",
-            parse_mode=_PARSE,
-        )
+@commands_router.message(StateFilter(EditProductState.search), IsAdmin())
+async def editproduct_search(message: Message, state: FSMContext, db: Database) -> None:
+    query = (message.text or "").strip()
+    products = await db.search_products(query, limit=8)
+    if not products:
+        await message.reply("⚠️ ვერ ვიპოვე. სცადე სხვა OEM ან სახელი.", parse_mode=_PARSE)
         return
+    if len(products) == 1:
+        p = products[0]
+        await state.update_data(ep_product_id=p["id"], ep_product_name=p["name"])
+        await _editproduct_show_fields(message, state, p)
+        return
+    buttons = []
+    for p in products:
+        lbl = p["name"] + (f" [{p['oem_code']}]" if p.get("oem_code") else "")
+        buttons.append([InlineKeyboardButton(text=lbl[:60], callback_data=f"ep_pick:{p['id']}")])
+    await state.set_state(EditProductState.field)
+    await message.answer(
+        f"🔍 ვიპოვე {len(products)} პროდუქტი. აირჩიე:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("ep_pick:"), IsAdmin())
+async def editproduct_pick(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    product_id = int((callback.data or "").split(":")[1])
+    p = await db.get_product_by_id(product_id)
+    if not p:
+        await callback.answer("პროდუქტი ვერ მოიძებნა", show_alert=True)
+        return
+    await state.update_data(ep_product_id=product_id, ep_product_name=p["name"])
+    await _editproduct_show_fields(callback.message, state, p)
+    await callback.answer()
+
+
+async def _editproduct_show_fields(message: Message, state: FSMContext, p: dict) -> None:
+    await state.set_state(EditProductState.field)
+    oem = p.get("oem_code") or "—"
+    buttons = [
+        [InlineKeyboardButton(text=f"📝 სახელი: {p['name'][:30]}", callback_data="ep_field:name")],
+        [InlineKeyboardButton(text=f"🔑 OEM: {oem}", callback_data="ep_field:oem")],
+        [InlineKeyboardButton(text=f"💰 ფასი: {float(p['unit_price']):.2f}₾", callback_data="ep_field:price")],
+        [InlineKeyboardButton(text=f"📦 მინ. მარაგი: {p['min_stock']}", callback_data="ep_field:minstock")],
+        [InlineKeyboardButton(text=f"📐 ერთ.ზომა: {p.get('unit', 'ც')}", callback_data="ep_field:unit")],
+        [InlineKeyboardButton(text="❌ გაუქმება", callback_data="ep_cancel")],
+    ]
+    await message.answer(
+        f"✏️ <b>{html.escape(p['name'])}</b>\n\nრომელი ველი შეიცვალოს?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("ep_field:"), IsAdmin())
+async def editproduct_pick_field(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    field = (callback.data or "").split(":")[1]
+    labels = {
+        "name": "სახელი",
+        "oem": "OEM კოდი",
+        "price": "ფასი (₾)",
+        "minstock": "მინ. მარაგი (მთელი რიცხვი)",
+        "unit": "ერთ. ზომა (ც, კგ, მ...)",
+    }
+    await state.update_data(ep_field=field)
+    await state.set_state(EditProductState.value)
+    await callback.message.edit_text(
+        f"✏️ ახალი მნიშვნელობა — <b>{labels.get(field, field)}</b>:",
+        parse_mode=_PARSE,
+    )
+    await callback.answer()
+
+
+@commands_router.message(StateFilter(EditProductState.value), IsAdmin())
+async def editproduct_enter_value(message: Message, state: FSMContext, db: Database) -> None:
+    data = await state.get_data()
+    product_id: int = data["ep_product_id"]
+    field: str = data["ep_field"]
+    raw = (message.text or "").strip()
 
     kwargs: dict = {}
     field_label = ""
     try:
         if field == "name":
-            kwargs["name"] = value_str
-            field_label = f"სახელი → <b>{html.escape(value_str)}</b>"
+            kwargs["name"] = raw
+            field_label = f"სახელი → <b>{html.escape(raw)}</b>"
         elif field == "oem":
-            kwargs["oem_code"] = value_str
-            field_label = f"OEM → <b>{html.escape(value_str)}</b>"
+            kwargs["oem_code"] = raw
+            field_label = f"OEM → <b>{html.escape(raw)}</b>"
         elif field == "price":
-            kwargs["price"] = float(value_str.replace(",", "."))
+            kwargs["price"] = float(raw.replace(",", "."))
             field_label = f"ფასი → <b>{kwargs['price']:.2f}₾</b>"
         elif field == "minstock":
-            kwargs["min_stock"] = int(value_str)
-            field_label = f"მინ. მარაგი → <b>{kwargs['min_stock']}ც</b>"
+            kwargs["min_stock"] = int(raw)
+            field_label = f"მინ. მარაგი → <b>{kwargs['min_stock']}</b>"
+        elif field == "unit":
+            kwargs["unit"] = raw
+            field_label = f"ერთ.ზომა → <b>{html.escape(raw)}</b>"
         else:
-            await message.bot.send_message(
-                chat_id=message.from_user.id,
-                text="❌ უცნობი ველი. გამოიყენეთ: <code>name</code>, <code>oem</code>, <code>price</code>, <code>minstock</code>",
-                parse_mode=_PARSE,
-            )
+            await message.reply("❌ უცნობი ველი.", parse_mode=_PARSE)
             return
     except ValueError:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="❌ მნიშვნელობა არასწორია. შეამოწმეთ ფორმატი.",
-            parse_mode=_PARSE,
-        )
+        await message.reply("❌ სწორი მნიშვნელობა ჩაწერე.", parse_mode=_PARSE)
         return
 
+    await state.clear()
     updated = await db.edit_product(product_id, **kwargs)
     if updated:
-        logger.info(
-            "AUDIT: admin %d edited product #%d — %s",
-            message.from_user.id, product_id, kwargs,
-        )
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                f"✅ <b>პროდუქტი განახლდა</b>\n"
-                f"📦 {html.escape(updated['name'])}\n"
-                f"🆔 #{product_id}\n"
-                f"✏️ {field_label}"
-            ),
+        await message.reply(
+            f"✅ <b>განახლდა</b>\n📦 {html.escape(updated['name'])}\n✏️ {field_label}",
             parse_mode=_PARSE,
         )
     else:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="⚠️ განახლება ვერ მოხდა.",
-            parse_mode=_PARSE,
-        )
+        await message.reply("⚠️ განახლება ვერ მოხდა.", parse_mode=_PARSE)
+
+
+@commands_router.callback_query(lambda c: c.data == "ep_cancel", IsAdmin())
+async def editproduct_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    await state.clear()
+    await callback.message.edit_text("❌ გაუქმდა.", parse_mode=_PARSE)
+    await callback.answer()
+
+
 
 
 @commands_router.message(Command("completeorder"), IsAdmin())
 async def cmd_complete_order(message: Message, db: Database) -> None:
-    if message.from_user and is_rate_limited(message.from_user.id, "completeorder"):
-        await message.bot.send_message(  # type: ignore[union-attr]
-            chat_id=message.from_user.id,
-            text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
-        )
-        return
-    parts = (message.text or "").split()
-    if len(parts) < 2 or not parts[1].isdigit():
+    """Show pending orders as inline buttons. Tap to close."""
+    orders = await db.get_pending_orders()
+    if not orders:
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text="❌ მიუთითეთ შეკვეთის ID.\nმაგალითი: <code>/completeorder 5</code>",
+            text="✅ მომლოდინე შეკვეთა არ არის.",
             parse_mode=_PARSE,
         )
         return
 
-    order_id = int(parts[1])
+    buttons = []
+    for o in orders:
+        name = (o.get("product_name") or o.get("notes") or "—")[:30]
+        icon = {"urgent": "🔴", "normal": "🟡", "low": "🟢"}.get(o.get("priority", "normal"), "🟡")
+        label = f"{icon} #{o['id']} {name} — {o['quantity_needed']}ც"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"co:{o['id']}")])
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="📋 <b>მომლოდინე შეკვეთები — დახურვისთვის დააჭირე:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("co:"), IsAdmin())
+async def complete_order_callback(callback: CallbackQuery, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    order_id = int((callback.data or "").split(":")[1])
     done = await db.complete_order(order_id)
-
     if done:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=f"✅ შეკვეთა #{order_id} დახურულია.",
-            parse_mode=_PARSE,
-        )
+        old_kb = callback.message.reply_markup
+        new_rows = [
+            row for row in (old_kb.inline_keyboard if old_kb else [])
+            if not any(btn.callback_data == f"co:{order_id}" for btn in row)
+        ]
+        new_kb = InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
+        await callback.message.edit_reply_markup(reply_markup=new_kb)
+        await callback.answer(f"✅ შეკვეთა #{order_id} დახურულია")
     else:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა ან უკვე დახურულია.",
-            parse_mode=_PARSE,
-        )
+        await callback.answer(f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა", show_alert=True)
+
+
+
+
+# ─── /addproduct wizard ───────────────────────────────────────────────────────
+
+class AddProductState(StatesGroup):
+    name  = State()
+    oem   = State()
+    qty   = State()
+    unit  = State()
+    price = State()
 
 
 @commands_router.message(Command("addproduct"), IsAdmin())
-async def cmd_addproduct(message: Message, db: Database) -> None:
-    args = (message.text or "").split()[1:]
+async def cmd_addproduct(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(AddProductState.name)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="➕ <b>ახალი პროდუქტი — 1/5</b>\n\n<b>დასახელება:</b>",
+        parse_mode=_PARSE,
+    )
 
-    if len(args) < 4:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                "❌ <b>არასწორი ფორმატი.</b>\n\n"
-                "გამოიყენეთ:\n"
-                "<code>/addproduct სახელი OEM_კოდი მარაგი ფასი</code>\n\n"
-                "მაგალითი:\n"
-                "<code>/addproduct მარჭვენა_რეფლექტორი 8390132500 50 30.00</code>\n\n"
-                "სახელში _ სფეისის ნაცვლად."
-            ),
-            parse_mode=_PARSE,
-        )
+
+@commands_router.message(StateFilter(AddProductState.name), IsAdmin())
+async def addproduct_name(message: Message, state: FSMContext) -> None:
+    name = (message.text or "").strip()
+    if not name:
+        await message.reply("❌ სახელი ცარიელია.", parse_mode=_PARSE)
         return
+    await state.update_data(ap_name=name)
+    await state.set_state(AddProductState.oem)
+    await message.reply(
+        f"✅ <b>{html.escape(name)}</b>\n\n"
+        "<b>2/5 — OEM კოდი</b>\n"
+        "გამოტოვებისთვის გამოგზავნე <code>-</code>",
+        parse_mode=_PARSE,
+    )
 
+
+@commands_router.message(StateFilter(AddProductState.oem), IsAdmin())
+async def addproduct_oem(message: Message, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    oem = None if raw == "-" else raw
+    await state.update_data(ap_oem=oem)
+    await state.set_state(AddProductState.qty)
+    await message.reply("<b>3/5 — საწყისი რაოდენობა</b> (მთელი რიცხვი):", parse_mode=_PARSE)
+
+
+@commands_router.message(StateFilter(AddProductState.qty), IsAdmin())
+async def addproduct_qty(message: Message, state: FSMContext) -> None:
     try:
-        price = float(args[-1])
-        stock = int(args[-2])
-        oem = args[-3] if args[-3] != "-" else None
-        name = " ".join(args[:-3]).replace("_", " ").strip()
-
-        if not name:
-            raise ValueError("empty name")
-        if price < 0:
-            raise ValueError("negative price")
-        if stock < 0:
-            raise ValueError("negative stock")
-    except (ValueError, IndexError):
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text="❌ შეამოწმეთ ფორმატი. <b>მარაგი</b> მთელი რიცხვია, <b>ფასი</b> — ათობითი, ორივე 0 ან მეტი.",
-            parse_mode=_PARSE,
-        )
+        qty = int((message.text or "").strip())
+        if qty < 0:
+            raise ValueError
+    except ValueError:
+        await message.reply("❌ სწორი მთელი რიცხვი ჩაწერე (0 ან მეტი).", parse_mode=_PARSE)
         return
+    await state.update_data(ap_qty=qty)
+    await state.set_state(AddProductState.unit)
+    buttons = [
+        [
+            InlineKeyboardButton(text="ც", callback_data="ap_unit:ც"),
+            InlineKeyboardButton(text="კგ", callback_data="ap_unit:კგ"),
+            InlineKeyboardButton(text="მ", callback_data="ap_unit:მ"),
+        ],
+        [
+            InlineKeyboardButton(text="კომპლ.", callback_data="ap_unit:კომპლ."),
+            InlineKeyboardButton(text="ლ", callback_data="ap_unit:ლ"),
+            InlineKeyboardButton(text="სხვა ✏️", callback_data="ap_unit:__custom__"),
+        ],
+    ]
+    await message.reply(
+        "<b>4/5 — ერთეულის ზომა:</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("ap_unit:"), IsAdmin())
+async def addproduct_unit_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    val = (callback.data or "").split(":", 1)[1]
+    if val == "__custom__":
+        await state.set_state(AddProductState.unit)
+        await callback.message.edit_text("<b>4/5 — ერთეულის ზომა</b> ჩაწერე:", parse_mode=_PARSE)
+        await callback.answer()
+        return
+    await state.update_data(ap_unit=val)
+    await state.set_state(AddProductState.price)
+    await callback.message.edit_text(
+        f"✅ ერთ.ზომა: <b>{val}</b>\n\n<b>5/5 — ფასი (₾)</b> (0 თუ უცნობია):",
+        parse_mode=_PARSE,
+    )
+    await callback.answer()
+
+
+@commands_router.message(StateFilter(AddProductState.unit), IsAdmin())
+async def addproduct_unit_text(message: Message, state: FSMContext) -> None:
+    unit = (message.text or "").strip()
+    if not unit:
+        await message.reply("❌ ერთ.ზომა ცარიელია.", parse_mode=_PARSE)
+        return
+    await state.update_data(ap_unit=unit)
+    await state.set_state(AddProductState.price)
+    await message.reply(
+        f"✅ ერთ.ზომა: <b>{html.escape(unit)}</b>\n\n<b>5/5 — ფასი (₾)</b> (0 თუ უცნობია):",
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(StateFilter(AddProductState.price), IsAdmin())
+async def addproduct_price(message: Message, state: FSMContext, db: Database) -> None:
+    try:
+        price = float((message.text or "").strip().replace(",", "."))
+        if price < 0:
+            raise ValueError
+    except ValueError:
+        await message.reply("❌ სწორი ფასი ჩაწერე (0 ან მეტი).", parse_mode=_PARSE)
+        return
+
+    data = await state.get_data()
+    await state.clear()
+
+    name: str = data["ap_name"]
+    oem = data.get("ap_oem")
+    qty: int = data["ap_qty"]
+    unit: str = data.get("ap_unit", "ც")
 
     existing = await db.get_product_by_oem(oem) if oem else None
     if not existing:
         existing = await db.get_product_by_name(name)
-
     if existing:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                f"⚠️ პროდუქტი უკვე არსებობს: <b>{existing['name']}</b> (ID: {existing['id']})\n"
-                f"მარაგის განახლებისთვის გამოიყენეთ Excel ატვირთვა Capital topic-ში."
-            ),
+        await message.reply(
+            f"⚠️ პროდუქტი უკვე არსებობს:\n<b>{existing['name']}</b> (ID: {existing['id']})",
             parse_mode=_PARSE,
         )
         return
@@ -988,23 +1278,24 @@ async def cmd_addproduct(message: Message, db: Database) -> None:
     product_id = await db.create_product(
         name=name,
         oem_code=oem,
-        stock=stock,
+        stock=qty,
         min_stock=config.MIN_STOCK_THRESHOLD,
         price=price,
     )
+    await db.edit_product(product_id, unit=unit)
 
-    await message.bot.send_message(
-        chat_id=message.from_user.id,
-        text=(
-            f"✅ <b>პროდუქტი დამატებულია!</b>\n"
-            f"📦 სახელი: {html.escape(name)}\n"
-            f"🔑 OEM: {html.escape(oem) if oem else '—'}\n"
-            f"📊 საწყობი: {stock}ც\n"
-            f"💰 ფასი: {price:.2f}₾\n"
-            f"🆔 ID: {product_id}"
-        ),
+    await message.reply(
+        f"✅ <b>პროდუქტი დამატებულია!</b>\n"
+        f"📦 {html.escape(name)}\n"
+        f"🔑 OEM: {html.escape(oem) if oem else '—'}\n"
+        f"📊 მარაგი: {qty} {unit}\n"
+        f"💰 ფასი: {price:.2f}₾\n"
+        f"🆔 ID: {product_id}",
         parse_mode=_PARSE,
     )
+
+
+
 
 
 # ─── /import — Excel product import ──────────────────────────────────────────

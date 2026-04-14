@@ -423,6 +423,7 @@ class Database:
         oem_code: Optional[str] = None,
         price: Optional[float] = None,
         min_stock: Optional[int] = None,
+        unit: Optional[str] = None,
     ) -> Optional[ProductRow]:
         """Update one or more product fields. Only provided (non-None) fields change.
         Returns the updated product, or None if not found."""
@@ -444,6 +445,10 @@ class Database:
         if min_stock is not None:
             updates.append(f"min_stock = ${idx}")
             values.append(min_stock)
+            idx += 1
+        if unit is not None:
+            updates.append(f"unit = ${idx}")
+            values.append(unit)
             idx += 1
         if not updates:
             return await self.get_product_by_id(product_id)
@@ -698,6 +703,50 @@ class Database:
                 "INSERT INTO parse_failures (topic_id, message_text) VALUES ($1, $2)",
                 topic_id, message_text,
             )
+
+
+    async def pay_sale(self, sale_id: int, amount: float, payment_method: str) -> float:
+        """Pay a single nisia fully or partially.
+
+        If amount >= sale total: marks sale as paid with payment_method.
+        If amount < sale total: reduces unit_price to reflect remaining balance.
+        Returns remaining debt on this sale after payment (0.0 if fully paid).
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT unit_price, quantity FROM sales WHERE id = $1 AND payment_method = 'credit'",
+                    sale_id,
+                )
+                if not row:
+                    return -1.0  # sale not found or already paid
+                sale_total = float(row["unit_price"]) * row["quantity"]
+                if amount >= sale_total:
+                    await conn.execute(
+                        "UPDATE sales SET payment_method = $1 WHERE id = $2",
+                        payment_method, sale_id,
+                    )
+                    return 0.0
+                else:
+                    remaining = sale_total - amount
+                    new_price = remaining / row["quantity"]
+                    await conn.execute(
+                        "UPDATE sales SET unit_price = $1 WHERE id = $2",
+                        new_price, sale_id,
+                    )
+                    return remaining
+
+    async def get_recent_parse_failures(self, limit: int = 20) -> list:
+        """Return individual parse failure records, newest first."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, topic_id, message_text, created_at
+                   FROM parse_failures
+                   ORDER BY created_at DESC
+                   LIMIT $1""",
+                limit,
+            )
+            return self._rows(rows)
 
     async def get_parse_failure_stats(self, days: int = 30) -> List[ParseFailureRow]:
         """Return top unparsed messages grouped by text, for the last N days."""
