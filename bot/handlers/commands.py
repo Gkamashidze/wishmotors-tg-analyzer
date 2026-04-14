@@ -6,7 +6,7 @@ from typing import Optional
 
 from aiogram import Router
 from aiogram.enums import ParseMode
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -148,47 +148,45 @@ async def cmd_cash(message: Message, db: Database) -> None:
     )
 
 
+class DepositState(StatesGroup):
+    waiting_amount = State()
+
+
 @commands_router.message(Command("deposit"), IsAdmin())
-async def cmd_deposit(message: Message, db: Database) -> None:
-    """Record cash deposited to bank.  Usage: /deposit 500  or  /deposit 500 BOG-ში"""
-    args = (message.text or "").split(maxsplit=1)
-    if len(args) < 2:
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                "💡 გამოყენება:\n"
-                "<code>/deposit 500</code>\n"
-                "<code>/deposit 500 BOG-ში შევიტანე</code>"
-            ),
-            parse_mode=_PARSE,
-        )
-        return
+async def cmd_deposit(message: Message, state: FSMContext) -> None:
+    """Start deposit wizard — ask for amount."""
+    await state.set_state(DepositState.waiting_amount)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="🏦 <b>ბანკში შეტანა</b>\n\nრამდენი შეიტანე? (მაგ: <code>500</code>)",
+        parse_mode=_PARSE,
+    )
 
-    rest = args[1].strip()
-    parts = rest.split(maxsplit=1)
-    raw_amount = parts[0].replace(",", ".").replace("₾", "").replace("ლ", "")
-    note: Optional[str] = parts[1].strip() if len(parts) > 1 else None
 
+@commands_router.message(StateFilter(DepositState.waiting_amount), IsAdmin())
+async def deposit_amount_input(message: Message, state: FSMContext, db: Database) -> None:
+    """Handle the amount entered by the user."""
+    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
     try:
-        amount = float(raw_amount)
+        amount = float(raw)
         if amount <= 0:
             raise ValueError
     except ValueError:
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text="⚠️ სწორი თანხა ჩაწერე, მაგ: <code>/deposit 500</code>",
+            text="⚠️ სწორი თანხა ჩაწერე, მაგ: <code>500</code>",
             parse_mode=_PARSE,
         )
         return
 
-    deposit_id = await db.create_cash_deposit(amount, note)
+    await state.clear()
+    deposit_id = await db.create_cash_deposit(amount)
     cash = await db.get_cash_on_hand()
-    note_line = f"\n📝 {html.escape(note)}" if note else ""
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=(
             f"✅ <b>ბანკში შეტანა #{deposit_id} დაფიქსირდა</b>\n"
-            f"💰 <b>{amount:.2f}₾</b>{note_line}\n\n"
+            f"💰 <b>{amount:.2f}₾</b>\n\n"
             f"💼 დარჩენილი ხელზე: <b>{cash['balance']:.2f}₾</b>"
         ),
         parse_mode=_PARSE,
