@@ -628,6 +628,132 @@ class Database:
             # asyncpg returns "DELETE N" as a string
             return int(result.split()[-1])
 
+    # ─── Sale / Expense lookup & editing ─────────────────────────────────────
+
+    async def get_sale(self, sale_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a single sale with joined product name."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT s.*, p.name AS product_name, p.oem_code
+                   FROM sales s
+                   LEFT JOIN products p ON s.product_id = p.id
+                   WHERE s.id = $1""",
+                sale_id,
+            )
+            return self._row(row)
+
+    async def edit_sale(
+        self,
+        sale_id: int,
+        quantity: Optional[int] = None,
+        unit_price: Optional[float] = None,
+        payment_method: Optional[str] = None,
+        customer_name: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Update sale fields. Adjusts product stock when quantity changes.
+        Returns the updated sale row, or None if not found."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                sale = await conn.fetchrow("SELECT * FROM sales WHERE id=$1", sale_id)
+                if not sale:
+                    return None
+                old = dict(sale)
+
+                # Stock adjustment: only when quantity actually changes
+                if (
+                    quantity is not None
+                    and quantity != old["quantity"]
+                    and old.get("product_id")
+                ):
+                    delta = old["quantity"] - quantity  # >0 restores, <0 deducts
+                    await conn.execute(
+                        "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2",
+                        delta, old["product_id"],
+                    )
+
+                updates: List[str] = []
+                values: List[Any] = []
+                idx = 1
+                if quantity is not None:
+                    updates.append(f"quantity = ${idx}")
+                    values.append(quantity)
+                    idx += 1
+                if unit_price is not None:
+                    updates.append(f"unit_price = ${idx}")
+                    values.append(unit_price)
+                    idx += 1
+                if payment_method is not None:
+                    updates.append(f"payment_method = ${idx}")
+                    values.append(payment_method)
+                    idx += 1
+                if customer_name is not None:
+                    updates.append(f"customer_name = ${idx}")
+                    values.append(customer_name or None)
+                    idx += 1
+                if notes is not None:
+                    updates.append(f"notes = ${idx}")
+                    values.append(notes or None)
+                    idx += 1
+
+                if not updates:
+                    return self._row(sale)
+
+                values.append(sale_id)
+                row = await conn.fetchrow(
+                    f"UPDATE sales SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
+                    *values,
+                )
+                return self._row(row)
+
+    async def get_expense(self, expense_id: int) -> Optional[Dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM expenses WHERE id = $1", expense_id)
+            return self._row(row)
+
+    async def edit_expense(
+        self,
+        expense_id: int,
+        amount: Optional[float] = None,
+        description: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Update expense fields. Returns updated row or None if not found."""
+        updates: List[str] = []
+        values: List[Any] = []
+        idx = 1
+        if amount is not None:
+            updates.append(f"amount = ${idx}")
+            values.append(amount)
+            idx += 1
+        if description is not None:
+            updates.append(f"description = ${idx}")
+            values.append(description or None)
+            idx += 1
+        if category is not None:
+            updates.append(f"category = ${idx}")
+            values.append(category or None)
+            idx += 1
+        if not updates:
+            return await self.get_expense(expense_id)
+        values.append(expense_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE expenses SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
+                *values,
+            )
+            return self._row(row)
+
+    async def update_expense_topic_message(
+        self, expense_id: int, topic_id: int, topic_message_id: int
+    ) -> None:
+        """Store the group-topic message ID for an expense so it can be updated later."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE expenses SET topic_id=$1, topic_message_id=$2 WHERE id=$3",
+                topic_id, topic_message_id, expense_id,
+            )
+
     # ─── Topic message tracking ───────────────────────────────────────────────
 
     async def update_sale_topic_message(

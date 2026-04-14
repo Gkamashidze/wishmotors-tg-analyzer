@@ -120,6 +120,10 @@ CREATE TABLE IF NOT EXISTS deleted_sales (
 
 CREATE INDEX IF NOT EXISTS idx_deleted_sales_expires ON deleted_sales(expires_at);
 
+-- Topic message tracking for expenses (edit → delete old + re-post)
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
+
 DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;

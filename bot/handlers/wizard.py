@@ -3,6 +3,11 @@ Wizard-style DM entry for Sales, Nisias, and Expenses.
 Each flow guides the admin through steps with inline buttons.
 Only works in private (DM) chat; confirmed entries are saved to DB
 and mirrored to the relevant group topic.
+
+Multi-item sessions: after saving, the user can tap ➕ to add another
+item of the same type without restarting from the /new menu.
+
+Edit: tapping ✏️ on any confirmation opens a field-level edit wizard.
 """
 import html
 import logging
@@ -53,6 +58,35 @@ def _e(v: object) -> str:
     return html.escape(str(v))
 
 
+def _sale_action_kb(sale_id: int) -> InlineKeyboardMarkup:
+    """Buttons shown after saving a sale (delete + edit + more + done)."""
+    return _kb(
+        [_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}"),
+         _btn(f"✏️ რედ. #{sale_id}", f"edit:sale:{sale_id}")],
+        [_btn("➕ კიდევ ერთი", "wiz:more:sale"),
+         _btn("✅ დასრულება", "wiz:done:sale")],
+    )
+
+
+def _nisia_action_kb(sale_id: int) -> InlineKeyboardMarkup:
+    """Buttons shown after saving a nisia (delete + edit + more same customer + done)."""
+    return _kb(
+        [_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}"),
+         _btn(f"✏️ რედ. #{sale_id}", f"edit:sale:{sale_id}")],
+        [_btn("➕ კიდევ ერთი (იმავე კლ.)", "wiz:more:nisia"),
+         _btn("✅ დასრულება", "wiz:done:nisia")],
+    )
+
+
+def _expense_action_kb(expense_id: int) -> InlineKeyboardMarkup:
+    """Buttons shown after saving an expense (edit + more + done)."""
+    return _kb(
+        [_btn(f"✏️ რედ. #{expense_id}", f"edit:exp:{expense_id}")],
+        [_btn("➕ კიდევ ერთი", "wiz:more:expense"),
+         _btn("✅ დასრულება", "wiz:done:expense")],
+    )
+
+
 # ─── State groups ──────────────────────────────────────────────────────────────
 
 class SaleWizard(StatesGroup):
@@ -83,6 +117,18 @@ class ExpenseWizard(StatesGroup):
     confirm    = State()
 
 
+class SaleEditWizard(StatesGroup):
+    field   = State()   # user picks which field to change
+    value   = State()   # user types new value (or picks via buttons)
+    confirm = State()   # final confirmation
+
+
+class ExpenseEditWizard(StatesGroup):
+    field   = State()
+    value   = State()
+    confirm = State()
+
+
 # ─── /new — main menu ─────────────────────────────────────────────────────────
 
 @wizard_router.message(Command("new"), IsAdmin(), _PRIVATE)
@@ -105,6 +151,64 @@ async def cmd_new(message: Message, state: FSMContext) -> None:
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("❌ <b>გაუქმებულია.</b>", parse_mode=_PARSE)
+
+
+# ─── Session "done" handlers ─────────────────────────────────────────────────
+
+@wizard_router.callback_query(F.data.in_({"wiz:done:sale", "wiz:done:nisia", "wiz:done:expense"}), IsAdmin())
+async def cb_done(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("✅ სესია დასრულდა", show_alert=False)
+
+
+# ─── "Add more" handlers ──────────────────────────────────────────────────────
+
+@wizard_router.callback_query(F.data == "wiz:more:sale", IsAdmin())
+async def cb_more_sale(callback: CallbackQuery, state: FSMContext) -> None:
+    """User wants to add another sale item in the same session."""
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(SaleWizard.product)
+    await state.set_data({})
+    await callback.message.answer(
+        "➕ <b>მომდევნო გაყიდვა</b>\n\n"
+        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data == "wiz:more:nisia", IsAdmin())
+async def cb_more_nisia(callback: CallbackQuery, state: FSMContext) -> None:
+    """User wants to add another nisia for the same customer."""
+    d = await state.get_data()
+    customer = d.get("customer_name", "")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(NisiaWizard.product)
+    await state.set_data({"customer_name": customer})
+    await callback.message.answer(
+        f"💳 <b>კიდევ ერთი ნისია</b>\n"
+        f"👤 კლიენტი: <b>{_e(customer)}</b>\n\n"
+        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data == "wiz:more:expense", IsAdmin())
+async def cb_more_expense(callback: CallbackQuery, state: FSMContext) -> None:
+    """User wants to add another expense."""
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(ExpenseWizard.category)
+    await state.set_data({})
+    await callback.message.answer(
+        "💸 <b>მომდევნო ხარჯი</b>\n\nაირჩიე კატეგორია:",
+        parse_mode=_PARSE,
+        reply_markup=_category_kb(),
+    )
+    await callback.answer()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -158,7 +262,6 @@ async def sale_payment(callback: CallbackQuery, state: FSMContext) -> None:
 @wizard_router.callback_query(F.data == "wiz:confirm:yes", IsAdmin(), StateFilter(SaleWizard.confirm))
 async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     d = await state.get_data()
-    await state.clear()
 
     product_id: Optional[int] = d.get("product_id")
     product_name: str         = d["product_name"]
@@ -174,7 +277,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
         payment_method=payment,
     )
 
-    # Auto-order at zero
+    # Auto-order at zero stock
     if product_id is not None and new_stock <= 0:
         product = await db.get_product_by_id(product_id)
         if product:
@@ -183,6 +286,10 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
                 quantity_needed=product["min_stock"] or 1,
                 notes=f"ავტო: {product['name']} — {new_stock}ც",
             )
+
+    # Ready for another item in the same session
+    await state.set_state(SaleWizard.product)
+    await state.set_data({})
 
     total = qty * price
     stock_line = ""
@@ -202,10 +309,10 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
         f"{stock_line}"
         f"{unknown_note}",
         parse_mode=_PARSE,
-        reply_markup=_kb([_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}")]),
+        reply_markup=_sale_action_kb(sale_id),
     )
 
-    # Mirror to topic and save message_id for later deletion
+    # Mirror to topic and save message_id for later deletion/edit
     topic_id = config.NISIAS_TOPIC_ID if payment == "credit" else config.SALES_TOPIC_ID
     try:
         topic_msg = await callback.bot.send_message(
@@ -303,7 +410,6 @@ async def nisia_price_input(message: Message, state: FSMContext) -> None:
 @wizard_router.callback_query(F.data == "wiz:confirm:yes", IsAdmin(), StateFilter(NisiaWizard.confirm))
 async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     d = await state.get_data()
-    await state.clear()
 
     product_id: Optional[int] = d.get("product_id")
     product_name: str         = d["product_name"]
@@ -321,6 +427,10 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
         notes=product_name if is_freeform else None,
     )
 
+    # Keep customer in state for "add more" button
+    await state.set_state(NisiaWizard.product)
+    await state.set_data({"customer_name": customer})
+
     total = qty * price
     unknown_note = "\n<i>⚠️ პროდუქტი ბაზაში არ არის</i>" if is_freeform else ""
     stock_line = ""
@@ -337,7 +447,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
         f"{stock_line}"
         f"{unknown_note}",
         parse_mode=_PARSE,
-        reply_markup=_kb([_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}")]),
+        reply_markup=_nisia_action_kb(sale_id),
     )
 
     try:
@@ -484,12 +594,11 @@ async def expense_description(message: Message, state: FSMContext) -> None:
 @wizard_router.callback_query(F.data == "wiz:confirm:yes", IsAdmin(), StateFilter(ExpenseWizard.confirm))
 async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     d = await state.get_data()
-    await state.clear()
 
-    amount: float            = d["amount"]
-    category: str            = d.get("category") or "other"
-    category_label: str      = d.get("category_label", "")
-    description: Optional[str] = d.get("description")
+    amount: float               = d["amount"]
+    category: str               = d.get("category") or "other"
+    category_label: str         = d.get("category_label", "")
+    description: Optional[str]  = d.get("description")
 
     db_category = None if category == "other" else category
     expense_id = await db.create_expense(
@@ -498,6 +607,10 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
         category=db_category,
     )
 
+    # Ready for another expense in the same session
+    await state.set_state(ExpenseWizard.category)
+    await state.set_data({})
+
     desc_line = f"\n📝 {_e(description)}" if description else ""
     await callback.message.edit_text(
         f"✅ <b>ხარჯი #{expense_id} დაფიქსირდა</b>\n"
@@ -505,10 +618,11 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
         f"💰 <b>{amount:.2f}₾</b>"
         f"{desc_line}",
         parse_mode=_PARSE,
+        reply_markup=_expense_action_kb(expense_id),
     )
 
     try:
-        await callback.bot.send_message(
+        topic_msg = await callback.bot.send_message(
             chat_id=config.GROUP_ID,
             message_thread_id=config.EXPENSES_TOPIC_ID,
             text=format_topic_expense(
@@ -519,6 +633,7 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
             ),
             parse_mode=_PARSE,
         )
+        await db.update_expense_topic_message(expense_id, config.EXPENSES_TOPIC_ID, topic_msg.message_id)
     except Exception as exc:
         logger.warning("Failed to post expense to topic: %s", exc)
 
@@ -527,6 +642,430 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
 async def expense_confirm_no(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("❌ <b>ხარჯი გაუქმებულია.</b>", parse_mode=_PARSE)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SALE EDIT WIZARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SALE_FIELDS = {
+    "qty":   "რაოდენობა",
+    "price": "ფასი (₾)",
+    "pay":   "გადახდა",
+    "cust":  "კლიენტი",
+}
+
+
+def _sale_edit_field_kb(sale_id: int, is_credit: bool) -> InlineKeyboardMarkup:
+    rows = [
+        [_btn("🔢 რაოდენობა",  f"sef:{sale_id}:qty"),
+         _btn("💰 ფასი",       f"sef:{sale_id}:price")],
+        [_btn("💳 გადახდა",    f"sef:{sale_id}:pay"),
+         _btn("👤 კლიენტი",   f"sef:{sale_id}:cust")],
+        _CANCEL_ROW,
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@wizard_router.callback_query(F.data.startswith("edit:sale:"), IsAdmin())
+async def sale_edit_start(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    try:
+        sale_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
+        return
+
+    await state.set_state(SaleEditWizard.field)
+    await state.set_data({"edit_sale_id": sale_id})
+
+    qty   = sale["quantity"]
+    price = float(sale["unit_price"])
+    pay   = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(
+        sale["payment_method"], sale["payment_method"]
+    )
+    name  = sale.get("product_name") or sale.get("notes") or "—"
+    cust  = sale.get("customer_name") or "—"
+
+    await callback.message.answer(
+        f"✏️ <b>გაყიდვა #{sale_id} — რედაქტირება</b>\n\n"
+        f"📦 {_e(name)}\n"
+        f"🔢 რაოდ: {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
+        f"💳 {pay}  |  👤 {_e(cust)}\n\n"
+        "რომელი ველი შეიცვალოს?",
+        parse_mode=_PARSE,
+        reply_markup=_sale_edit_field_kb(sale_id, sale["payment_method"] == "credit"),
+    )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("sef:"), IsAdmin(), StateFilter(SaleEditWizard.field))
+async def sale_edit_field(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    parts = callback.data.split(":")  # sef:{sale_id}:{field}
+    if len(parts) < 3:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    sale_id = int(parts[1])
+    field   = parts[2]
+    await state.update_data(edit_field=field)
+    await state.set_state(SaleEditWizard.value)
+
+    if field == "pay":
+        await callback.message.edit_text(
+            "💳 <b>ახალი გადახდის მეთოდი:</b>",
+            parse_mode=_PARSE,
+            reply_markup=_kb(
+                [_btn("💵 ხელზე",   "wiz:epay:cash")],
+                [_btn("🏦 დარიცხა", "wiz:epay:transfer")],
+                [_btn("📋 ნისია",   "wiz:epay:credit")],
+                _CANCEL_ROW,
+            ),
+        )
+    else:
+        label = _SALE_FIELDS.get(field, field)
+        sale  = await db.get_sale(sale_id)
+        current = ""
+        if sale:
+            if field == "qty":
+                current = f" (ახლა: {sale['quantity']}ც)"
+            elif field == "price":
+                current = f" (ახლა: {float(sale['unit_price']):.2f}₾)"
+            elif field == "cust":
+                current = f" (ახლა: {_e(sale.get('customer_name') or '—')})"
+
+        await callback.message.edit_text(
+            f"✏️ <b>{label}</b>{current}\n\nჩაწერე ახალი მნიშვნელობა:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("wiz:epay:"), IsAdmin(), StateFilter(SaleEditWizard.value))
+async def sale_edit_payment_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    method = callback.data.split(":")[2]
+    await state.update_data(edit_value=method)
+    await state.set_state(SaleEditWizard.confirm)
+    label = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(method, method)
+    await callback.message.edit_text(
+        f"💳 ახალი გადახდა: <b>{label}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("✅ შენახვა", "wiz:econfirm:yes"), _btn("❌ გაუქმება", "wiz:econfirm:no")]),
+    )
+    await callback.answer()
+
+
+@wizard_router.message(SaleEditWizard.value, IsAdmin(), _PRIVATE)
+async def sale_edit_value_input(message: Message, state: FSMContext) -> None:
+    d    = await state.get_data()
+    field = d.get("edit_field", "")
+    text  = (message.text or "").strip()
+
+    if field == "qty":
+        try:
+            val = int(text)
+            if val <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("⚠️ ჩაწერე დადებითი მთელი რიცხვი.", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=val)
+
+    elif field == "price":
+        try:
+            val = float(text.replace(",", ".").replace("₾", "").replace("ლ", ""))
+            if val <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("⚠️ ჩაწერე სწორი ფასი, მაგ: <code>35</code>", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=val)
+
+    elif field == "cust":
+        await state.update_data(edit_value=text or None)
+
+    label = _SALE_FIELDS.get(field, field)
+    await state.set_state(SaleEditWizard.confirm)
+    await message.answer(
+        f"✏️ <b>{label}</b> → <b>{_e(text)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("✅ შენახვა", "wiz:econfirm:yes"), _btn("❌ გაუქმება", "wiz:econfirm:no")]),
+    )
+
+
+@wizard_router.callback_query(F.data == "wiz:econfirm:yes", IsAdmin(), StateFilter(SaleEditWizard.confirm))
+async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    d        = await state.get_data()
+    sale_id  = d["edit_sale_id"]
+    field    = d["edit_field"]
+    new_val  = d["edit_value"]
+    await state.clear()
+
+    kwargs = {}
+    if field == "qty":
+        kwargs["quantity"] = new_val
+    elif field == "price":
+        kwargs["unit_price"] = new_val
+    elif field == "pay":
+        kwargs["payment_method"] = new_val
+    elif field == "cust":
+        kwargs["customer_name"] = new_val
+
+    updated = await db.edit_sale(sale_id, **kwargs)
+    if not updated:
+        await callback.message.edit_text(
+            f"⚠️ გაყიდვა #{sale_id} ვერ მოიძებნა.", parse_mode=_PARSE
+        )
+        return
+
+    qty   = updated["quantity"]
+    price = float(updated["unit_price"])
+    pay   = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(
+        updated["payment_method"], updated["payment_method"]
+    )
+
+    await callback.message.edit_text(
+        f"✅ <b>გაყიდვა #{sale_id} განახლდა</b>\n"
+        f"🔢 {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
+        f"💳 {pay}",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}"),
+                          _btn(f"✏️ რედ. #{sale_id}", f"edit:sale:{sale_id}")]),
+    )
+
+    # Refresh the topic message
+    old_topic_id  = updated.get("topic_id")
+    old_topic_msg = updated.get("topic_message_id")
+    if old_topic_id and old_topic_msg:
+        try:
+            await callback.bot.delete_message(chat_id=config.GROUP_ID, message_id=old_topic_msg)
+        except Exception:
+            pass
+    topic_id = config.NISIAS_TOPIC_ID if updated["payment_method"] == "credit" else config.SALES_TOPIC_ID
+    try:
+        product_name = updated.get("product_name") or updated.get("notes") or f"გაყიდვა #{sale_id}"
+        new_topic = await callback.bot.send_message(
+            chat_id=config.GROUP_ID,
+            message_thread_id=topic_id,
+            text=format_topic_sale(
+                product_name=product_name,
+                qty=qty,
+                price=price,
+                payment=updated["payment_method"],
+                sale_id=sale_id,
+                customer_name=updated.get("customer_name"),
+            ),
+            parse_mode=_PARSE,
+        )
+        await db.update_sale_topic_message(sale_id, topic_id, new_topic.message_id)
+    except Exception as exc:
+        logger.warning("Failed to refresh topic after sale edit #%d: %s", sale_id, exc)
+
+    await callback.answer(f"✅ #{sale_id} განახლდა")
+
+
+@wizard_router.callback_query(F.data == "wiz:econfirm:no", IsAdmin(), StateFilter(SaleEditWizard.confirm))
+async def sale_edit_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("❌ <b>რედაქტირება გაუქმდა.</b>", parse_mode=_PARSE)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EXPENSE EDIT WIZARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_EXPENSE_FIELDS = {
+    "amt":  "თანხა (₾)",
+    "desc": "აღწერა",
+    "cat":  "კატეგორია",
+}
+
+
+@wizard_router.callback_query(F.data.startswith("edit:exp:"), IsAdmin())
+async def expense_edit_start(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    try:
+        expense_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    exp = await db.get_expense(expense_id)
+    if not exp:
+        await callback.answer(f"⚠️ #{expense_id} ვერ მოიძებნა.", show_alert=True)
+        return
+
+    await state.set_state(ExpenseEditWizard.field)
+    await state.set_data({"edit_expense_id": expense_id})
+
+    amt  = float(exp["amount"])
+    desc = exp.get("description") or "—"
+    cat  = exp.get("category") or "სხვა"
+
+    await callback.message.answer(
+        f"✏️ <b>ხარჯი #{expense_id} — რედაქტირება</b>\n\n"
+        f"💰 {amt:.2f}₾  |  🏷 {_e(cat)}  |  📝 {_e(desc)}\n\n"
+        "რომელი ველი შეიცვალოს?",
+        parse_mode=_PARSE,
+        reply_markup=_kb(
+            [_btn("💰 თანხა",    f"eef:{expense_id}:amt"),
+             _btn("📝 აღწერა",   f"eef:{expense_id}:desc")],
+            [_btn("🏷 კატეგორია", f"eef:{expense_id}:cat")],
+            _CANCEL_ROW,
+        ),
+    )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("eef:"), IsAdmin(), StateFilter(ExpenseEditWizard.field))
+async def expense_edit_field(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    parts = callback.data.split(":")  # eef:{expense_id}:{field}
+    if len(parts) < 3:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    expense_id = int(parts[1])
+    field      = parts[2]
+    await state.update_data(edit_field=field)
+    await state.set_state(ExpenseEditWizard.value)
+
+    if field == "cat":
+        await callback.message.edit_text(
+            "🏷 <b>ახალი კატეგორია:</b>",
+            parse_mode=_PARSE,
+            reply_markup=_category_kb(),
+        )
+    else:
+        exp = await db.get_expense(expense_id)
+        current = ""
+        if exp:
+            if field == "amt":
+                current = f" (ახლა: {float(exp['amount']):.2f}₾)"
+            elif field == "desc":
+                current = f" (ახლა: {_e(exp.get('description') or '—')})"
+        label = _EXPENSE_FIELDS.get(field, field)
+        await callback.message.edit_text(
+            f"✏️ <b>{label}</b>{current}\n\nჩაწერე ახალი მნიშვნელობა:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("wiz:cat:"), IsAdmin(), StateFilter(ExpenseEditWizard.value))
+async def expense_edit_cat_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    key = callback.data.split(":", 2)[2]
+    if key == "other":
+        label = "სხვა"
+    else:
+        label = next((lbl for lbl, k in _EXPENSE_CATEGORIES if k == key), key)
+    await state.update_data(edit_value=key, edit_value_label=label)
+    await state.set_state(ExpenseEditWizard.confirm)
+    await callback.message.edit_text(
+        f"🏷 ახალი კატეგორია: <b>{_e(label)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("✅ შენახვა", "wiz:econfirm:exp:yes"), _btn("❌ გაუქმება", "wiz:econfirm:exp:no")]),
+    )
+    await callback.answer()
+
+
+@wizard_router.message(ExpenseEditWizard.value, IsAdmin(), _PRIVATE)
+async def expense_edit_value_input(message: Message, state: FSMContext) -> None:
+    d     = await state.get_data()
+    field = d.get("edit_field", "")
+    text  = (message.text or "").strip()
+
+    if field == "amt":
+        try:
+            val = float(text.replace(",", ".").replace("₾", "").replace("ლ", ""))
+            if val <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("⚠️ ჩაწერე სწორი თანხა, მაგ: <code>50</code>", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=val)
+    else:
+        await state.update_data(edit_value=text or None)
+
+    label = _EXPENSE_FIELDS.get(field, field)
+    await state.set_state(ExpenseEditWizard.confirm)
+    await message.answer(
+        f"✏️ <b>{label}</b> → <b>{_e(text)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("✅ შენახვა", "wiz:econfirm:exp:yes"), _btn("❌ გაუქმება", "wiz:econfirm:exp:no")]),
+    )
+
+
+@wizard_router.callback_query(F.data == "wiz:econfirm:exp:yes", IsAdmin(), StateFilter(ExpenseEditWizard.confirm))
+async def expense_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    d          = await state.get_data()
+    expense_id = d["edit_expense_id"]
+    field      = d["edit_field"]
+    new_val    = d["edit_value"]
+    await state.clear()
+
+    kwargs = {}
+    if field == "amt":
+        kwargs["amount"] = new_val
+    elif field == "desc":
+        kwargs["description"] = new_val
+    elif field == "cat":
+        kwargs["category"] = None if new_val == "other" else new_val
+
+    updated = await db.edit_expense(expense_id, **kwargs)
+    if not updated:
+        await callback.message.edit_text(
+            f"⚠️ ხარჯი #{expense_id} ვერ მოიძებნა.", parse_mode=_PARSE
+        )
+        return
+
+    amt  = float(updated["amount"])
+    cat  = updated.get("category")
+    desc = updated.get("description") or ""
+
+    await callback.message.edit_text(
+        f"✅ <b>ხარჯი #{expense_id} განახლდა</b>\n"
+        f"💰 <b>{amt:.2f}₾</b>"
+        + (f"\n📝 {_e(desc)}" if desc else ""),
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn(f"✏️ რედ. #{expense_id}", f"edit:exp:{expense_id}")]),
+    )
+
+    # Refresh the topic message
+    old_topic_id  = updated.get("topic_id")
+    old_topic_msg = updated.get("topic_message_id")
+    if old_topic_id and old_topic_msg:
+        try:
+            await callback.bot.delete_message(chat_id=config.GROUP_ID, message_id=old_topic_msg)
+        except Exception:
+            pass
+    try:
+        new_topic = await callback.bot.send_message(
+            chat_id=config.GROUP_ID,
+            message_thread_id=config.EXPENSES_TOPIC_ID,
+            text=format_topic_expense(
+                amount=amt,
+                category=cat,
+                description=desc or None,
+                expense_id=expense_id,
+            ),
+            parse_mode=_PARSE,
+        )
+        await db.update_expense_topic_message(expense_id, config.EXPENSES_TOPIC_ID, new_topic.message_id)
+    except Exception as exc:
+        logger.warning("Failed to refresh topic after expense edit #%d: %s", expense_id, exc)
+
+    await callback.answer(f"✅ #{expense_id} განახლდა")
+
+
+@wizard_router.callback_query(F.data == "wiz:econfirm:exp:no", IsAdmin(), StateFilter(ExpenseEditWizard.confirm))
+async def expense_edit_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("❌ <b>რედაქტირება გაუქმდა.</b>", parse_mode=_PARSE)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -553,7 +1092,6 @@ async def _handle_product_search(
         return
 
     if len(products) > 1:
-        # Store search results in state as list of (id, name, oem)
         await state.update_data(
             _search_results=[(p["id"], p["name"], p.get("oem_code")) for p in products]
         )
@@ -721,12 +1259,12 @@ async def _handle_price_input(message: Message, state: FSMContext, wizard: str) 
 
 async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> None:
     d = await state.get_data()
-    qty       = d["quantity"]
+    qty        = d["quantity"]
     unit_price = d["unit_price"]
-    payment   = d["payment"]
-    product   = d["product_name"]
-    total     = qty * unit_price
-    pay_label = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
+    payment    = d["payment"]
+    product    = d["product_name"]
+    total      = qty * unit_price
+    pay_label  = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
 
     text = (
         f"✅ <b>ნაბიჯი 5/5 — გადამოწმება</b>\n\n"
@@ -746,11 +1284,11 @@ async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> Non
 
 async def _show_nisia_confirm(msg: Message, state: FSMContext, send: bool) -> None:
     d = await state.get_data()
-    qty       = d["quantity"]
+    qty        = d["quantity"]
     unit_price = d["unit_price"]
-    product   = d["product_name"]
-    customer  = d["customer_name"]
-    total     = qty * unit_price
+    product    = d["product_name"]
+    customer   = d["customer_name"]
+    total      = qty * unit_price
 
     text = (
         f"✅ <b>ნაბიჯი 5/5 — გადამოწმება</b>\n\n"
@@ -771,9 +1309,9 @@ async def _show_nisia_confirm(msg: Message, state: FSMContext, send: bool) -> No
 
 async def _show_expense_confirm(msg: Message, state: FSMContext, edit: bool) -> None:
     d = await state.get_data()
-    amount   = d["amount"]
+    amount    = d["amount"]
     cat_label = d.get("category_label", "")
-    desc     = d.get("description") or ""
+    desc      = d.get("description") or ""
     desc_line = f"\n📝 {_e(desc)}" if desc else ""
 
     text = (
