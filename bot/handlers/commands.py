@@ -1093,6 +1093,56 @@ async def editproduct_cancel(callback: CallbackQuery, state: FSMContext) -> None
 
 
 
+@commands_router.message(Command("checksales"), IsAdmin())
+async def cmd_checksales(message: Message, db: Database) -> None:
+    """Show all unreceipted company (შპს) sales as inline buttons."""
+    sales = await db.get_unreceipted_company_sales()
+    if not sales:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="✅ ჩაუბეჭდავი შპს გაყიდვა არ არის.",
+            parse_mode=_PARSE,
+        )
+        return
+
+    total_sum = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
+    buttons = []
+    for s in sales:
+        name = (s.get("product_name") or s.get("notes") or "—")[:28]
+        amount = float(s["unit_price"]) * s["quantity"]
+        label = f"🧾 #{s['id']} {name} — {amount:.0f}₾"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"cs:{s['id']}")])
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"🏢 <b>შპს — ჩაუბეჭდავი გაყიდვები ({len(sales)}ც)</b>\n"
+            f"💰 სულ: <b>{total_sum:.2f}₾</b>\n\n"
+            "ჩეკის ამობეჭდვის შემდეგ დააჭირე:"
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("cs:"), IsAdmin())
+async def checksales_receipt_callback(callback: CallbackQuery, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    sale_id = int((callback.data or "").split(":")[1])
+    done = await db.mark_receipt_printed(sale_id)
+    if done:
+        old_kb = callback.message.reply_markup
+        new_rows = [
+            row for row in (old_kb.inline_keyboard if old_kb else [])
+            if not any(btn.callback_data == f"cs:{sale_id}" for btn in row)
+        ]
+        new_kb = InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
+        await callback.message.edit_reply_markup(reply_markup=new_kb)
+        await callback.answer(f"✅ #{sale_id} — ჩეკი დაფიქსირდა")
+    else:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა", show_alert=True)
+
+
 @commands_router.message(Command("completeorder"), IsAdmin())
 async def cmd_complete_order(message: Message, db: Database) -> None:
     """Show pending orders as inline buttons. Tap to close."""

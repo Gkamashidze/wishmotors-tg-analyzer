@@ -141,6 +141,7 @@ async def main() -> None:
         BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),
         BotCommand(command="cash",          description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"),
         BotCommand(command="deposit",       description="🏦 ბანკში შეტანა"),
+        BotCommand(command="checksales",    description="🏢 შპს — ჩაუბეჭდავი ჩეკები"),
         # ── 🔧 სისტემა ────────────────────────────────
         BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),

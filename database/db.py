@@ -736,6 +736,31 @@ class Database:
                     )
                     return remaining
 
+    async def get_unreceipted_company_sales(self) -> list:
+        """Return all company (შპს) sales that haven't been receipted yet."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT s.id, s.quantity, s.unit_price, s.payment_method,
+                          s.seller_type, s.customer_name, s.sold_at, s.notes,
+                          s.receipt_printed,
+                          p.name AS product_name
+                   FROM sales s
+                   LEFT JOIN products p ON p.id = s.product_id
+                   WHERE s.seller_type = 'company'
+                     AND s.receipt_printed = FALSE
+                   ORDER BY s.sold_at ASC""",
+            )
+            return self._rows(rows)
+
+    async def mark_receipt_printed(self, sale_id: int) -> bool:
+        """Mark a sale as receipted. Returns True if the row was updated."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE sales SET receipt_printed = TRUE WHERE id = $1",
+                sale_id,
+            )
+            return result == "UPDATE 1"
+
     async def get_recent_parse_failures(self, limit: int = 20) -> list:
         """Return individual parse failure records, newest first."""
         async with self.pool.acquire() as conn:

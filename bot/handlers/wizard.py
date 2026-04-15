@@ -90,23 +90,25 @@ def _expense_action_kb(expense_id: int) -> InlineKeyboardMarkup:
 # ─── State groups ──────────────────────────────────────────────────────────────
 
 class SaleWizard(StatesGroup):
-    product    = State()   # user types OEM / name
-    select     = State()   # choose from list (if multiple matches)
-    quantity   = State()   # how many units
-    price_type = State()   # unit price or total amount
-    price      = State()   # numeric input
-    payment    = State()   # ხელზე / დარიცხა / ნისია
-    confirm    = State()   # final review
+    product     = State()   # user types OEM / name
+    select      = State()   # choose from list (if multiple matches)
+    quantity    = State()   # how many units
+    price_type  = State()   # unit price or total amount
+    price       = State()   # numeric input
+    payment     = State()   # ხელზე / დარიცხა / ნისია
+    seller_type = State()   # შპს / ფზ პირი
+    confirm     = State()   # final review
 
 
 class NisiaWizard(StatesGroup):
-    customer   = State()   # name / phone / both
-    product    = State()
-    select     = State()
-    quantity   = State()
-    price_type = State()
-    price      = State()
-    confirm    = State()
+    customer    = State()   # name / phone / both
+    product     = State()
+    select      = State()
+    quantity    = State()
+    price_type  = State()
+    price       = State()
+    seller_type = State()   # შპს / ფზ პირი
+    confirm     = State()
 
 
 class ExpenseWizard(StatesGroup):
@@ -265,6 +267,24 @@ async def sale_payment(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     data_key = callback.data.split(":", 2)[2]  # cash / transfer / credit
     await state.update_data(payment=data_key)
+    await state.set_state(SaleWizard.seller_type)
+    await callback.message.edit_text(
+        "🏢 <b>ნაბიჯი 5/6</b> — ვისგან გაიყიდა?",
+        parse_mode=_PARSE,
+        reply_markup=_kb(
+            [_btn("🏢 შპს", "wiz:seller:company"), _btn("👤 ფზ პირი", "wiz:seller:individual")],
+            _CANCEL_ROW,
+        ),
+    )
+
+
+@wizard_router.callback_query(
+    F.data.startswith("wiz:seller:"), IsAdmin(), StateFilter(SaleWizard.seller_type)
+)
+async def sale_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    seller = callback.data.split(":", 2)[2]  # company / individual
+    await state.update_data(seller_type=seller)
     await state.set_state(SaleWizard.confirm)
     await _show_sale_confirm(callback.message, state, edit=True)
 
@@ -279,6 +299,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
     qty: int                  = d["quantity"]
     price: float              = d["unit_price"]
     payment: str              = d["payment"]
+    seller: str               = d.get("seller_type", "individual")
     is_freeform: bool         = d.get("is_freeform", False)
 
     sale_id, new_stock = await db.create_sale(
@@ -286,6 +307,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
         quantity=qty,
         unit_price=price,
         payment_method=payment,
+        seller_type=seller,
     )
 
     # Auto-order at zero stock
@@ -422,6 +444,17 @@ async def nisia_price_input(message: Message, state: FSMContext) -> None:
     await _handle_price_input(message, state, wizard="nisia")
 
 
+@wizard_router.callback_query(
+    F.data.startswith("wiz:seller:"), IsAdmin(), StateFilter(NisiaWizard.seller_type)
+)
+async def nisia_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    seller = callback.data.split(":", 2)[2]  # company / individual
+    await state.update_data(seller_type=seller)
+    await state.set_state(NisiaWizard.confirm)
+    await _show_nisia_confirm(callback.message, state, send=False)
+
+
 @wizard_router.callback_query(F.data == "wiz:confirm:yes", IsAdmin(), StateFilter(NisiaWizard.confirm))
 async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
@@ -432,6 +465,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
     qty: int                  = d["quantity"]
     price: float              = d["unit_price"]
     customer: str             = d["customer_name"]
+    seller: str               = d.get("seller_type", "individual")
     is_freeform: bool         = d.get("is_freeform", False)
 
     sale_id, new_stock = await db.create_sale(
@@ -439,6 +473,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
         quantity=qty,
         unit_price=price,
         payment_method="credit",
+        seller_type=seller,
         customer_name=customer,
         notes=product_name if is_freeform else None,
     )
@@ -1310,26 +1345,36 @@ async def _handle_price_input(message: Message, state: FSMContext, wizard: str) 
             ),
         )
     else:
-        # Nisia — no payment step, go straight to confirm
+        # Nisia — no payment step, ask seller type then confirm
         await state.update_data(payment="credit")
-        await state.set_state(NisiaWizard.confirm)
-        await _show_nisia_confirm(message, state, send=True)
+        await state.set_state(NisiaWizard.seller_type)
+        await message.answer(
+            "🏢 <b>ნაბიჯი 5/6</b> — ვისგან გაიყიდა?",
+            parse_mode=_PARSE,
+            reply_markup=_kb(
+                [_btn("🏢 შპს", "wiz:seller:company"), _btn("👤 ფზ პირი", "wiz:seller:individual")],
+                _CANCEL_ROW,
+            ),
+        )
 
 
 async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> None:
     d = await state.get_data()
-    qty        = d["quantity"]
-    unit_price = d["unit_price"]
-    payment    = d["payment"]
-    product    = d["product_name"]
-    total      = qty * unit_price
-    pay_label  = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
+    qty         = d["quantity"]
+    unit_price  = d["unit_price"]
+    payment     = d["payment"]
+    product     = d["product_name"]
+    seller      = d.get("seller_type", "individual")
+    total       = qty * unit_price
+    pay_label   = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
+    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
 
     text = (
-        f"✅ <b>ნაბიჯი 5/5 — გადამოწმება</b>\n\n"
+        f"✅ <b>ნაბიჯი 6/6 — გადამოწმება</b>\n\n"
         f"📦 პროდუქტი: <b>{_e(product)}</b>\n"
         f"🔢 რაოდ: {qty}ც × {unit_price:.2f}₾ = <b>{total:.2f}₾</b>\n"
-        f"💳 გადახდა: {pay_label}\n\n"
+        f"💳 გადახდა: {pay_label}\n"
+        f"🏢 გამყიდველი: {seller_label}\n\n"
         "ყველაფერი სწორია?"
     )
     kb = _kb(
@@ -1343,18 +1388,21 @@ async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> Non
 
 async def _show_nisia_confirm(msg: Message, state: FSMContext, send: bool) -> None:
     d = await state.get_data()
-    qty        = d["quantity"]
-    unit_price = d["unit_price"]
-    product    = d["product_name"]
-    customer   = d["customer_name"]
-    total      = qty * unit_price
+    qty          = d["quantity"]
+    unit_price   = d["unit_price"]
+    product      = d["product_name"]
+    customer     = d["customer_name"]
+    seller       = d.get("seller_type", "individual")
+    total        = qty * unit_price
+    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
 
     text = (
-        f"✅ <b>ნაბიჯი 5/5 — გადამოწმება</b>\n\n"
+        f"✅ <b>ნაბიჯი 6/6 — გადამოწმება</b>\n\n"
         f"👤 კლიენტი: <b>{_e(customer)}</b>\n"
         f"📦 პროდუქტი: <b>{_e(product)}</b>\n"
         f"🔢 რაოდ: {qty}ც × {unit_price:.2f}₾ = <b>{total:.2f}₾</b>\n"
-        f"💳 ნისია 📋\n\n"
+        f"💳 ნისია 📋\n"
+        f"🏢 გამყიდველი: {seller_label}\n\n"
         "ყველაფერი სწორია?"
     )
     kb = _kb(

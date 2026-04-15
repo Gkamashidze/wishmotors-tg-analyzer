@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS cash_deposits (
 -- Unit of measure for products (ც, კგ, მ, კომპლ. etc.)
 ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ც';
 
+-- Track whether a company (შპს) sale has been receipted at the cash register
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS receipt_printed BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Order priority: urgent | normal | low
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
 
@@ -173,6 +176,7 @@ class SaleRow(TypedDict):
     customer_name: Optional[str]
     sold_at: object  # datetime
     notes: Optional[str]
+    receipt_printed: bool
     # Joined fields (present in report queries)
     product_name: Optional[str]
     oem_code: Optional[str]
