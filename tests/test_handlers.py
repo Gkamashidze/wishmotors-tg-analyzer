@@ -199,105 +199,61 @@ class TestCmdDeleteSale:
 
 
 # ─── cmd_addproduct ───────────────────────────────────────────────────────────
+# cmd_addproduct is now a wizard entry: it clears FSM state and asks for
+# the product name as step 1/5.  All inline-arg tests are replaced accordingly.
+
+def _async_state() -> AsyncMock:
+    """Build a minimal FSMContext mock where every method is awaitable."""
+    state = AsyncMock()
+    state.clear = AsyncMock()
+    state.set_state = AsyncMock()
+    return state
+
 
 class TestCmdAddProduct:
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_too_few_args_sends_usage_hint(self, _rl):
-        msg = _msg("/addproduct სარკე")
-        db = _db()
-        await cmd_addproduct(msg, db)
-        db.create_product.assert_not_called()
-        assert "ფორმატი" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_negative_price_rejected(self, _rl):
-        msg = _msg("/addproduct სარკე OEM123 10 -5")
-        db = _db()
-        await cmd_addproduct(msg, db)
-        db.create_product.assert_not_called()
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_duplicate_product_blocks_creation(self, _rl):
-        existing = {"id": 3, "name": "სარკე"}
-        msg = _msg("/addproduct სარკე OEM123 10 30")
-        db = _db(get_product_by_oem=AsyncMock(return_value=existing))
-        await cmd_addproduct(msg, db)
-        db.create_product.assert_not_called()
-        assert "უკვე არსებობს" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_valid_product_creates_and_confirms(self, _rl):
-        msg = _msg("/addproduct სარკე OEM123 10 30")
-        db = _db()
-        await cmd_addproduct(msg, db)
-        db.create_product.assert_called_once()
-        assert "დამატებულია" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_html_chars_in_name_are_escaped_in_confirmation(self, _rl):
-        """Product name with < > must not break HTML in the confirmation."""
-        msg = _msg("/addproduct Mirror<L> OEM123 10 30")
-        db = _db()
-        await cmd_addproduct(msg, db)
+    async def test_clears_state_and_asks_for_name(self):
+        msg = _msg("/addproduct")
+        state = _async_state()
+        await cmd_addproduct(msg, state)
+        state.clear.assert_called_once()
+        state.set_state.assert_called_once()
         text = _sent_text(msg)
-        assert "<L>" not in text
-        assert "&lt;L&gt;" in text
+        assert "დასახელება" in text
+
+    async def test_sends_to_private_dm(self):
+        """Handler must DM the user, not reply in-group."""
+        msg = _msg("/addproduct")
+        state = _async_state()
+        await cmd_addproduct(msg, state)
+        msg.bot.send_message.assert_called_once()
+        kwargs = msg.bot.send_message.call_args[1]
+        assert kwargs["chat_id"] == _USER_ID
+
+    async def test_step_label_is_first_of_five(self):
+        msg = _msg("/addproduct")
+        state = _async_state()
+        await cmd_addproduct(msg, state)
+        assert "1/5" in _sent_text(msg)
 
 
 # ─── cmd_editproduct ──────────────────────────────────────────────────────────
+# cmd_editproduct is now a wizard entry: it clears FSM state and asks for
+# an OEM/name search term as step 1.
 
 class TestCmdEditProduct:
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_product_not_found_sends_warning(self, _rl):
-        msg = _msg("/editproduct 999 name სარკე")
-        db = _db(get_product_by_id=AsyncMock(return_value=None))
-        await cmd_editproduct(msg, db)
-        db.edit_product.assert_not_called()
-        assert "ვერ მოიძებნა" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_unknown_field_sends_error(self, _rl):
-        product = {"id": 1, "name": "სარკე"}
-        msg = _msg("/editproduct 1 color red")
-        db = _db(get_product_by_id=AsyncMock(return_value=product))
-        await cmd_editproduct(msg, db)
-        db.edit_product.assert_not_called()
-        assert "უცნობი ველი" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_invalid_price_value_sends_error(self, _rl):
-        product = {"id": 1, "name": "სარკე"}
-        msg = _msg("/editproduct 1 price abc")
-        db = _db(get_product_by_id=AsyncMock(return_value=product))
-        await cmd_editproduct(msg, db)
-        db.edit_product.assert_not_called()
-        assert "არასწორია" in _sent_text(msg)
-
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_html_chars_in_name_value_are_escaped(self, _rl):
-        """Editing product name to a value with < > must escape both in field_label
-        and in the updated['name'] line of the confirmation."""
-        product = {"id": 1, "name": "სარკე"}
-        updated = {"id": 1, "name": "<Mirror>"}
-        msg = _msg("/editproduct 1 name <Mirror>")
-        db = _db(
-            get_product_by_id=AsyncMock(return_value=product),
-            edit_product=AsyncMock(return_value=updated),
-        )
-        await cmd_editproduct(msg, db)
+    async def test_clears_state_and_asks_for_oem(self):
+        msg = _msg("/editproduct")
+        state = _async_state()
+        await cmd_editproduct(msg, state)
+        state.clear.assert_called_once()
+        state.set_state.assert_called_once()
         text = _sent_text(msg)
-        assert "<Mirror>" not in text
-        assert "&lt;Mirror&gt;" in text
+        assert "OEM" in text
 
-    @patch("bot.handlers.commands.is_rate_limited", return_value=False)
-    async def test_valid_price_edit_confirms_with_formatted_price(self, _rl):
-        product = {"id": 2, "name": "ნათურა"}
-        updated = {"id": 2, "name": "ნათურა"}
-        msg = _msg("/editproduct 2 price 45.50")
-        db = _db(
-            get_product_by_id=AsyncMock(return_value=product),
-            edit_product=AsyncMock(return_value=updated),
-        )
-        await cmd_editproduct(msg, db)
-        db.edit_product.assert_called_once_with(2, price=45.5)
-        assert "45.50₾" in _sent_text(msg)
+    async def test_sends_to_private_dm(self):
+        msg = _msg("/editproduct")
+        state = _async_state()
+        await cmd_editproduct(msg, state)
+        msg.bot.send_message.assert_called_once()
+        kwargs = msg.bot.send_message.call_args[1]
+        assert kwargs["chat_id"] == _USER_ID
