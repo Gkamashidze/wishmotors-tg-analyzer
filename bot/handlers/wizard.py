@@ -8,10 +8,15 @@ Multi-item sessions: after saving, the user can tap ➕ to add another
 item of the same type without restarting from the /new menu.
 
 Edit: tapping ✏️ on any confirmation opens a field-level edit wizard.
+For nisias (credit sales), the edit wizard exposes Name / Phone /
+Product / Quantity / Price as separate fields; Name and Phone are
+stored together in sales.customer_name and are parsed/recombined
+transparently.
 """
 import html
 import logging
-from typing import Optional
+import re
+from typing import Optional, Tuple
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -124,6 +129,20 @@ class SaleEditWizard(StatesGroup):
     field   = State()   # user picks which field to change
     value   = State()   # user types new value (or picks via buttons)
     confirm = State()   # final confirmation
+
+
+class NisiaEditWizard(StatesGroup):
+    """Edit flow dedicated to ნისია (credit) sales.
+
+    Exposes Name / Phone / Product / Quantity / Price as separate fields.
+    The DB keeps name+phone together in sales.customer_name — this flow
+    parses and recombines them transparently.
+    """
+    field           = State()   # user picks which field to change
+    value           = State()   # text input for simple fields
+    product_search  = State()   # user types new product name / OEM
+    product_select  = State()   # user picks from matches or marks freeform
+    confirm         = State()   # final confirmation before saving
 
 
 class ExpenseEditWizard(StatesGroup):
@@ -763,6 +782,12 @@ async def sale_edit_start(callback: CallbackQuery, state: FSMContext, db: Databa
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
         return
 
+    # Nisias get their own richer edit flow (Name / Phone / Product / Qty / Price)
+    if sale.get("payment_method") == "credit":
+        await _start_nisia_edit(callback.message, state, sale, send=True)
+        await callback.answer()
+        return
+
     await state.set_state(SaleEditWizard.field)
     await state.set_data({"edit_sale_id": sale_id})
 
@@ -784,6 +809,434 @@ async def sale_edit_start(callback: CallbackQuery, state: FSMContext, db: Databa
         reply_markup=_sale_edit_field_kb(sale_id, sale["payment_method"] == "credit"),
     )
     await callback.answer()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NISIA EDIT WIZARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Matches a phone-like run of digits (allow +, spaces, dashes inside).
+_PHONE_RE = re.compile(r"\+?\d[\d\s\-]{4,}")
+
+_NISIA_FIELD_LABELS = {
+    "name":  "სახელი",
+    "phone": "ტელ. ნომერი",
+    "prod":  "პროდუქტი",
+    "qty":   "რაოდენობა",
+    "price": "ფასი (₾)",
+}
+
+
+def _split_name_phone(customer: Optional[str]) -> Tuple[str, str]:
+    """Split a combined customer_name into (name, phone).
+
+    Phone is detected as the longest digit run (len ≥ 5, with +/ /- allowed).
+    Everything else becomes the name; whitespace is normalized.
+    """
+    raw = (customer or "").strip()
+    if not raw:
+        return "", ""
+    matches = _PHONE_RE.findall(raw)
+    phone = ""
+    name = raw
+    if matches:
+        # Prefer the longest/latest match
+        phone = max(matches, key=len).strip()
+        name = raw.replace(phone, "", 1)
+    name = re.sub(r"\s+", " ", name).strip(" ,;:-")
+    phone = re.sub(r"\s+", " ", phone).strip()
+    return name, phone
+
+
+def _combine_name_phone(name: str, phone: str) -> Optional[str]:
+    name  = (name or "").strip()
+    phone = (phone or "").strip()
+    if name and phone:
+        return f"{name} {phone}"
+    return (name or phone) or None
+
+
+def _nisia_edit_field_kb(sale_id: int) -> InlineKeyboardMarkup:
+    return _kb(
+        [_btn("👤 სახელი",    f"nef:{sale_id}:name"),
+         _btn("📞 ტელ. ნომერი", f"nef:{sale_id}:phone")],
+        [_btn("📦 პროდუქტი",   f"nef:{sale_id}:prod")],
+        [_btn("🔢 რაოდენობა",  f"nef:{sale_id}:qty"),
+         _btn("💰 ფასი",       f"nef:{sale_id}:price")],
+        _CANCEL_ROW,
+    )
+
+
+def _nisia_edit_confirm_kb() -> InlineKeyboardMarkup:
+    return _kb([
+        _btn("✅ შენახვა", "ne:yes"),
+        _btn("❌ გაუქმება", "ne:no"),
+    ])
+
+
+async def _start_nisia_edit(
+    msg: Message, state: FSMContext, sale: dict, *, send: bool
+) -> None:
+    """Render the 5-field edit menu for a specific ნისია."""
+    sale_id = sale["id"]
+    qty     = sale["quantity"]
+    price   = float(sale["unit_price"])
+    product = sale.get("product_name") or sale.get("notes") or "—"
+    name, phone = _split_name_phone(sale.get("customer_name"))
+    seller  = sale.get("seller_type", "individual")
+    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
+
+    await state.set_state(NisiaEditWizard.field)
+    await state.set_data({"edit_sale_id": sale_id})
+
+    text = (
+        f"✏️ <b>ნისია #{sale_id} — რედაქტირება</b>\n\n"
+        f"👤 სახელი: <b>{_e(name) if name else '—'}</b>\n"
+        f"📞 ტელ: <b>{_e(phone) if phone else '—'}</b>\n"
+        f"📦 პროდუქტი: <b>{_e(product)}</b>\n"
+        f"🔢 რაოდ: {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
+        f"🏢 გამყიდველი: {seller_label}\n\n"
+        "რომელი ველი შეიცვალოს?"
+    )
+    kb = _nisia_edit_field_kb(sale_id)
+    if send:
+        await msg.answer(text, parse_mode=_PARSE, reply_markup=kb)
+    else:
+        await msg.edit_text(text, parse_mode=_PARSE, reply_markup=kb)
+
+
+@wizard_router.callback_query(F.data.startswith("edit:nisia:"), IsAdmin())
+async def nisia_edit_start(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Entrypoint used by /nisias ✏️ button (and any caller that already knows sale_id)."""
+    assert isinstance(callback.message, Message)
+    try:
+        sale_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
+        return
+    if sale.get("payment_method") != "credit":
+        await callback.answer("⚠️ ეს ჩანაწერი ნისია არ არის.", show_alert=True)
+        return
+
+    await _start_nisia_edit(callback.message, state, sale, send=True)
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("nef:"), IsAdmin(), StateFilter(NisiaEditWizard.field))
+async def nisia_edit_field(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    assert isinstance(callback.message, Message)
+    parts = callback.data.split(":")  # nef:{sale_id}:{field}
+    if len(parts) < 3:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+    sale_id = int(parts[1])
+    field   = parts[2]
+    if field not in _NISIA_FIELD_LABELS:
+        await callback.answer("❌ უცნობი ველი", show_alert=True)
+        return
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
+        return
+
+    await state.update_data(edit_field=field)
+
+    if field == "prod":
+        await state.set_state(NisiaEditWizard.product_search)
+        current = sale.get("product_name") or sale.get("notes") or "—"
+        await callback.message.edit_text(
+            f"📦 <b>ახალი პროდუქტი</b> (ახლა: {_e(current)})\n\n"
+            "ჩაწერე <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+        await callback.answer()
+        return
+
+    # Simple text/number fields (name, phone, qty, price)
+    await state.set_state(NisiaEditWizard.value)
+    label = _NISIA_FIELD_LABELS[field]
+    current = ""
+    if field == "qty":
+        current = f" (ახლა: {sale['quantity']}ც)"
+    elif field == "price":
+        current = f" (ახლა: {float(sale['unit_price']):.2f}₾)"
+    elif field in ("name", "phone"):
+        cur_name, cur_phone = _split_name_phone(sale.get("customer_name"))
+        val = cur_name if field == "name" else cur_phone
+        current = f" (ახლა: {_e(val) if val else '—'})"
+
+    await callback.message.edit_text(
+        f"✏️ <b>{label}</b>{current}\n\nჩაწერე ახალი მნიშვნელობა:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+    await callback.answer()
+
+
+@wizard_router.message(NisiaEditWizard.value, IsAdmin(), _PRIVATE)
+async def nisia_edit_value_input(message: Message, state: FSMContext) -> None:
+    d     = await state.get_data()
+    field = d.get("edit_field", "")
+    text  = (message.text or "").strip()
+
+    if field == "qty":
+        try:
+            val: object = int(text)
+            if val <= 0:  # type: ignore[operator]
+                raise ValueError
+        except ValueError:
+            await message.answer("⚠️ ჩაწერე დადებითი მთელი რიცხვი.", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=val, edit_display=f"{val}ც")
+
+    elif field == "price":
+        try:
+            val = float(text.replace(",", ".").replace("₾", "").replace("ლ", ""))
+            if val <= 0:  # type: ignore[operator]
+                raise ValueError
+        except ValueError:
+            await message.answer("⚠️ ჩაწერე სწორი ფასი, მაგ: <code>35</code>", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=val, edit_display=f"{val:.2f}₾")  # type: ignore[str-format]
+
+    elif field in ("name", "phone"):
+        if not text:
+            await message.answer("⚠️ ცარიელი მნიშვნელობა დაუშვებელია.", parse_mode=_PARSE)
+            return
+        await state.update_data(edit_value=text, edit_display=text)
+
+    else:
+        await message.answer("❌ უცნობი ველი", parse_mode=_PARSE)
+        return
+
+    label = _NISIA_FIELD_LABELS.get(field, field)
+    await state.set_state(NisiaEditWizard.confirm)
+    await message.answer(
+        f"✏️ <b>{label}</b> → <b>{_e(text)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_nisia_edit_confirm_kb(),
+    )
+
+
+@wizard_router.message(NisiaEditWizard.product_search, IsAdmin(), _PRIVATE)
+async def nisia_edit_product_search(
+    message: Message, state: FSMContext, db: Database,
+) -> None:
+    query = (message.text or "").strip()
+    if not query:
+        await message.answer("⚠️ ჩაწერე დასახელება ან OEM.", parse_mode=_PARSE)
+        return
+
+    products = await db.search_products(query, limit=6)
+
+    if len(products) == 1:
+        p = products[0]
+        await state.update_data(
+            edit_value={"product_id": p["id"], "product_name": p["name"], "freeform": False},
+            edit_display=p["name"],
+        )
+        await state.set_state(NisiaEditWizard.confirm)
+        await message.answer(
+            f"📦 ახალი პროდუქტი: <b>{_e(p['name'])}</b>\n\nდაადასტურე?",
+            parse_mode=_PARSE,
+            reply_markup=_nisia_edit_confirm_kb(),
+        )
+        return
+
+    buttons: list = []
+    if len(products) > 1:
+        for p in products:
+            label = p["name"]
+            if p.get("oem_code"):
+                label += f" [{p['oem_code']}]"
+            buttons.append([_btn(label, f"nep:id:{p['id']}")])
+        buttons.append([_btn(f"❓ ჩაწერე თავისუფლად: {query[:30]}", "nep:free")])
+        buttons.append(_CANCEL_ROW)
+        await state.update_data(_pending_freeform_name=query)
+        await state.set_state(NisiaEditWizard.product_select)
+        await message.answer(
+            f"🔍 <b>ვიპოვე {len(products)} პროდუქტი.</b> აირჩიე:",
+            parse_mode=_PARSE,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+        return
+
+    # No matches — offer freeform
+    await state.update_data(_pending_freeform_name=query)
+    await state.set_state(NisiaEditWizard.product_select)
+    await message.answer(
+        f"⚠️ <b>'{_e(query)}'</b> ბაზაში ვერ ვიპოვე.\n"
+        "ჩავწეროთ თავისუფალ ფორმატში? (product_id გაუქმდება)",
+        parse_mode=_PARSE,
+        reply_markup=_kb(
+            [_btn(f"✅ ჩაწერა: {query[:40]}", "nep:free")],
+            _CANCEL_ROW,
+        ),
+    )
+
+
+@wizard_router.callback_query(F.data.startswith("nep:"), IsAdmin(), StateFilter(NisiaEditWizard.product_select))
+async def nisia_edit_product_pick(
+    callback: CallbackQuery, state: FSMContext, db: Database,
+) -> None:
+    assert isinstance(callback.message, Message)
+    parts = callback.data.split(":")  # nep:free  |  nep:id:{pid}
+    d = await state.get_data()
+
+    if parts[1] == "free":
+        name = (d.get("_pending_freeform_name") or "").strip()
+        if not name:
+            await callback.answer("❌ სახელი ცარიელია", show_alert=True)
+            return
+        await state.update_data(
+            edit_value={"product_id": None, "product_name": name, "freeform": True},
+            edit_display=name,
+        )
+    elif parts[1] == "id" and len(parts) >= 3:
+        try:
+            pid = int(parts[2])
+        except ValueError:
+            await callback.answer("❌ შეცდომა", show_alert=True)
+            return
+        prod = await db.get_product_by_id(pid)
+        if not prod:
+            await callback.answer("⚠️ პროდუქტი ვერ მოიძებნა", show_alert=True)
+            return
+        await state.update_data(
+            edit_value={"product_id": pid, "product_name": prod["name"], "freeform": False},
+            edit_display=prod["name"],
+        )
+    else:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    display = (await state.get_data()).get("edit_display", "—")
+    await state.set_state(NisiaEditWizard.confirm)
+    await callback.message.edit_text(
+        f"📦 ახალი პროდუქტი: <b>{_e(display)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_nisia_edit_confirm_kb(),
+    )
+    await callback.answer()
+
+
+@wizard_router.callback_query(F.data == "ne:no", IsAdmin(), StateFilter(NisiaEditWizard.confirm))
+async def nisia_edit_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    await state.clear()
+    await callback.message.edit_text("❌ <b>რედაქტირება გაუქმდა.</b>", parse_mode=_PARSE)
+
+
+@wizard_router.callback_query(F.data == "ne:yes", IsAdmin(), StateFilter(NisiaEditWizard.confirm))
+async def nisia_edit_confirm(
+    callback: CallbackQuery, state: FSMContext, db: Database,
+) -> None:
+    assert isinstance(callback.message, Message)
+    d        = await state.get_data()
+    sale_id  = int(d["edit_sale_id"])
+    field    = d["edit_field"]
+    new_val  = d["edit_value"]
+    await state.clear()
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.message.edit_text(
+            f"⚠️ ნისია #{sale_id} ვერ მოიძებნა.", parse_mode=_PARSE
+        )
+        return
+
+    kwargs: dict = {}
+    if field == "qty":
+        kwargs["quantity"] = int(new_val)
+    elif field == "price":
+        kwargs["unit_price"] = float(new_val)
+    elif field in ("name", "phone"):
+        cur_name, cur_phone = _split_name_phone(sale.get("customer_name"))
+        if field == "name":
+            cur_name = str(new_val).strip()
+        else:
+            cur_phone = str(new_val).strip()
+        kwargs["customer_name"] = _combine_name_phone(cur_name, cur_phone)
+    elif field == "prod":
+        # new_val is a dict: {"product_id": Optional[int], "product_name": str, "freeform": bool}
+        if new_val.get("freeform"):
+            kwargs["clear_product"] = True
+            kwargs["notes"] = new_val["product_name"]
+        else:
+            kwargs["product_id"] = int(new_val["product_id"])
+            # Clear stale freeform notes so the joined product_name wins
+            if sale.get("product_id") is None and sale.get("notes"):
+                kwargs["notes"] = ""
+    else:
+        await callback.message.edit_text("❌ უცნობი ველი.", parse_mode=_PARSE)
+        return
+
+    updated = await db.edit_sale(sale_id, **kwargs)
+    if not updated:
+        await callback.message.edit_text(
+            f"⚠️ ნისია #{sale_id} ვერ მოიძებნა.", parse_mode=_PARSE
+        )
+        return
+
+    qty   = updated["quantity"]
+    price = float(updated["unit_price"])
+    product = updated.get("product_name") or updated.get("notes") or "—"
+    name, phone = _split_name_phone(updated.get("customer_name"))
+    seller  = updated.get("seller_type", "individual")
+    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
+
+    await callback.message.edit_text(
+        f"✅ <b>ნისია #{sale_id} განახლდა</b>\n\n"
+        f"👤 სახელი: <b>{_e(name) if name else '—'}</b>\n"
+        f"📞 ტელ: <b>{_e(phone) if phone else '—'}</b>\n"
+        f"📦 {_e(product)}\n"
+        f"🔢 {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
+        f"🏢 {seller_label}",
+        parse_mode=_PARSE,
+        reply_markup=_kb([
+            _btn(f"✏️ კიდევ რედ. #{sale_id}", f"edit:nisia:{sale_id}"),
+            _btn(f"🗑 წაშლა #{sale_id}", f"ds:{sale_id}"),
+        ]),
+    )
+
+    # Refresh the topic message (delete old, post new) so the group stays in sync
+    old_topic_id  = updated.get("topic_id")
+    old_topic_msg = updated.get("topic_message_id")
+    if old_topic_id and old_topic_msg:
+        try:
+            await callback.bot.delete_message(
+                chat_id=config.GROUP_ID, message_id=old_topic_msg
+            )
+        except Exception:
+            pass
+    try:
+        new_topic = await callback.bot.send_message(
+            chat_id=config.GROUP_ID,
+            message_thread_id=config.NISIAS_TOPIC_ID,
+            text=format_topic_nisia(
+                customer_name=updated.get("customer_name") or "",
+                product_name=product,
+                qty=qty,
+                price=price,
+                sale_id=sale_id,
+                unknown_product=updated.get("product_id") is None,
+            ),
+            parse_mode=_PARSE,
+        )
+        await db.update_sale_topic_message(
+            sale_id, config.NISIAS_TOPIC_ID, new_topic.message_id,
+        )
+    except Exception as exc:
+        logger.warning("Failed to refresh topic after nisia edit #%d: %s", sale_id, exc)
+
+    await callback.answer(f"✅ #{sale_id} განახლდა")
 
 
 @wizard_router.callback_query(F.data.startswith("sef:"), IsAdmin(), StateFilter(SaleEditWizard.field))

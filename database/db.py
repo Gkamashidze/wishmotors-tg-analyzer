@@ -240,6 +240,176 @@ class Database:
             )
             return row["current_stock"] if row else 0
 
+    # ─── Inventory receipts (WAC + double-entry ledger) ───────────────────────
+    # Account codes (simple chart of accounts used by the ledger table):
+    #   1300 — Inventory (asset)
+    #   2100 — Accounts payable / supplier liability
+    # A purchase receipt debits 1300 and credits 2100 for the same amount, so the
+    # ledger stays balanced. WAC is derived on demand from inventory_batches.
+
+    ACCOUNT_INVENTORY = "1300"
+    ACCOUNT_ACCOUNTS_PAYABLE = "2100"
+
+    async def get_product_wac(self, product_id: int) -> float:
+        """Return the current weighted average cost for a product.
+
+        WAC = SUM(remaining_quantity * unit_cost) / SUM(remaining_quantity)
+        across all active (remaining_quantity > 0) batches. Returns 0.0 when
+        there are no active batches.
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT SUM(remaining_quantity * unit_cost) AS total_cost,
+                          SUM(remaining_quantity)             AS total_qty
+                   FROM inventory_batches
+                   WHERE product_id = $1 AND remaining_quantity > 0""",
+                product_id,
+            )
+        if not row or not row["total_qty"] or float(row["total_qty"]) == 0.0:
+            return 0.0
+        return float(row["total_cost"]) / float(row["total_qty"])
+
+    async def receive_inventory_batch(
+        self,
+        name: str,
+        oem_code: Optional[str],
+        quantity: float,
+        unit_cost: float,
+        min_stock: int,
+        supplier: Optional[str] = None,
+        reference: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Post one inventory receipt (one Excel row).
+
+        Runs atomically in a single transaction:
+          1. Upsert the product (by OEM, else by name, else insert).
+             - On insert: unit_price defaults to unit_cost so the sales flow has
+               a sensible starting price. On update: unit_price is left alone so
+               we never silently change the selling price from a receipt file.
+          2. Increment products.current_stock by quantity (stock goes up because
+             this is a receipt, not a replacement).
+          3. Insert one row into inventory_batches (quantity, remaining_quantity,
+             unit_cost). WAC is derived from this table on demand.
+          4. Insert two ledger rows for the same transaction_date and reference:
+               DR 1300 Inventory            = quantity * unit_cost
+               CR 2100 Accounts payable     = quantity * unit_cost
+
+        Returns a dict with keys: product_id, batch_id, new_stock, new_wac,
+        total_cost, was_created (True if the product row was newly inserted).
+        """
+        if quantity <= 0:
+            raise ValueError("quantity must be > 0")
+        if unit_cost < 0:
+            raise ValueError("unit_cost must be >= 0")
+
+        total_cost = round(float(quantity) * float(unit_cost), 2)
+        clean_oem = oem_code.strip() if oem_code else None
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                was_created = False
+                product_id: Optional[int] = None
+
+                if clean_oem:
+                    existing = await conn.fetchrow(
+                        "SELECT id FROM products WHERE oem_code = $1",
+                        clean_oem,
+                    )
+                    if existing:
+                        product_id = existing["id"]
+                    else:
+                        row = await conn.fetchrow(
+                            """INSERT INTO products
+                                   (name, oem_code, current_stock, min_stock, unit_price)
+                               VALUES ($1, $2, 0, $3, $4)
+                               RETURNING id""",
+                            name, clean_oem, min_stock, unit_cost,
+                        )
+                        product_id = row["id"]
+                        was_created = True
+                else:
+                    existing = await conn.fetchrow(
+                        "SELECT id FROM products WHERE name ILIKE $1",
+                        f"%{name.strip()}%",
+                    )
+                    if existing:
+                        product_id = existing["id"]
+                    else:
+                        row = await conn.fetchrow(
+                            """INSERT INTO products
+                                   (name, oem_code, current_stock, min_stock, unit_price)
+                               VALUES ($1, NULL, 0, $2, $3)
+                               RETURNING id""",
+                            name, min_stock, unit_cost,
+                        )
+                        product_id = row["id"]
+                        was_created = True
+
+                stock_row = await conn.fetchrow(
+                    """UPDATE products
+                       SET current_stock = current_stock + $1
+                       WHERE id = $2
+                       RETURNING current_stock""",
+                    int(quantity), product_id,
+                )
+                new_stock = int(stock_row["current_stock"]) if stock_row else 0
+
+                batch_row = await conn.fetchrow(
+                    """INSERT INTO inventory_batches
+                           (product_id, quantity, remaining_quantity,
+                            unit_cost, supplier, reference, notes)
+                       VALUES ($1, $2, $2, $3, $4, $5, $6)
+                       RETURNING id""",
+                    product_id, quantity, unit_cost,
+                    supplier, reference, notes,
+                )
+                batch_id = batch_row["id"]
+
+                # Double-entry ledger posting: inventory ↑ (debit), AP ↑ (credit).
+                ledger_ref = reference or f"batch:{batch_id}"
+                ledger_desc = (
+                    f"Inventory receipt — {name}"
+                    + (f" (OEM {clean_oem})" if clean_oem else "")
+                )
+                await conn.execute(
+                    """INSERT INTO ledger
+                           (account_code, debit_amount, credit_amount,
+                            description, reference_id)
+                       VALUES ($1, $2, 0, $3, $4)""",
+                    self.ACCOUNT_INVENTORY, total_cost, ledger_desc, ledger_ref,
+                )
+                await conn.execute(
+                    """INSERT INTO ledger
+                           (account_code, debit_amount, credit_amount,
+                            description, reference_id)
+                       VALUES ($1, 0, $2, $3, $4)""",
+                    self.ACCOUNT_ACCOUNTS_PAYABLE, total_cost, ledger_desc, ledger_ref,
+                )
+
+                # WAC is computed inside the same transaction so the caller sees
+                # the value that reflects this batch.
+                wac_row = await conn.fetchrow(
+                    """SELECT SUM(remaining_quantity * unit_cost) AS total_cost,
+                              SUM(remaining_quantity)             AS total_qty
+                       FROM inventory_batches
+                       WHERE product_id = $1 AND remaining_quantity > 0""",
+                    product_id,
+                )
+                if wac_row and wac_row["total_qty"] and float(wac_row["total_qty"]) > 0:
+                    new_wac = float(wac_row["total_cost"]) / float(wac_row["total_qty"])
+                else:
+                    new_wac = 0.0
+
+        return {
+            "product_id": product_id,
+            "batch_id": batch_id,
+            "new_stock": new_stock,
+            "new_wac": new_wac,
+            "total_cost": total_cost,
+            "was_created": was_created,
+        }
+
     # ─── Sales (atomic: record sale + update stock in one transaction) ─────────
 
     async def create_sale(
@@ -832,42 +1002,96 @@ class Database:
         payment_method: Optional[str] = None,
         customer_name: Optional[str] = None,
         notes: Optional[str] = None,
+        product_id: Optional[int] = None,
+        clear_product: bool = False,
+        seller_type: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Update sale fields. Adjusts product stock when quantity changes.
-        Returns the updated sale row, or None if not found."""
+        """Update sale fields. Adjusts product stock atomically when quantity
+        and/or product_id change.
+
+        Stock rules (run inside a single transaction):
+          • product_id unchanged, quantity changed → delta on same product.
+          • product_id changed (or cleared) → restore old product's stock by
+            the old quantity, then deduct the effective (new) quantity from
+            the new product (if any).
+          • freeform (clear_product=True) drops the product link and stores
+            the product label in `notes`.
+
+        `None` for any column means "leave unchanged" (no-op). For the
+        product link, pass `product_id=<int>` to relink or
+        `clear_product=True` to detach.
+
+        Returns the updated sale row, or None if the sale was not found.
+        """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                sale = await conn.fetchrow("SELECT * FROM sales WHERE id=$1", sale_id)
+                sale = await conn.fetchrow(
+                    "SELECT * FROM sales WHERE id=$1 FOR UPDATE", sale_id
+                )
                 if not sale:
                     return None
                 old = dict(sale)
 
-                # Stock adjustment: only when quantity actually changes
-                if (
-                    quantity is not None
-                    and quantity != old["quantity"]
-                    and old.get("product_id")
-                ):
-                    delta = old["quantity"] - quantity  # >0 restores, <0 deducts
+                old_product_id = old.get("product_id")
+                old_quantity = int(old["quantity"])
+
+                # Resolve the new values in terms of "what will actually be stored"
+                if clear_product:
+                    new_product_id: Optional[int] = None
+                elif product_id is not None:
+                    new_product_id = int(product_id)
+                else:
+                    new_product_id = old_product_id
+
+                new_quantity = int(quantity) if quantity is not None else old_quantity
+
+                product_changed = new_product_id != old_product_id
+                quantity_changed = new_quantity != old_quantity
+
+                # ─── Stock adjustment ─────────────────────────────────────
+                if product_changed:
+                    # Restore the old product's stock by the old quantity
+                    if old_product_id is not None:
+                        await conn.execute(
+                            "UPDATE products SET current_stock = current_stock + $1 "
+                            "WHERE id = $2",
+                            old_quantity, old_product_id,
+                        )
+                    # Deduct the (possibly new) quantity from the new product
+                    if new_product_id is not None:
+                        await conn.execute(
+                            "UPDATE products SET current_stock = current_stock - $1 "
+                            "WHERE id = $2",
+                            new_quantity, new_product_id,
+                        )
+                elif quantity_changed and old_product_id is not None:
+                    delta = old_quantity - new_quantity  # >0 restores, <0 deducts
                     await conn.execute(
-                        "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2",
-                        delta, old["product_id"],
+                        "UPDATE products SET current_stock = current_stock + $1 "
+                        "WHERE id = $2",
+                        delta, old_product_id,
                     )
 
+                # ─── Build the UPDATE ─────────────────────────────────────
                 updates: List[str] = []
                 values: List[Any] = []
                 idx = 1
+
                 if quantity is not None:
                     updates.append(f"quantity = ${idx}")
-                    values.append(quantity)
+                    values.append(new_quantity)
                     idx += 1
                 if unit_price is not None:
                     updates.append(f"unit_price = ${idx}")
-                    values.append(unit_price)
+                    values.append(float(unit_price))
                     idx += 1
                 if payment_method is not None:
                     updates.append(f"payment_method = ${idx}")
                     values.append(payment_method)
+                    idx += 1
+                if seller_type is not None:
+                    updates.append(f"seller_type = ${idx}")
+                    values.append(seller_type)
                     idx += 1
                 if customer_name is not None:
                     updates.append(f"customer_name = ${idx}")
@@ -877,16 +1101,33 @@ class Database:
                     updates.append(f"notes = ${idx}")
                     values.append(notes or None)
                     idx += 1
+                if clear_product or product_id is not None:
+                    updates.append(f"product_id = ${idx}")
+                    values.append(new_product_id)
+                    idx += 1
 
                 if not updates:
                     return self._row(sale)
 
                 values.append(sale_id)
                 row = await conn.fetchrow(
-                    f"UPDATE sales SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
+                    f"UPDATE sales SET {', '.join(updates)} "
+                    f"WHERE id = ${idx} RETURNING *",
                     *values,
                 )
-                return self._row(row)
+                # Re-join product name for callers that expect it
+                if row:
+                    result = dict(row)
+                    if result.get("product_id"):
+                        prod = await conn.fetchrow(
+                            "SELECT name, oem_code FROM products WHERE id=$1",
+                            result["product_id"],
+                        )
+                        if prod:
+                            result["product_name"] = prod["name"]
+                            result["oem_code"] = prod["oem_code"]
+                    return result
+                return None
 
     async def get_expense(self, expense_id: int) -> Optional[Dict[str, Any]]:
         async with self.pool.acquire() as conn:

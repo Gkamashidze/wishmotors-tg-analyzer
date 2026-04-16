@@ -371,41 +371,93 @@ async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db
 
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("npr:"), IsAdmin())
 async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
-    """Start customer rename flow: npr:{customer_hash}"""
+    """Nisia edit entrypoint from the /nisias list.
+
+    Formats:
+        npr:{customer_hash}              → show all of this customer's nisia sales
+        npr:s:{sale_id}                  → open the 5-field edit wizard for one sale
+    """
+    raw = callback.data or ""
+    parts = raw.split(":")
+
+    # Sub-route: direct jump to a specific sale (from the sale-picker keyboard)
+    if len(parts) >= 3 and parts[1] == "s":
+        try:
+            sale_id = int(parts[2])
+        except ValueError:
+            await callback.answer("❌ შეცდომა", show_alert=True)
+            return
+        # Delegate to the NisiaEditWizard by synthesizing an edit:nisia callback
+        # The wizard router handles auth, state, and keyboard rendering.
+        from bot.handlers.wizard import _start_nisia_edit  # local import avoids cycle
+        sale = await db.get_sale(sale_id)
+        if not sale or sale.get("payment_method") != "credit":
+            await callback.answer("⚠️ ნისია ვერ მოიძებნა.", show_alert=True)
+            return
+        assert isinstance(callback.message, Message)
+        await _start_nisia_edit(callback.message, state, sale, send=True)
+        await callback.answer()
+        return
+
+    # Default: show list of the customer's sales so the admin can pick one
     try:
-        _, customer_hash = (callback.data or "").split(":", 1)
+        _, customer_hash = raw.split(":", 1)
     except ValueError:
         await callback.answer("❌ შეცდომა", show_alert=True)
         return
 
     all_sales = await db.get_credit_sales()
     target_customer: Optional[str] = None
+    customer_sales: list = []
     for s in all_sales:
         cname = s.get("customer_name")
         if cname and _customer_key(cname) == customer_hash:
-            target_customer = cname
-            break
+            if target_customer is None:
+                target_customer = cname
+            customer_sales.append(s)
 
-    if not target_customer:
+    if not target_customer or not customer_sales:
         await callback.answer("⚠️ კლიენტი ვერ მოიძებნა.", show_alert=True)
         return
 
-    await state.set_state(NisiasStates.waiting_rename_customer)
-    await state.update_data(old_customer_name=target_customer)
-    await callback.answer()
-
+    assert isinstance(callback.message, Message) or callback.message is None
     if isinstance(callback.message, InaccessibleMessage):
+        await callback.answer()
         return
+
+    # Single sale: jump straight into the edit wizard
+    if len(customer_sales) == 1:
+        from bot.handlers.wizard import _start_nisia_edit
+        await _start_nisia_edit(callback.message, state, customer_sales[0], send=True)
+        await callback.answer()
+        return
+
+    # Multiple sales: show a picker
+    buttons = []
+    for s in customer_sales[:20]:
+        label_product = (s.get("product_name") or s.get("notes") or "—")[:22]
+        total = float(s["unit_price"]) * s["quantity"]
+        buttons.append([InlineKeyboardButton(
+            text=f"#{s['id']} {label_product} — {total:.0f}₾",
+            callback_data=f"npr:s:{s['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(text="❌ გაუქმება", callback_data="wiz:cancel")])
+
     await callback.message.reply(
         f"✏️ <b>{html.escape(target_customer)}</b>\n\n"
-        f"ახალი სახელი ან ტელ. ნომერი მიწერე:",
+        f"აირჩიე რომელი ნისია გსურს შეცვალო:",
         parse_mode=_PARSE,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
+    await callback.answer()
 
 
 @commands_router.message(NisiasStates.waiting_rename_customer, IsAdmin())
 async def handle_rename_customer(message: Message, state: FSMContext, db: Database) -> None:
-    """Receive new customer name and update all their credit sales."""
+    """Legacy customer-rename flow (kept for backwards compatibility if any
+    caller still sets NisiasStates.waiting_rename_customer). The current
+    /nisias ✏️ entrypoint routes through the NisiaEditWizard instead.
+    """
     new_name = (message.text or "").strip()
     if not new_name:
         await message.reply("❌ სახელი ცარიელია. სცადე ხელახლა.")
