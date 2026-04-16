@@ -71,6 +71,52 @@ CREATE TABLE IF NOT EXISTS parse_failures (
 
 CREATE INDEX IF NOT EXISTS idx_parse_failures_topic ON parse_failures(topic_id);
 CREATE INDEX IF NOT EXISTS idx_parse_failures_time  ON parse_failures(created_at);
+
+-- ─── Ledger (double-entry bookkeeping) ───────────────────────────────────────
+-- One row = one posting. A business transaction is stored as ≥2 rows that
+-- balance (sum of debits == sum of credits). Each row is single-sided:
+-- either debit_amount > 0 XOR credit_amount > 0.
+CREATE TABLE IF NOT EXISTS ledger (
+    id               SERIAL PRIMARY KEY,
+    transaction_date TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    account_code     TEXT           NOT NULL,
+    debit_amount     NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (debit_amount  >= 0),
+    credit_amount    NUMERIC(14, 2) NOT NULL DEFAULT 0 CHECK (credit_amount >= 0),
+    description      TEXT,
+    reference_id     TEXT,
+    created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT ledger_single_sided CHECK (
+        (debit_amount > 0 AND credit_amount = 0)
+        OR (credit_amount > 0 AND debit_amount = 0)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_txn_date    ON ledger(transaction_date);
+CREATE INDEX IF NOT EXISTS idx_ledger_account     ON ledger(account_code, transaction_date);
+CREATE INDEX IF NOT EXISTS idx_ledger_reference   ON ledger(reference_id);
+
+-- ─── Inventory batches (WAC — weighted average cost) ─────────────────────────
+-- Each purchase / receipt creates one batch. WAC per product is computed as
+--   SUM(remaining_quantity * unit_cost) / SUM(remaining_quantity)
+-- across all active (remaining_quantity > 0) batches for that product.
+-- quantity is NUMERIC so non-integer units (კგ, მ) are supported alongside 'ც'.
+CREATE TABLE IF NOT EXISTS inventory_batches (
+    id                  SERIAL PRIMARY KEY,
+    product_id          INTEGER        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    quantity            NUMERIC(14, 3) NOT NULL CHECK (quantity > 0),
+    remaining_quantity  NUMERIC(14, 3) NOT NULL CHECK (remaining_quantity >= 0),
+    unit_cost           NUMERIC(14, 4) NOT NULL CHECK (unit_cost >= 0),
+    received_at         TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    supplier            TEXT,
+    reference           TEXT,
+    notes               TEXT,
+    CONSTRAINT inventory_batches_remaining_le_qty CHECK (remaining_quantity <= quantity)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_batches_product  ON inventory_batches(product_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_batches_received ON inventory_batches(product_id, received_at);
+CREATE INDEX IF NOT EXISTS idx_inventory_batches_active
+    ON inventory_batches(product_id) WHERE remaining_quantity > 0;
 """
 
 # Applied once at startup to add new columns / constraints to existing tables (idempotent).

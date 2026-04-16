@@ -21,6 +21,11 @@ EXPENSES_TOPIC_ID: int = int(_require("EXPENSES_TOPIC_ID"))
 CAPITAL_TOPIC_ID: int = int(_require("CAPITAL_TOPIC_ID"))
 NISIAS_TOPIC_ID: int = int(_require("NISIAS_TOPIC_ID"))
 
+# Optional: topic where inventory batch receipts / WAC events are posted.
+# Left optional so existing deployments keep running until the topic is created.
+_inventory_raw = os.getenv("INVENTORY_TOPIC_ID")
+INVENTORY_TOPIC_ID: Optional[int] = int(_inventory_raw) if _inventory_raw else None
+
 DATABASE_URL: str = _require("DATABASE_URL")
 
 # Comma-separated list of Telegram user IDs allowed to use bot commands.
