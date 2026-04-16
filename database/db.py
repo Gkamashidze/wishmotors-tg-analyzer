@@ -240,15 +240,309 @@ class Database:
             )
             return row["current_stock"] if row else 0
 
-    # ─── Inventory receipts (WAC + double-entry ledger) ───────────────────────
-    # Account codes (simple chart of accounts used by the ledger table):
-    #   1300 — Inventory (asset)
-    #   2100 — Accounts payable / supplier liability
-    # A purchase receipt debits 1300 and credits 2100 for the same amount, so the
-    # ledger stays balanced. WAC is derived on demand from inventory_batches.
+    # ─── Chart of accounts (simple double-entry bookkeeping) ──────────────────
+    # Every business transaction is written to `ledger` as at least two rows
+    # that balance: SUM(debit) == SUM(credit). The reference_id ties all rows
+    # of one transaction together so reversals can cancel them precisely.
+    #
+    #   1100 — Cash on hand (საკასო ნაღდი)              — asset
+    #   1200 — Bank / transfers (დარიცხვა, ბანკი)        — asset
+    #   1400 — Accounts receivable / nisia (დებიტორული)   — asset
+    #   1600 — Inventory (მარაგი)                        — asset
+    #   2100 — Accounts payable (მომწოდებლები)           — liability
+    #   6100 — Sales revenue (შემოსავალი გაყიდვებიდან)    — revenue
+    #   7100 — Cost of goods sold (თვითღირებულება)        — expense
+    #   7400 — Operating expenses (საოპერაციო ხარჯი)     — expense
 
-    ACCOUNT_INVENTORY = "1300"
-    ACCOUNT_ACCOUNTS_PAYABLE = "2100"
+    ACCOUNT_CASH              = "1100"
+    ACCOUNT_BANK              = "1200"
+    ACCOUNT_AR                = "1400"
+    ACCOUNT_INVENTORY         = "1600"
+    ACCOUNT_ACCOUNTS_PAYABLE  = "2100"
+    ACCOUNT_REVENUE           = "6100"
+    ACCOUNT_COGS              = "7100"
+    ACCOUNT_OPERATING_EXPENSE = "7400"
+
+    # payment_method → debit-side account used when posting revenue or
+    # settling a nisia payment. "credit" (ნისია) routes to AR because no cash
+    # has changed hands yet.
+    _PAYMENT_TO_ACCOUNT = {
+        "cash":     ACCOUNT_CASH,
+        "transfer": ACCOUNT_BANK,
+        "credit":   ACCOUNT_AR,
+    }
+
+    @classmethod
+    def _payment_account(cls, payment_method: str) -> str:
+        return cls._PAYMENT_TO_ACCOUNT.get(payment_method, cls.ACCOUNT_CASH)
+
+    @staticmethod
+    async def _post_ledger_pair(
+        conn: Any,
+        *,
+        debit_account: str,
+        credit_account: str,
+        amount: float,
+        description: str,
+        reference_id: str,
+    ) -> None:
+        """Write one balanced transaction (2 rows: debit + credit) to the ledger.
+
+        Zero / negative amounts are skipped silently so callers can pass
+        per-leg totals without guarding. Balances are preserved because the
+        same amount is booked to both sides.
+        """
+        if amount is None:
+            return
+        amt = round(float(amount), 2)
+        if amt <= 0:
+            return
+        await conn.execute(
+            """INSERT INTO ledger (account_code, debit_amount, credit_amount,
+                                   description, reference_id)
+               VALUES ($1, $2, 0, $3, $4)""",
+            debit_account, amt, description, reference_id,
+        )
+        await conn.execute(
+            """INSERT INTO ledger (account_code, debit_amount, credit_amount,
+                                   description, reference_id)
+               VALUES ($1, 0, $2, $3, $4)""",
+            credit_account, amt, description, reference_id,
+        )
+
+    @staticmethod
+    async def _consume_inventory_fifo(
+        conn: Any, product_id: int, qty: int
+    ) -> float:
+        """Reduce remaining_quantity on active batches (oldest first, FIFO).
+
+        Returns the total cost consumed (qty × WAC at time of call), which is
+        what gets posted as COGS. Uses SELECT ... FOR UPDATE to serialise
+        concurrent sales on the same product.
+
+        If stock is partially (or fully) unavailable, only the portion covered
+        by active batches incurs cost — the excess is a "negative-stock" sale
+        with no cost basis. This keeps WAC meaningful instead of inventing
+        phantom costs. The caller decides what to do about negative stock.
+        """
+        if qty is None or float(qty) <= 0:
+            return 0.0
+
+        batches = await conn.fetch(
+            """SELECT id, remaining_quantity, unit_cost
+               FROM inventory_batches
+               WHERE product_id = $1 AND remaining_quantity > 0
+               ORDER BY received_at ASC, id ASC
+               FOR UPDATE""",
+            product_id,
+        )
+        if not batches:
+            return 0.0
+
+        total_qty  = sum(float(b["remaining_quantity"]) for b in batches)
+        total_cost = sum(
+            float(b["remaining_quantity"]) * float(b["unit_cost"])
+            for b in batches
+        )
+        if total_qty <= 0:
+            return 0.0
+
+        wac     = total_cost / total_qty
+        consume = min(float(qty), total_qty)
+        cost    = round(consume * wac, 2)
+
+        remaining_to_take = consume
+        for batch in batches:
+            if remaining_to_take <= 0:
+                break
+            have = float(batch["remaining_quantity"])
+            take = min(have, remaining_to_take)
+            new_remaining = have - take
+            await conn.execute(
+                "UPDATE inventory_batches SET remaining_quantity = $1 WHERE id = $2",
+                new_remaining, batch["id"],
+            )
+            remaining_to_take -= take
+
+        return cost
+
+    @staticmethod
+    async def _restore_inventory_batch(
+        conn: Any, product_id: int, qty: int, cost_amount: float,
+        note: str,
+    ) -> None:
+        """Add stock back as a new batch — used when a sale is reversed.
+
+        Creates a batch whose unit_cost equals the original COGS per unit so
+        future WAC calculations stay consistent with what the sale consumed.
+        Skips when there's no product or no cost basis to restore.
+        """
+        if product_id is None or qty is None or float(qty) <= 0:
+            return
+        if cost_amount is None or float(cost_amount) <= 0:
+            # Nothing was costed (freeform / negative-stock sale). No-op.
+            return
+        unit_cost = round(float(cost_amount) / float(qty), 4)
+        await conn.execute(
+            """INSERT INTO inventory_batches
+                   (product_id, quantity, remaining_quantity, unit_cost, notes)
+               VALUES ($1, $2, $2, $3, $4)""",
+            product_id, qty, unit_cost, note,
+        )
+
+    @classmethod
+    async def _post_sale_ledger(
+        cls,
+        conn: Any,
+        *,
+        sale_id: int,
+        payment_method: str,
+        revenue: float,
+        cost_amount: float,
+        description: str,
+    ) -> None:
+        """Post the revenue + COGS pair for one sale.
+
+        - Revenue: DR cash/bank/AR (depending on payment_method), CR 6100.
+        - COGS   : DR 7100, CR 1600 (only when cost_amount > 0).
+        Together these two pairs keep SUM(debit) == SUM(credit) for this sale.
+        """
+        reference = f"sale:{sale_id}"
+        debit_account = cls._payment_account(payment_method)
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=debit_account,
+            credit_account=cls.ACCOUNT_REVENUE,
+            amount=revenue,
+            description=description,
+            reference_id=reference,
+        )
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=cls.ACCOUNT_COGS,
+            credit_account=cls.ACCOUNT_INVENTORY,
+            amount=cost_amount,
+            description=f"COGS — {description}",
+            reference_id=reference,
+        )
+
+    @classmethod
+    async def _reverse_sale_ledger(
+        cls,
+        conn: Any,
+        *,
+        sale_id: int,
+        payment_method: str,
+        revenue: float,
+        cost_amount: float,
+        description: str,
+    ) -> None:
+        """Reverse the revenue + COGS pair for one sale (contra-entries).
+
+        Same reference_id as the original so SUM(ledger) for this sale == 0
+        after reversal. No rows are deleted — the audit trail stays intact.
+        """
+        reference = f"sale:{sale_id}"
+        credit_account = cls._payment_account(payment_method)
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=cls.ACCOUNT_REVENUE,
+            credit_account=credit_account,
+            amount=revenue,
+            description=f"REVERSAL — {description}",
+            reference_id=reference,
+        )
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=cls.ACCOUNT_INVENTORY,
+            credit_account=cls.ACCOUNT_COGS,
+            amount=cost_amount,
+            description=f"REVERSAL COGS — {description}",
+            reference_id=reference,
+        )
+
+    @classmethod
+    async def _post_settlement_ledger(
+        cls,
+        conn: Any,
+        *,
+        reference_id: str,
+        payment_method: str,
+        amount: float,
+        description: str,
+    ) -> None:
+        """Post a nisia (AR) settlement: DR cash/bank, CR 1400 AR.
+
+        Used whenever a credit sale is paid (fully, partially, or in bulk).
+        Original "sale:{id}" ledger rows stay intact; settlement lives under
+        its own reference so the audit trail separates revenue from cash
+        collection.
+        """
+        if payment_method not in ("cash", "transfer"):
+            # Nothing to do — "credit → credit" isn't a settlement.
+            return
+        debit_account = cls._payment_account(payment_method)
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=debit_account,
+            credit_account=cls.ACCOUNT_AR,
+            amount=amount,
+            description=description,
+            reference_id=reference_id,
+        )
+
+    @classmethod
+    async def _post_expense_ledger(
+        cls,
+        conn: Any,
+        *,
+        expense_id: int,
+        payment_method: str,
+        amount: float,
+        description: str,
+    ) -> None:
+        """Post an operating expense: DR 7400 Operating Expense, CR cash/bank.
+
+        For payment_method='credit' (paid on account) the credit side goes to
+        AP (2100) instead of cash — cash only leaves the books once the
+        supplier is paid.
+        """
+        if payment_method == "credit":
+            credit_account = cls.ACCOUNT_ACCOUNTS_PAYABLE
+        else:
+            credit_account = cls._payment_account(payment_method)
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=cls.ACCOUNT_OPERATING_EXPENSE,
+            credit_account=credit_account,
+            amount=amount,
+            description=description,
+            reference_id=f"expense:{expense_id}",
+        )
+
+    @classmethod
+    async def _reverse_expense_ledger(
+        cls,
+        conn: Any,
+        *,
+        expense_id: int,
+        payment_method: str,
+        amount: float,
+        description: str,
+    ) -> None:
+        """Reverse an expense posting (contra-entry). Used on edit / delete."""
+        if payment_method == "credit":
+            debit_account = cls.ACCOUNT_ACCOUNTS_PAYABLE
+        else:
+            debit_account = cls._payment_account(payment_method)
+        await cls._post_ledger_pair(
+            conn,
+            debit_account=debit_account,
+            credit_account=cls.ACCOUNT_OPERATING_EXPENSE,
+            amount=amount,
+            description=f"REVERSAL — {description}",
+            reference_id=f"expense:{expense_id}",
+        )
 
     async def get_product_wac(self, product_id: int) -> float:
         """Return the current weighted average cost for a product.
@@ -422,8 +716,25 @@ class Database:
         customer_name: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> Tuple[int, int]:
-        """Insert sale and decrement stock atomically.
-        Returns (sale_id, new_stock_level)."""
+        """Insert sale + decrement stock + post double-entry ledger, atomically.
+
+        One ACID transaction performs, in order:
+          1. INSERT the sales row (cost_amount filled in at step 4).
+          2. UPDATE products.current_stock (−quantity).
+          3. FIFO-consume inventory_batches.remaining_quantity (WAC per unit).
+          4. Persist cost_amount on the sale so reversals can cancel the
+             exact COGS originally booked.
+          5. Post two ledger pairs:
+               • DR cash/bank/AR, CR 6100 Revenue         (quantity × unit_price)
+               • DR 7100 COGS    , CR 1600 Inventory      (quantity × WAC)
+             For nisia (payment_method="credit") the first pair debits AR
+             1400 instead of cash, so settlement later is a pure cash-for-AR
+             swap.
+        Any failure rolls back everything — the ledger cannot desynchronise.
+
+        Returns (sale_id, new_stock_level).
+        """
+        revenue = round(float(unit_price) * int(quantity), 2)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
@@ -437,6 +748,8 @@ class Database:
                 )
                 sale_id = row["id"]
 
+                cost_amount = 0.0
+                new_stock = 0
                 if product_id is not None:
                     stock_row = await conn.fetchrow(
                         """UPDATE products
@@ -446,52 +759,156 @@ class Database:
                         quantity, product_id,
                     )
                     new_stock = stock_row["current_stock"] if stock_row else 0
-                else:
-                    new_stock = 0
+                    cost_amount = await self._consume_inventory_fifo(
+                        conn, product_id, quantity,
+                    )
+                    if cost_amount > 0:
+                        await conn.execute(
+                            "UPDATE sales SET cost_amount = $1 WHERE id = $2",
+                            cost_amount, sale_id,
+                        )
+
+                description = (
+                    f"Sale #{sale_id} — {customer_name}"
+                    if customer_name else f"Sale #{sale_id}"
+                )
+                await self._post_sale_ledger(
+                    conn,
+                    sale_id=sale_id,
+                    payment_method=payment_method,
+                    revenue=revenue,
+                    cost_amount=cost_amount,
+                    description=description,
+                )
 
         return sale_id, new_stock
 
     async def delete_sale(self, sale_id: int) -> Optional[SaleRow]:
-        """Delete a sale and restore stock if a product was linked.
-        Returns the deleted sale record, or None if not found."""
+        """Delete a sale, restore stock + inventory batch, reverse the ledger.
+
+        All in one transaction:
+          1. SELECT the sale (FOR UPDATE).
+          2. If linked to a product: +quantity to stock, plus insert a new
+             inventory batch carrying the original unit cost so future WAC
+             stays consistent with what the sale consumed.
+          3. Reverse the sale's revenue + COGS ledger entries.
+          4. DELETE the sales row.
+        Returns the deleted sale record, or None if not found.
+        """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                sale = await conn.fetchrow("SELECT * FROM sales WHERE id = $1", sale_id)
+                sale = await conn.fetchrow(
+                    "SELECT * FROM sales WHERE id = $1 FOR UPDATE", sale_id,
+                )
                 if not sale:
                     return None
                 sale_dict = dict(sale)
-                if sale_dict.get("product_id"):
+
+                qty = int(sale_dict["quantity"])
+                unit_price = float(sale_dict["unit_price"])
+                cost_amount = float(sale_dict.get("cost_amount") or 0.0)
+                revenue = round(unit_price * qty, 2)
+                pm = sale_dict["payment_method"]
+                product_id = sale_dict.get("product_id")
+                label = sale_dict.get("customer_name") or f"Sale #{sale_id}"
+
+                if product_id:
                     await conn.execute(
                         """UPDATE products
                            SET current_stock = current_stock + $1
                            WHERE id = $2""",
-                        sale_dict["quantity"], sale_dict["product_id"],
+                        qty, product_id,
                     )
+                    await self._restore_inventory_batch(
+                        conn, product_id, qty, cost_amount,
+                        note=f"Reversal of sale #{sale_id}",
+                    )
+
+                await self._reverse_sale_ledger(
+                    conn,
+                    sale_id=sale_id,
+                    payment_method=pm,
+                    revenue=revenue,
+                    cost_amount=cost_amount,
+                    description=f"Sale #{sale_id} — {label}",
+                )
                 await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
                 return sale_dict  # type: ignore[return-value]
 
     async def mark_sale_paid(self, sale_id: int, payment_method: str) -> bool:
-        """Mark a credit (ნისია) sale as paid. Returns True if updated."""
+        """Mark a credit (ნისია) sale as paid + post AR settlement to ledger.
+
+        Ledger posting (atomic with the UPDATE):
+            DR cash/bank   = remaining sale_total
+            CR 1400 AR     = remaining sale_total
+        The original "sale:{id}" revenue entries stay intact; this settlement
+        lives under reference "payment:{sale_id}" so reports can distinguish
+        revenue booking from cash collection. Returns True if updated.
+        """
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                """UPDATE sales
-                   SET payment_method = $1
-                   WHERE id = $2 AND payment_method = 'credit'""",
-                payment_method, sale_id,
-            )
-            return result == "UPDATE 1"
+            async with conn.transaction():
+                sale = await conn.fetchrow(
+                    """SELECT id, unit_price, quantity, customer_name
+                       FROM sales
+                       WHERE id = $1 AND payment_method = 'credit'
+                       FOR UPDATE""",
+                    sale_id,
+                )
+                if not sale:
+                    return False
+                amount = round(float(sale["unit_price"]) * int(sale["quantity"]), 2)
+                await conn.execute(
+                    "UPDATE sales SET payment_method = $1 WHERE id = $2",
+                    payment_method, sale_id,
+                )
+                label = sale["customer_name"] or f"Sale #{sale_id}"
+                await self._post_settlement_ledger(
+                    conn,
+                    reference_id=f"payment:{sale_id}",
+                    payment_method=payment_method,
+                    amount=amount,
+                    description=f"Nisia payment #{sale_id} — {label}",
+                )
+                return True
 
     async def mark_customer_sales_paid(self, customer_name: str, payment_method: str) -> int:
-        """Mark all credit sales for a customer as paid.
-        Returns the number of sales updated."""
+        """Mark all credit sales for a customer as paid + post one AR settlement.
+
+        One ledger entry is posted for the aggregate total (DR cash/bank,
+        CR 1400 AR). Reference is "payment:customer:{name}:{timestamp}" so
+        every bulk payoff is individually auditable. Returns the number of
+        sales updated.
+        """
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                """UPDATE sales
-                   SET payment_method = $1
-                   WHERE payment_method = 'credit' AND customer_name = $2""",
-                payment_method, customer_name,
-            )
-            return int(result.split()[-1])
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """SELECT id, unit_price, quantity
+                       FROM sales
+                       WHERE payment_method = 'credit' AND customer_name = $1
+                       FOR UPDATE""",
+                    customer_name,
+                )
+                if not rows:
+                    return 0
+                total = round(
+                    sum(float(r["unit_price"]) * int(r["quantity"]) for r in rows),
+                    2,
+                )
+                result = await conn.execute(
+                    """UPDATE sales
+                       SET payment_method = $1
+                       WHERE payment_method = 'credit' AND customer_name = $2""",
+                    payment_method, customer_name,
+                )
+                stamp = self._now().strftime("%Y%m%d%H%M%S")
+                await self._post_settlement_ledger(
+                    conn,
+                    reference_id=f"payment:customer:{customer_name}:{stamp}",
+                    payment_method=payment_method,
+                    amount=total,
+                    description=f"Nisia bulk payoff — {customer_name}",
+                )
+                return int(result.split()[-1])
 
     async def rename_customer(self, old_name: str, new_name: str) -> int:
         """Rename a customer across all their credit sales. Returns count of updated rows."""
@@ -508,7 +925,8 @@ class Database:
 
         Marks whole sales as paid ('cash') until the amount is exhausted.
         If a sale is only partially covered, its unit_price is reduced to reflect
-        the remaining balance.
+        the remaining balance. One settlement ledger entry is posted for the
+        full applied amount (DR cash, CR 1400 AR).
         Returns the remaining debt for this customer after the payment.
         """
         if amount <= 0:
@@ -527,10 +945,12 @@ class Database:
                     """SELECT id, unit_price, quantity
                        FROM sales
                        WHERE payment_method = 'credit' AND customer_name = $1
-                       ORDER BY sold_at ASC""",
+                       ORDER BY sold_at ASC
+                       FOR UPDATE""",
                     customer_name,
                 )
                 remaining_payment = amount
+                applied = 0.0
                 for row in rows:
                     if remaining_payment <= 0:
                         break
@@ -542,6 +962,7 @@ class Database:
                             row["id"],
                         )
                         remaining_payment -= sale_total
+                        applied += sale_total
                     else:
                         # Partially covers this sale — reduce its unit_price
                         new_total = sale_total - remaining_payment
@@ -550,8 +971,19 @@ class Database:
                             "UPDATE sales SET unit_price = $1 WHERE id = $2",
                             new_price, row["id"],
                         )
+                        applied += remaining_payment
                         remaining_payment = 0.0
                         break
+
+                if applied > 0:
+                    stamp = self._now().strftime("%Y%m%d%H%M%S")
+                    await self._post_settlement_ledger(
+                        conn,
+                        reference_id=f"payment:customer:{customer_name}:{stamp}",
+                        payment_method="cash",
+                        amount=round(applied, 2),
+                        description=f"Nisia partial payment — {customer_name}",
+                    )
 
                 # Return the remaining debt for this customer
                 total_row = await conn.fetchrow(
@@ -641,8 +1073,20 @@ class Database:
         exchange_product_id: Optional[int] = None,
         notes: Optional[str] = None,
     ) -> Tuple[int, int]:
-        """Insert return and restore stock atomically.
-        Returns (return_id, new_stock_level)."""
+        """Record a return: restore stock + inventory batch + contra-revenue.
+
+        One transaction performs:
+          1. INSERT the return row.
+          2. Increment product stock by quantity.
+          3. If linked to a sale: restore the proportional inventory batch at
+             the original cost per unit (qty/sale_qty * cost_amount). Reverse
+             the COGS side for that portion so COGS doesn't double-count.
+          4. Post a contra-revenue pair for the refund:
+                DR 6100 Revenue   = refund_amount   (reversing some revenue)
+                CR 1100 Cash / 1400 AR (depending on the sale's payment_method)
+        Returns (return_id, new_stock_level).
+        """
+        qty = int(quantity)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
@@ -650,7 +1094,7 @@ class Database:
                            (sale_id, product_id, quantity, refund_amount, exchange_product_id, notes)
                        VALUES ($1, $2, $3, $4, $5, $6)
                        RETURNING id""",
-                    sale_id, product_id, quantity, refund_amount, exchange_product_id, notes,
+                    sale_id, product_id, qty, refund_amount, exchange_product_id, notes,
                 )
                 return_id = row["id"]
 
@@ -659,9 +1103,53 @@ class Database:
                        SET current_stock = current_stock + $1
                        WHERE id = $2
                        RETURNING current_stock""",
-                    quantity, product_id,
+                    qty, product_id,
                 )
                 new_stock = stock_row["current_stock"] if stock_row else 0
+
+                # If we know the original sale, use its COGS + payment method to
+                # build an accurate, balanced reversal.
+                cogs_portion = 0.0
+                pm = "cash"
+                if sale_id is not None:
+                    sale = await conn.fetchrow(
+                        """SELECT quantity, cost_amount, payment_method
+                           FROM sales WHERE id = $1""",
+                        sale_id,
+                    )
+                    if sale:
+                        sale_qty = max(int(sale["quantity"]), 1)
+                        sale_cost = float(sale["cost_amount"] or 0.0)
+                        portion = min(qty, sale_qty) / sale_qty
+                        cogs_portion = round(sale_cost * portion, 2)
+                        pm = sale["payment_method"]
+
+                await self._restore_inventory_batch(
+                    conn, product_id, qty, cogs_portion,
+                    note=f"Return #{return_id}" + (f" (sale #{sale_id})" if sale_id else ""),
+                )
+
+                reference = f"return:{return_id}"
+                refund = round(float(refund_amount), 2)
+                credit_account = self._payment_account(pm)
+                # Contra-revenue: DR Revenue, CR cash/AR for the refund value
+                await self._post_ledger_pair(
+                    conn,
+                    debit_account=self.ACCOUNT_REVENUE,
+                    credit_account=credit_account,
+                    amount=refund,
+                    description=f"Return #{return_id} — refund",
+                    reference_id=reference,
+                )
+                # Reverse COGS portion: DR Inventory, CR COGS
+                await self._post_ledger_pair(
+                    conn,
+                    debit_account=self.ACCOUNT_INVENTORY,
+                    credit_account=self.ACCOUNT_COGS,
+                    amount=cogs_portion,
+                    description=f"Return #{return_id} — COGS reversal",
+                    reference_id=reference,
+                )
 
         return return_id, new_stock
 
@@ -732,13 +1220,32 @@ class Database:
         category: Optional[str] = None,
         payment_method: str = "cash",
     ) -> int:
+        """Insert an expense + post its ledger entry atomically.
+
+        Ledger posting (one transaction):
+            DR 7400 Operating expense      = amount
+            CR 1100 Cash   (payment_method='cash')
+            CR 1200 Bank   (payment_method='transfer')
+            CR 2100 AP     (payment_method='credit' — unpaid supplier bill)
+        """
+        amt = round(float(amount), 2)
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """INSERT INTO expenses (amount, description, category, payment_method)
-                   VALUES ($1, $2, $3, $4) RETURNING id""",
-                amount, description, category, payment_method,
-            )
-            return row["id"]
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """INSERT INTO expenses (amount, description, category, payment_method)
+                       VALUES ($1, $2, $3, $4) RETURNING id""",
+                    amount, description, category, payment_method,
+                )
+                expense_id = row["id"]
+                label = description or category or f"Expense #{expense_id}"
+                await self._post_expense_ledger(
+                    conn,
+                    expense_id=expense_id,
+                    payment_method=payment_method,
+                    amount=amt,
+                    description=f"Expense #{expense_id} — {label}",
+                )
+            return expense_id
 
     async def get_weekly_expenses(self) -> List[ExpenseRow]:
         async with self.pool.acquire() as conn:
@@ -876,25 +1383,39 @@ class Database:
 
 
     async def pay_sale(self, sale_id: int, amount: float, payment_method: str) -> float:
-        """Pay a single nisia fully or partially.
+        """Pay a single nisia fully or partially + post AR settlement.
 
-        If amount >= sale total: marks sale as paid with payment_method.
-        If amount < sale total: reduces unit_price to reflect remaining balance.
-        Returns remaining debt on this sale after payment (0.0 if fully paid).
+        If amount >= sale total: marks sale paid, posts full settlement.
+        If amount < sale total: reduces unit_price, posts partial settlement.
+        Settlement posts under reference "payment:{sale_id}" — DR cash/bank,
+        CR 1400 AR.
+        Returns remaining debt on this sale after payment (0.0 if fully paid,
+        or -1.0 if the sale was not found / already paid).
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    "SELECT unit_price, quantity FROM sales WHERE id = $1 AND payment_method = 'credit'",
+                    """SELECT unit_price, quantity, customer_name
+                       FROM sales
+                       WHERE id = $1 AND payment_method = 'credit'
+                       FOR UPDATE""",
                     sale_id,
                 )
                 if not row:
                     return -1.0  # sale not found or already paid
                 sale_total = float(row["unit_price"]) * row["quantity"]
+                label = row["customer_name"] or f"Sale #{sale_id}"
                 if amount >= sale_total:
                     await conn.execute(
                         "UPDATE sales SET payment_method = $1 WHERE id = $2",
                         payment_method, sale_id,
+                    )
+                    await self._post_settlement_ledger(
+                        conn,
+                        reference_id=f"payment:{sale_id}",
+                        payment_method=payment_method,
+                        amount=round(sale_total, 2),
+                        description=f"Nisia payment #{sale_id} — {label}",
                     )
                     return 0.0
                 else:
@@ -903,6 +1424,13 @@ class Database:
                     await conn.execute(
                         "UPDATE sales SET unit_price = $1 WHERE id = $2",
                         new_price, sale_id,
+                    )
+                    await self._post_settlement_ledger(
+                        conn,
+                        reference_id=f"payment:{sale_id}",
+                        payment_method=payment_method,
+                        amount=round(float(amount), 2),
+                        description=f"Nisia partial payment #{sale_id} — {label}",
                     )
                     return remaining
 
@@ -1006,22 +1534,23 @@ class Database:
         clear_product: bool = False,
         seller_type: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Update sale fields. Adjusts product stock atomically when quantity
-        and/or product_id change.
+        """Atomically update a sale: stock, inventory batches, and ledger.
 
-        Stock rules (run inside a single transaction):
-          • product_id unchanged, quantity changed → delta on same product.
-          • product_id changed (or cleared) → restore old product's stock by
-            the old quantity, then deduct the effective (new) quantity from
-            the new product (if any).
-          • freeform (clear_product=True) drops the product link and stores
-            the product label in `notes`.
+        All changes happen inside a single transaction:
+          • stock: +old_quantity / -new_quantity across old/new product.
+          • batches: when product or quantity changed, restore the old sale's
+            batch at its recorded cost and FIFO-consume a fresh batch for the
+            new quantity. cost_amount on the sale is rewritten to the fresh
+            cost so COGS stays tied to real batches.
+          • ledger: when any of (quantity, unit_price, product_id,
+            payment_method) change, reverse the old "sale:{id}" revenue +
+            COGS pair and post a new pair matching the new values. Net
+            bookkeeping stays balanced.
 
-        `None` for any column means "leave unchanged" (no-op). For the
-        product link, pass `product_id=<int>` to relink or
-        `clear_product=True` to detach.
-
-        Returns the updated sale row, or None if the sale was not found.
+        `None` for any column means "leave unchanged". Use
+        clear_product=True to detach a product; use product_id=<int> to
+        relink. Returns the updated sale row, or None if the sale was not
+        found.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -1033,7 +1562,10 @@ class Database:
                 old = dict(sale)
 
                 old_product_id = old.get("product_id")
-                old_quantity = int(old["quantity"])
+                old_quantity   = int(old["quantity"])
+                old_unit_price = float(old["unit_price"])
+                old_pm         = old["payment_method"]
+                old_cost       = float(old.get("cost_amount") or 0.0)
 
                 # Resolve the new values in terms of "what will actually be stored"
                 if clear_product:
@@ -1043,21 +1575,26 @@ class Database:
                 else:
                     new_product_id = old_product_id
 
-                new_quantity = int(quantity) if quantity is not None else old_quantity
+                new_quantity   = int(quantity) if quantity is not None else old_quantity
+                new_unit_price = float(unit_price) if unit_price is not None else old_unit_price
+                new_pm         = payment_method if payment_method is not None else old_pm
 
-                product_changed = new_product_id != old_product_id
+                product_changed  = new_product_id != old_product_id
                 quantity_changed = new_quantity != old_quantity
+                price_changed    = new_unit_price != old_unit_price
+                pm_changed       = new_pm != old_pm
+                ledger_touching  = (
+                    product_changed or quantity_changed or price_changed or pm_changed
+                )
 
                 # ─── Stock adjustment ─────────────────────────────────────
                 if product_changed:
-                    # Restore the old product's stock by the old quantity
                     if old_product_id is not None:
                         await conn.execute(
                             "UPDATE products SET current_stock = current_stock + $1 "
                             "WHERE id = $2",
                             old_quantity, old_product_id,
                         )
-                    # Deduct the (possibly new) quantity from the new product
                     if new_product_id is not None:
                         await conn.execute(
                             "UPDATE products SET current_stock = current_stock - $1 "
@@ -1072,7 +1609,22 @@ class Database:
                         delta, old_product_id,
                     )
 
-                # ─── Build the UPDATE ─────────────────────────────────────
+                # ─── Inventory batch rebalance ────────────────────────────
+                # Only disturb batches when product or quantity actually moved.
+                new_cost = old_cost
+                if product_changed or quantity_changed:
+                    if old_product_id is not None and old_cost > 0:
+                        await self._restore_inventory_batch(
+                            conn, old_product_id, old_quantity, old_cost,
+                            note=f"Edit reversal of sale #{sale_id}",
+                        )
+                    new_cost = 0.0
+                    if new_product_id is not None:
+                        new_cost = await self._consume_inventory_fifo(
+                            conn, new_product_id, new_quantity,
+                        )
+
+                # ─── Build the UPDATE (data columns) ─────────────────────
                 updates: List[str] = []
                 values: List[Any] = []
                 idx = 1
@@ -1083,11 +1635,11 @@ class Database:
                     idx += 1
                 if unit_price is not None:
                     updates.append(f"unit_price = ${idx}")
-                    values.append(float(unit_price))
+                    values.append(new_unit_price)
                     idx += 1
                 if payment_method is not None:
                     updates.append(f"payment_method = ${idx}")
-                    values.append(payment_method)
+                    values.append(new_pm)
                     idx += 1
                 if seller_type is not None:
                     updates.append(f"seller_type = ${idx}")
@@ -1105,16 +1657,45 @@ class Database:
                     updates.append(f"product_id = ${idx}")
                     values.append(new_product_id)
                     idx += 1
+                if product_changed or quantity_changed:
+                    updates.append(f"cost_amount = ${idx}")
+                    values.append(round(new_cost, 2))
+                    idx += 1
 
-                if not updates:
+                if not updates and not ledger_touching:
                     return self._row(sale)
 
-                values.append(sale_id)
-                row = await conn.fetchrow(
-                    f"UPDATE sales SET {', '.join(updates)} "
-                    f"WHERE id = ${idx} RETURNING *",
-                    *values,
-                )
+                row = sale
+                if updates:
+                    values.append(sale_id)
+                    row = await conn.fetchrow(
+                        f"UPDATE sales SET {', '.join(updates)} "
+                        f"WHERE id = ${idx} RETURNING *",
+                        *values,
+                    )
+
+                # ─── Ledger rebalance ─────────────────────────────────────
+                if ledger_touching:
+                    label_old = old.get("customer_name") or f"Sale #{sale_id}"
+                    label_new = (customer_name if customer_name is not None
+                                 else old.get("customer_name")) or f"Sale #{sale_id}"
+                    await self._reverse_sale_ledger(
+                        conn,
+                        sale_id=sale_id,
+                        payment_method=old_pm,
+                        revenue=round(old_unit_price * old_quantity, 2),
+                        cost_amount=old_cost,
+                        description=f"Sale #{sale_id} — {label_old}",
+                    )
+                    await self._post_sale_ledger(
+                        conn,
+                        sale_id=sale_id,
+                        payment_method=new_pm,
+                        revenue=round(new_unit_price * new_quantity, 2),
+                        cost_amount=round(new_cost, 2),
+                        description=f"Sale #{sale_id} (edited) — {label_new}",
+                    )
+
                 # Re-join product name for callers that expect it
                 if row:
                     result = dict(row)
@@ -1140,8 +1721,11 @@ class Database:
         amount: Optional[float] = None,
         description: Optional[str] = None,
         category: Optional[str] = None,
+        payment_method: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Update expense fields. Returns updated row or None if not found."""
+        """Update expense fields atomically. Re-posts ledger when amount or
+        payment_method changes (reverse old, post new) so bookkeeping stays
+        balanced. Returns updated row or None if not found."""
         updates: List[str] = []
         values: List[Any] = []
         idx = 1
@@ -1157,15 +1741,57 @@ class Database:
             updates.append(f"category = ${idx}")
             values.append(category or None)
             idx += 1
+        if payment_method is not None:
+            updates.append(f"payment_method = ${idx}")
+            values.append(payment_method)
+            idx += 1
+
         if not updates:
             return await self.get_expense(expense_id)
-        values.append(expense_id)
+
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"UPDATE expenses SET {', '.join(updates)} WHERE id = ${idx} RETURNING *",
-                *values,
-            )
-            return self._row(row)
+            async with conn.transaction():
+                current = await conn.fetchrow(
+                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE", expense_id,
+                )
+                if not current:
+                    return None
+                old = dict(current)
+
+                values.append(expense_id)
+                row = await conn.fetchrow(
+                    f"UPDATE expenses SET {', '.join(updates)} "
+                    f"WHERE id = ${idx} RETURNING *",
+                    *values,
+                )
+                new_row = dict(row) if row else None
+                if new_row is None:
+                    return None
+
+                old_amount = round(float(old["amount"]), 2)
+                new_amount = round(float(new_row["amount"]), 2)
+                old_pm = old["payment_method"]
+                new_pm = new_row["payment_method"]
+
+                if old_amount != new_amount or old_pm != new_pm:
+                    old_label = old.get("description") or old.get("category") or f"Expense #{expense_id}"
+                    new_label = new_row.get("description") or new_row.get("category") or f"Expense #{expense_id}"
+                    await self._reverse_expense_ledger(
+                        conn,
+                        expense_id=expense_id,
+                        payment_method=old_pm,
+                        amount=old_amount,
+                        description=f"Expense #{expense_id} — {old_label}",
+                    )
+                    await self._post_expense_ledger(
+                        conn,
+                        expense_id=expense_id,
+                        payment_method=new_pm,
+                        amount=new_amount,
+                        description=f"Expense #{expense_id} — {new_label}",
+                    )
+
+                return new_row
 
     async def update_expense_topic_message(
         self, expense_id: int, topic_id: int, topic_message_id: int
@@ -1192,42 +1818,71 @@ class Database:
     # ─── Soft-delete & restore ────────────────────────────────────────────────
 
     async def soft_delete_sale(self, sale_id: int) -> Optional[Dict[str, Any]]:
-        """Move a sale to deleted_sales (24h restore window), restore stock.
-        Returns the archived row (with topic_id / topic_message_id), or None."""
+        """Move a sale to deleted_sales (24h restore window), restore stock,
+        and reverse the sale's ledger entries atomically.
+
+        The original cost_amount travels with the archived row so a later
+        restore can consume WAC correctly regardless of drift.
+        Returns the archived row (with topic_id / topic_message_id), or None.
+        """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                sale = await conn.fetchrow("SELECT * FROM sales WHERE id=$1", sale_id)
+                sale = await conn.fetchrow(
+                    "SELECT * FROM sales WHERE id=$1 FOR UPDATE", sale_id,
+                )
                 if not sale:
                     return None
                 sale_dict = dict(sale)
+
+                qty = int(sale_dict["quantity"])
+                unit_price = float(sale_dict["unit_price"])
+                cost_amount = float(sale_dict.get("cost_amount") or 0.0)
+                revenue = round(unit_price * qty, 2)
+                pm = sale_dict["payment_method"]
+                product_id = sale_dict.get("product_id")
+                label = sale_dict.get("customer_name") or f"Sale #{sale_id}"
 
                 expires = self._now() + timedelta(hours=24)
                 archived = await conn.fetchrow(
                     """INSERT INTO deleted_sales
                            (original_sale_id, product_id, quantity, unit_price,
                             payment_method, seller_type, customer_name,
-                            sold_at, notes, topic_id, expires_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                            sold_at, notes, topic_id, cost_amount, expires_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                        RETURNING id""",
                     sale_dict["id"],
-                    sale_dict.get("product_id"),
-                    sale_dict["quantity"],
-                    sale_dict["unit_price"],
-                    sale_dict["payment_method"],
+                    product_id,
+                    qty,
+                    unit_price,
+                    pm,
                     sale_dict.get("seller_type", "individual"),
                     sale_dict.get("customer_name"),
                     sale_dict.get("sold_at"),
                     sale_dict.get("notes"),
                     sale_dict.get("topic_id"),
+                    cost_amount,
                     expires,
                 )
                 sale_dict["deleted_id"] = archived["id"]
 
-                if sale_dict.get("product_id"):
+                if product_id:
                     await conn.execute(
                         "UPDATE products SET current_stock=current_stock+$1 WHERE id=$2",
-                        sale_dict["quantity"], sale_dict["product_id"],
+                        qty, product_id,
                     )
+                    await self._restore_inventory_batch(
+                        conn, product_id, qty, cost_amount,
+                        note=f"Soft-delete of sale #{sale_id}",
+                    )
+
+                await self._reverse_sale_ledger(
+                    conn,
+                    sale_id=sale_id,
+                    payment_method=pm,
+                    revenue=revenue,
+                    cost_amount=cost_amount,
+                    description=f"Sale #{sale_id} — {label}",
+                )
                 await conn.execute("DELETE FROM sales WHERE id=$1", sale_id)
 
         return sale_dict
@@ -1240,8 +1895,18 @@ class Database:
             return dict(row) if row else None
 
     async def restore_deleted_sale(self, deleted_id: int) -> Optional[int]:
-        """Re-insert a deleted sale into sales, decrement stock.
-        Returns the new sale_id, or None if not found / expired."""
+        """Re-insert a deleted sale, re-consume inventory (WAC), re-post ledger.
+
+        Runs inside one transaction:
+          1. Look up the archived row (must be within 24h window).
+          2. INSERT a new sales row (fresh id).
+          3. Deduct stock and FIFO-consume inventory_batches at current WAC.
+             Cost may differ from the pre-delete cost if batches changed — we
+             store the fresh cost_amount on the new sale.
+          4. Post revenue + COGS ledger pair under reference "sale:{new_id}".
+          5. DELETE the archived row.
+        Returns the new sale_id, or None if not found / expired.
+        """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 ds = await conn.fetchrow(
@@ -1252,23 +1917,50 @@ class Database:
                     return None
                 d = dict(ds)
 
+                product_id = d.get("product_id")
+                qty = int(d["quantity"])
+                unit_price = float(d["unit_price"])
+                pm = d["payment_method"]
+                customer_name = d.get("customer_name")
+                revenue = round(unit_price * qty, 2)
+
                 row = await conn.fetchrow(
                     """INSERT INTO sales
                            (product_id, quantity, unit_price, payment_method,
                             seller_type, customer_name, sold_at, notes)
                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                        RETURNING id""",
-                    d.get("product_id"), d["quantity"], d["unit_price"],
-                    d["payment_method"], d.get("seller_type", "individual"),
-                    d.get("customer_name"), d.get("sold_at"), d.get("notes"),
+                    product_id, qty, unit_price, pm,
+                    d.get("seller_type", "individual"),
+                    customer_name, d.get("sold_at"), d.get("notes"),
                 )
                 new_sale_id = row["id"]
 
-                if d.get("product_id"):
+                cost_amount = 0.0
+                if product_id:
                     await conn.execute(
                         "UPDATE products SET current_stock=current_stock-$1 WHERE id=$2",
-                        d["quantity"], d["product_id"],
+                        qty, product_id,
                     )
+                    cost_amount = await self._consume_inventory_fifo(
+                        conn, product_id, qty,
+                    )
+                    if cost_amount > 0:
+                        await conn.execute(
+                            "UPDATE sales SET cost_amount = $1 WHERE id = $2",
+                            cost_amount, new_sale_id,
+                        )
+
+                label = customer_name or f"Sale #{new_sale_id}"
+                await self._post_sale_ledger(
+                    conn,
+                    sale_id=new_sale_id,
+                    payment_method=pm,
+                    revenue=revenue,
+                    cost_amount=cost_amount,
+                    description=f"Restored sale #{new_sale_id} — {label}",
+                )
+
                 await conn.execute("DELETE FROM deleted_sales WHERE id=$1", deleted_id)
 
         return new_sale_id

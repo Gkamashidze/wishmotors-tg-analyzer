@@ -194,6 +194,11 @@ DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- COGS snapshot on each sale so deletions / returns can reverse the exact
+-- cost originally posted to the ledger (WAC can drift after later receipts).
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(14, 2) NOT NULL DEFAULT 0;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(14, 2) NOT NULL DEFAULT 0;
 """
 
 

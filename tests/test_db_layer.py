@@ -90,12 +90,17 @@ class TestGetProductById:
 class TestCreateSale:
     @pytest.mark.asyncio
     async def test_returns_sale_id_and_new_stock(self):
+        """Product sale with no active batches: revenue pair posts, no COGS."""
         db = _make_db()
         pool, conn = _make_pool_mock()
 
-        sale_row = {"id": 42}
+        # fetchrow sequence: INSERT sales → UPDATE products stock
+        sale_row  = {"id": 42}
         stock_row = {"current_stock": 8}
         conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
+        # _consume_inventory_fifo: no active batches → cost 0
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
         db._pool = pool
 
         sale_id, new_stock = await db.create_sale(
@@ -107,12 +112,17 @@ class TestCreateSale:
 
         assert sale_id == 42
         assert new_stock == 8
+        # Revenue pair (DR cash, CR revenue) = 2 ledger INSERTs.
+        assert conn.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_no_product_id_returns_zero_stock(self):
+        """Freeform nisia sale: no stock/batches touched, AR pair posted."""
         db = _make_db()
         pool, conn = _make_pool_mock()
         conn.fetchrow = AsyncMock(return_value={"id": 7})
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
         db._pool = pool
 
         sale_id, new_stock = await db.create_sale(
@@ -124,6 +134,37 @@ class TestCreateSale:
 
         assert sale_id == 7
         assert new_stock == 0  # no product → stock unchanged
+        # Only the revenue/AR pair posts (DR 1400 AR, CR 6100 Revenue).
+        assert conn.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_posts_cogs_pair_when_batches_exist(self):
+        """Sale against an active batch posts both revenue and COGS pairs."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        sale_row  = {"id": 55}
+        stock_row = {"current_stock": 3}
+        conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
+        # One batch covering the full qty at cost 10.0 per unit.
+        conn.fetch = AsyncMock(return_value=[
+            {"id": 1, "remaining_quantity": 5, "unit_cost": 10.0},
+        ])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        sale_id, new_stock = await db.create_sale(
+            product_id=1,
+            quantity=2,
+            unit_price=30.0,
+            payment_method="cash",
+        )
+
+        assert sale_id == 55
+        assert new_stock == 3
+        # 1 batch update + 1 UPDATE sales.cost_amount + 4 ledger INSERTs
+        # (revenue pair + COGS pair) = 6.
+        assert conn.execute.call_count == 6
 
 
 class TestDeleteSale:
@@ -146,6 +187,7 @@ class TestDeleteSale:
             "unit_price": 30.0, "payment_method": "cash",
             "seller_type": "individual", "customer_name": None,
             "sold_at": None, "notes": None,
+            "cost_amount": 20.0,
         }
         conn.fetchrow = AsyncMock(return_value=fake_sale)
         conn.execute = AsyncMock()
@@ -154,30 +196,43 @@ class TestDeleteSale:
         result = await db.delete_sale(5)
         assert result is not None
         assert result["id"] == 5
-        # Verify stock restore was called
-        conn.execute.assert_called()
+        # Expected executes:
+        #   1. UPDATE products (stock restore)
+        #   2. INSERT inventory_batches (restore batch at original cost)
+        #   3..4. Revenue reversal pair (DR revenue, CR cash)
+        #   5..6. COGS reversal pair (DR inventory, CR COGS)
+        #   7. DELETE sales row
+        assert conn.execute.call_count == 7
 
 
 class TestMarkSalePaid:
     @pytest.mark.asyncio
     async def test_returns_true_when_updated(self):
+        """Full payoff of a nisia posts settlement pair (DR cash, CR AR)."""
         db = _make_db()
         pool, conn = _make_pool_mock()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        conn.fetchrow = AsyncMock(return_value={
+            "id": 1, "unit_price": 30.0, "quantity": 2, "customer_name": "Giorgi",
+        })
+        conn.execute = AsyncMock()
         db._pool = pool
 
         result = await db.mark_sale_paid(1, "cash")
         assert result is True
+        # UPDATE sales.payment_method + 2 ledger INSERTs (settlement pair).
+        assert conn.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_returns_false_when_not_found(self):
         db = _make_db()
         pool, conn = _make_pool_mock()
-        conn.execute = AsyncMock(return_value="UPDATE 0")
+        conn.fetchrow = AsyncMock(return_value=None)
+        conn.execute = AsyncMock()
         db._pool = pool
 
         result = await db.mark_sale_paid(999, "cash")
         assert result is False
+        assert conn.execute.call_count == 0
 
 
 class TestUpdateStock:
