@@ -480,10 +480,15 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
     )
 
 
-# ─── Capital topic: Excel stock uploads ───────────────────────────────────────
+# ─── Inventory topic: Excel batch receipts (WAC + ledger posting) ─────────────
+# Expected columns (header row skipped): სახელი | OEM | მარაგი | ფასი
+# Each data row is posted as an inventory receipt: products.current_stock is
+# incremented, one inventory_batches row is created, and the ledger gets a
+# balanced pair of entries (DR Inventory / CR Accounts payable) so WAC can be
+# derived on demand from the inventory_batches table.
 
-@sales_router.message(InTopic(config.CAPITAL_TOPIC_ID), IsAdmin(), F.document)
-async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
+@sales_router.message(InTopic(config.INVENTORY_TOPIC_ID), IsAdmin(), F.document)
+async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> None:
     doc = message.document
     if not doc or not doc.file_name:
         return
@@ -507,7 +512,7 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text="⏳ ფაილი მუშავდება...",
+        text="⏳ საწყობის მიღება მუშავდება...",
         parse_mode=_PARSE,
     )
 
@@ -520,53 +525,80 @@ async def handle_excel_upload(message: Message, bot: Bot, db: Database) -> None:
         wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
         ws = wb.active
     except Exception as exc:
-        logger.error("Excel parse error: %s", exc)
+        logger.error("Inventory Excel parse error: %s", exc)
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text="❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\nსვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>",
+            text=(
+                "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
+                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>"
+            ),
             parse_mode=_PARSE,
         )
         return
 
-    updated = 0
-    errors = 0
+    received = 0
+    created = 0
+    total_value = 0.0
+    errors: list[str] = []
     data_rows = 0
+    reference = f"xlsx:{doc.file_unique_id}"
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not row or row[0] is None:
             continue
         data_rows += 1
         if data_rows > _MAX_IMPORT_ROWS:
-            errors += 1
-            logger.warning("Excel upload exceeded %d row limit — remaining rows skipped.", _MAX_IMPORT_ROWS)
+            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა.")
             break
+
         try:
             name = str(row[0]).strip()
-            oem = str(row[1]).strip() if row[1] is not None else None
-            stock = int(row[2]) if row[2] is not None else 0
-            price = float(row[3]) if row[3] is not None else 0.0
+            oem = str(row[1]).strip() if len(row) > 1 and row[1] is not None else None
+            quantity = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
+            unit_cost = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
 
             if not name:
                 continue
+            if quantity <= 0:
+                raise ValueError("რაოდენობა უნდა იყოს > 0")
+            if unit_cost < 0:
+                raise ValueError("ფასი უნდა იყოს >= 0")
 
-            await db.upsert_product(
+            result = await db.receive_inventory_batch(
                 name=name,
                 oem_code=oem,
-                stock=stock,
+                quantity=quantity,
+                unit_cost=unit_cost,
                 min_stock=config.MIN_STOCK_THRESHOLD,
-                price=price,
+                reference=reference,
+                notes=f"Inventory receipt via Excel upload (row {row_idx})",
             )
-            updated += 1
+            received += 1
+            total_value += result["total_cost"]
+            if result["was_created"]:
+                created += 1
         except Exception as exc:
-            logger.error("Row error %s: %s", row, exc)
-            errors += 1
+            logger.warning("Inventory row %d error: %s", row_idx, exc)
+            errors.append(f"სტრიქონი {row_idx}: {exc}")
 
-    summary = f"✅ <b>საწყობი განახლდა!</b>\n📦 პროდუქტები: {updated}ც"
+    summary_lines = [
+        "✅ <b>საწყობი განახლდა!</b>",
+        f"📦 მიღებები: <b>{received}</b>",
+    ]
+    if created:
+        summary_lines.append(f"🆕 ახალი პროდუქტი: <b>{created}</b>")
+    summary_lines.append(f"💰 ჯამური ღირებულება: <b>{total_value:.2f}₾</b>")
+    summary_lines.append("📘 ledger: DR 1300 Inventory / CR 2100 Accounts payable")
     if errors:
-        summary += f"\n⚠️ გამოტოვებული სტრიქონები: {errors}"
+        preview = "\n".join(errors[:5])
+        if len(errors) > 5:
+            preview += f"\n... და კიდევ {len(errors) - 5}"
+        summary_lines.append(
+            f"⚠️ გამოტოვებული ({len(errors)}):\n<code>{html.escape(preview)}</code>"
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=summary,
+        text="\n".join(summary_lines),
         parse_mode=_PARSE,
     )

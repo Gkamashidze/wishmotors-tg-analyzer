@@ -1,5 +1,5 @@
 import time
-from typing import Union
+from typing import Optional, Union
 
 from aiogram.filters import Filter
 from aiogram.types import CallbackQuery, Message
@@ -8,12 +8,19 @@ import config
 
 
 class InTopic(Filter):
-    """Passes only when a message belongs to a specific forum topic in the group."""
+    """Passes only when a message belongs to a specific forum topic in the group.
 
-    def __init__(self, topic_id: int) -> None:
+    Accepts `None` as topic_id — in that case the filter never matches. This keeps
+    handlers registered against optional topics (e.g. INVENTORY_TOPIC_ID) safe when
+    the environment variable is not configured.
+    """
+
+    def __init__(self, topic_id: Optional[int]) -> None:
         self.topic_id = topic_id
 
     async def __call__(self, message: Message) -> bool:
+        if self.topic_id is None:
+            return False
         return (
             message.chat.id == config.GROUP_ID
             and message.message_thread_id == self.topic_id

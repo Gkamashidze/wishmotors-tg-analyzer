@@ -202,6 +202,114 @@ class TestUpdateStock:
         assert result == 0
 
 
+class TestGetProductWAC:
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_active_batches(self):
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+        conn.fetchrow = AsyncMock(return_value={"total_cost": None, "total_qty": None})
+        db._pool = pool
+
+        wac = await db.get_product_wac(1)
+        assert wac == 0.0
+
+    @pytest.mark.asyncio
+    async def test_returns_weighted_average_across_batches(self):
+        """Two active batches: 10 @ 5.00 + 20 @ 8.00 → WAC = 210 / 30 = 7.00"""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+        conn.fetchrow = AsyncMock(return_value={"total_cost": 210.0, "total_qty": 30.0})
+        db._pool = pool
+
+        wac = await db.get_product_wac(1)
+        assert wac == pytest.approx(7.0)
+
+
+class TestReceiveInventoryBatch:
+    @pytest.mark.asyncio
+    async def test_rejects_non_positive_quantity(self):
+        db = _make_db()
+        with pytest.raises(ValueError, match="quantity"):
+            await db.receive_inventory_batch(
+                name="სარკე", oem_code="12345", quantity=0,
+                unit_cost=10.0, min_stock=20,
+            )
+
+    @pytest.mark.asyncio
+    async def test_rejects_negative_unit_cost(self):
+        db = _make_db()
+        with pytest.raises(ValueError, match="unit_cost"):
+            await db.receive_inventory_batch(
+                name="სარკე", oem_code="12345", quantity=5,
+                unit_cost=-1.0, min_stock=20,
+            )
+
+    @pytest.mark.asyncio
+    async def test_existing_product_posts_batch_stock_and_ledger(self):
+        """Existing product: stock += qty, 1 batch insert, 2 ledger rows, WAC returned."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        # fetchrow sequence:
+        #   1. SELECT id FROM products WHERE oem_code = ... → existing
+        #   2. UPDATE products SET current_stock += ... RETURNING current_stock
+        #   3. INSERT INTO inventory_batches RETURNING id
+        #   4. SELECT WAC aggregates
+        conn.fetchrow = AsyncMock(side_effect=[
+            {"id": 7},                                     # product found by OEM
+            {"current_stock": 30},                         # stock after receipt
+            {"id": 100},                                   # batch id
+            {"total_cost": 200.0, "total_qty": 20.0},      # WAC aggregates
+        ])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        result = await db.receive_inventory_batch(
+            name="სარკე", oem_code="12345", quantity=10,
+            unit_cost=15.0, min_stock=20,
+        )
+
+        assert result["product_id"] == 7
+        assert result["batch_id"] == 100
+        assert result["new_stock"] == 30
+        assert result["new_wac"] == pytest.approx(10.0)
+        assert result["total_cost"] == pytest.approx(150.0)
+        assert result["was_created"] is False
+        # Two ledger inserts were executed (debit + credit).
+        assert conn.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_new_product_is_created_when_oem_missing(self):
+        """Unknown OEM → product row is inserted and was_created == True."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        # fetchrow sequence:
+        #   1. SELECT id FROM products WHERE oem_code = ... → None
+        #   2. INSERT INTO products ... RETURNING id
+        #   3. UPDATE products SET current_stock += ... RETURNING current_stock
+        #   4. INSERT INTO inventory_batches RETURNING id
+        #   5. SELECT WAC aggregates
+        conn.fetchrow = AsyncMock(side_effect=[
+            None,
+            {"id": 42},
+            {"current_stock": 5},
+            {"id": 101},
+            {"total_cost": 25.0, "total_qty": 5.0},
+        ])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        result = await db.receive_inventory_batch(
+            name="ახალი ნაწილი", oem_code="99999",
+            quantity=5, unit_cost=5.0, min_stock=20,
+        )
+
+        assert result["product_id"] == 42
+        assert result["was_created"] is True
+        assert result["new_wac"] == pytest.approx(5.0)
+
+
 class TestEditProduct:
     @pytest.mark.asyncio
     async def test_returns_none_when_no_updates(self):
