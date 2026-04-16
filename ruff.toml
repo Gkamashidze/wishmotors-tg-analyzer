@@ -1,0 +1,11 @@
+# Ruff lints only project code. Anything under `.claude/` is personal
+# tooling (skills, hooks) that lives alongside the repo for convenience —
+# it is not part of the shipped bot.
+extend-exclude = [
+    ".claude",
+    ".venv",
+    "venv",
+    "env",
+    "build",
+    "dist",
+]
