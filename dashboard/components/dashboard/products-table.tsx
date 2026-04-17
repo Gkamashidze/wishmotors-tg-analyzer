@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 import {
@@ -8,14 +8,89 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import type { ProductRow } from "@/lib/queries";
-import { formatGEL, formatNumber } from "@/lib/utils";
+import { formatGEL, formatNumber, cn } from "@/lib/utils";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ka-GE", { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("ka-GE", {
+    year: "numeric", month: "short", day: "numeric",
+  });
 }
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("ka-GE", {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function toDatetimeLocal(iso: string): string {
+  return iso.slice(0, 16);
+}
+
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: "ხელზე 💵",
+  transfer: "დარიცხვა 🏦",
+  credit: "ნისია 📋",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "⏳ მოლოდინი",
+  completed: "✅ შესრულდა",
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: "🔴 სასწრაფო",
+  normal: "🟡 ჩვეულებრივი",
+  low: "🟢 დაბალი",
+};
+
+// ─── Sub-transaction types ────────────────────────────────────────────────────
+
+interface ProductSale {
+  id: number;
+  quantity: number;
+  unitPrice: number;
+  paymentMethod: string;
+  customerName: string | null;
+  soldAt: string;
+  notes: string | null;
+  topicId: number | null;
+  topicMessageId: number | null;
+}
+
+interface ProductOrder {
+  id: number;
+  quantityNeeded: number;
+  status: string;
+  priority: string;
+  createdAt: string;
+  notes: string | null;
+  topicId: number | null;
+  topicMessageId: number | null;
+}
+
+interface SaleEditState {
+  quantity: string;
+  unit_price: string;
+  payment_method: string;
+  customer_name: string;
+  sold_at: string;
+  notes: string;
+}
+
+interface OrderEditState {
+  quantity_needed: string;
+  status: string;
+  priority: string;
+  notes: string;
+}
+
+// ─── Product edit state ───────────────────────────────────────────────────────
 
 interface EditState {
   name: string;
@@ -23,21 +98,99 @@ interface EditState {
 }
 
 function rowToEdit(r: ProductRow): EditState {
+  return { name: r.name, oem_code: r.oemCode ?? "" };
+}
+
+function saleToEdit(s: ProductSale): SaleEditState {
   return {
-    name: r.name,
-    oem_code: r.oemCode ?? "",
+    quantity: String(s.quantity),
+    unit_price: String(s.unitPrice),
+    payment_method: s.paymentMethod,
+    customer_name: s.customerName ?? "",
+    sold_at: toDatetimeLocal(s.soldAt),
+    notes: s.notes ?? "",
   };
 }
+
+function orderToEdit(o: ProductOrder): OrderEditState {
+  return {
+    quantity_needed: String(o.quantityNeeded),
+    status: o.status,
+    priority: o.priority,
+    notes: o.notes ?? "",
+  };
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+type TxTab = "info" | "sales" | "orders";
 
 export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+
+  // Product-level state
   const [viewRow, setViewRow] = useState<ProductRow | null>(null);
   const [editRow, setEditRow] = useState<ProductRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ProductRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Transactions tab state
+  const [txTab, setTxTab] = useState<TxTab>("info");
+  const [txSales, setTxSales] = useState<ProductSale[]>([]);
+  const [txOrders, setTxOrders] = useState<ProductOrder[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+
+  // Sub-sale edit
+  const [editSaleRow, setEditSaleRow] = useState<ProductSale | null>(null);
+  const [editSaleState, setEditSaleState] = useState<SaleEditState | null>(null);
+  const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
+
+  // Sub-order edit
+  const [editOrderRow, setEditOrderRow] = useState<ProductOrder | null>(null);
+  const [editOrderState, setEditOrderState] = useState<OrderEditState | null>(null);
+  const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null);
+
+  const [subSaving, setSubSaving] = useState(false);
+  const [subDeleting, setSubDeleting] = useState(false);
+
+  // ── Load transactions when viewRow changes ──────────────────────────────────
+
+  const reloadTx = useCallback(async (productId: number) => {
+    setTxLoading(true);
+    try {
+      const res = await fetch(`/api/products/${productId}/transactions`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { sales: ProductSale[]; orders: ProductOrder[] };
+      setTxSales(data.sales);
+      setTxOrders(data.orders);
+    } finally {
+      setTxLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!viewRow) {
+      setTxSales([]);
+      setTxOrders([]);
+      setTxTab("info");
+      return;
+    }
+    let cancelled = false;
+    setTxLoading(true);
+    fetch(`/api/products/${viewRow.id}/transactions`)
+      .then((r) => r.json())
+      .then((data: { sales: ProductSale[]; orders: ProductOrder[] }) => {
+        if (!cancelled) { setTxSales(data.sales); setTxOrders(data.orders); }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setTxLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewRow?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filtered rows ───────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -47,14 +200,14 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
     );
   }, [rows, search]);
 
+  // ── Product edit/delete ─────────────────────────────────────────────────────
+
   const openEdit = useCallback((r: ProductRow) => {
-    setEditRow(r);
-    setEditState(rowToEdit(r));
+    setEditRow(r); setEditState(rowToEdit(r));
   }, []);
 
   const closeEdit = useCallback(() => {
-    setEditRow(null);
-    setEditState(null);
+    setEditRow(null); setEditState(null);
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -94,9 +247,107 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
     }
   }, [deleteRow, router]);
 
-  const set = (key: keyof EditState) => (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
+  const set = (key: keyof EditState) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
+
+  // ── Sub-sale edit/delete ────────────────────────────────────────────────────
+
+  const openEditSale = (s: ProductSale) => {
+    setEditSaleRow(s); setEditSaleState(saleToEdit(s));
+  };
+
+  const handleSaveSale = useCallback(async () => {
+    if (!editSaleRow || !editSaleState || !viewRow) return;
+    setSubSaving(true);
+    try {
+      const res = await fetch(`/api/sales/${editSaleRow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: viewRow.id,
+          quantity: Number(editSaleState.quantity),
+          unit_price: Number(editSaleState.unit_price),
+          cost_amount: editSaleRow.unitPrice,
+          payment_method: editSaleState.payment_method,
+          seller_type: "individual",
+          customer_name: editSaleState.customer_name || null,
+          sold_at: new Date(editSaleState.sold_at).toISOString(),
+          notes: editSaleState.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("server error");
+      setEditSaleRow(null); setEditSaleState(null);
+      await reloadTx(viewRow.id);
+    } finally {
+      setSubSaving(false);
+    }
+  }, [editSaleRow, editSaleState, viewRow, reloadTx]);
+
+  const handleDeleteSale = useCallback(async () => {
+    if (!deleteSaleId || !viewRow) return;
+    setSubDeleting(true);
+    try {
+      const res = await fetch(`/api/sales/${deleteSaleId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("server error");
+      setDeleteSaleId(null);
+      await reloadTx(viewRow.id);
+    } finally {
+      setSubDeleting(false);
+    }
+  }, [deleteSaleId, viewRow, reloadTx]);
+
+  const setSaleField = (key: keyof SaleEditState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setEditSaleState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
+
+  // ── Sub-order edit/delete ───────────────────────────────────────────────────
+
+  const openEditOrder = (o: ProductOrder) => {
+    setEditOrderRow(o); setEditOrderState(orderToEdit(o));
+  };
+
+  const handleSaveOrder = useCallback(async () => {
+    if (!editOrderRow || !editOrderState || !viewRow) return;
+    setSubSaving(true);
+    try {
+      const res = await fetch(`/api/orders/${editOrderRow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: viewRow.id,
+          quantity_needed: Number(editOrderState.quantity_needed),
+          status: editOrderState.status,
+          priority: editOrderState.priority,
+          notes: editOrderState.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("server error");
+      setEditOrderRow(null); setEditOrderState(null);
+      await reloadTx(viewRow.id);
+    } finally {
+      setSubSaving(false);
+    }
+  }, [editOrderRow, editOrderState, viewRow, reloadTx]);
+
+  const handleDeleteOrder = useCallback(async () => {
+    if (!deleteOrderId || !viewRow) return;
+    setSubDeleting(true);
+    try {
+      const res = await fetch(`/api/orders/${deleteOrderId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("server error");
+      setDeleteOrderId(null);
+      await reloadTx(viewRow.id);
+    } finally {
+      setSubDeleting(false);
+    }
+  }, [deleteOrderId, viewRow, reloadTx]);
+
+  const setOrderField = (key: keyof OrderEditState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setEditOrderState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
@@ -158,27 +409,174 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
         </Table>
       </div>
 
-      {/* View Modal */}
-      <Dialog open={!!viewRow} onClose={() => setViewRow(null)} title={`პროდუქტის დეტალები #${viewRow?.id}`}>
+      {/* ── View Modal ──────────────────────────────────────────────────────── */}
+      <Dialog
+        open={!!viewRow}
+        onClose={() => setViewRow(null)}
+        title={`პროდუქტი: ${viewRow?.name ?? ""}`}
+        className="max-w-3xl"
+      >
         {viewRow && (
-          <div className="space-y-3">
-            <ViewFieldGrid>
-              <ViewField label="დასახელება" value={viewRow.name} className="sm:col-span-2" />
-              <ViewField label="OEM კოდი" value={viewRow.oemCode} />
-              <ViewField label="ერთეული" value={viewRow.unit} />
-              <ViewField label="მარაგი" value={formatNumber(viewRow.currentStock)} />
-              <ViewField label="მინ. მარაგი" value={formatNumber(viewRow.minStock)} />
-              <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
-              <ViewField label="დამატების თარიღი" value={formatDate(viewRow.createdAt)} />
-            </ViewFieldGrid>
-            <div className="flex justify-end pt-2">
-              <Button variant="outline" onClick={() => setViewRow(null)} className="cursor-pointer">დახურვა</Button>
+          <div className="space-y-4">
+            {/* Tabs */}
+            <div className="flex gap-1 border-b border-border -mx-5 px-5">
+              {(["info", "sales", "orders"] as TxTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setTxTab(tab)}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px",
+                    txTab === tab
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {tab === "info" && "ინფორმაცია"}
+                  {tab === "sales" && `გაყიდვები${txLoading ? "" : ` (${txSales.length})`}`}
+                  {tab === "orders" && `შეკვეთები${txLoading ? "" : ` (${txOrders.length})`}`}
+                </button>
+              ))}
+            </div>
+
+            {/* Info tab */}
+            {txTab === "info" && (
+              <ViewFieldGrid>
+                <ViewField label="დასახელება" value={viewRow.name} className="sm:col-span-2" />
+                <ViewField label="OEM კოდი" value={viewRow.oemCode} />
+                <ViewField label="ერთეული" value={viewRow.unit} />
+                <ViewField label="მარაგი" value={formatNumber(viewRow.currentStock)} />
+                <ViewField label="მინ. მარაგი" value={formatNumber(viewRow.minStock)} />
+                <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
+                <ViewField label="დამატების თარიღი" value={formatDate(viewRow.createdAt)} />
+              </ViewFieldGrid>
+            )}
+
+            {/* Sales tab */}
+            {txTab === "sales" && (
+              <div className="min-h-[200px]">
+                {txLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-10">იტვირთება...</p>
+                ) : txSales.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-10">გაყიდვები არ არის</p>
+                ) : (
+                  <div className="overflow-auto rounded-lg border border-border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10">#</TableHead>
+                          <TableHead>თარიღი</TableHead>
+                          <TableHead className="text-right">რ-ბა</TableHead>
+                          <TableHead className="text-right">ფასი</TableHead>
+                          <TableHead className="text-right">ჯამი</TableHead>
+                          <TableHead>გადახდა</TableHead>
+                          <TableHead>მყიდველი</TableHead>
+                          <TableHead className="w-16 text-right">მოქ.</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {txSales.map((s, idx) => (
+                          <TableRow key={s.id}>
+                            <TableCell className="text-xs text-muted-foreground tabular-nums">{idx + 1}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatDateTime(s.soldAt)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-xs">{s.quantity}</TableCell>
+                            <TableCell className="text-right tabular-nums text-xs">{s.unitPrice.toFixed(2)}₾</TableCell>
+                            <TableCell className="text-right tabular-nums text-xs font-medium">
+                              {(s.quantity * s.unitPrice).toFixed(2)}₾
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {PAYMENT_LABELS[s.paymentMethod] ?? s.paymentMethod}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {s.customerName ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 cursor-pointer" onClick={() => openEditSale(s)} aria-label="რედაქტირება">
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteSaleId(s.id)} aria-label="წაშლა">
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Orders tab */}
+            {txTab === "orders" && (
+              <div className="min-h-[200px]">
+                {txLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-10">იტვირთება...</p>
+                ) : txOrders.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-10">შეკვეთები არ არის</p>
+                ) : (
+                  <div className="overflow-auto rounded-lg border border-border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10">#</TableHead>
+                          <TableHead>თარიღი</TableHead>
+                          <TableHead className="text-right">რ-ბა</TableHead>
+                          <TableHead>სტატუსი</TableHead>
+                          <TableHead>პრიორ.</TableHead>
+                          <TableHead>შენ.</TableHead>
+                          <TableHead className="w-16 text-right">მოქ.</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {txOrders.map((o, idx) => (
+                          <TableRow key={o.id}>
+                            <TableCell className="text-xs text-muted-foreground tabular-nums">{idx + 1}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatDateTime(o.createdAt)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-xs">{o.quantityNeeded}</TableCell>
+                            <TableCell className="text-xs">
+                              {STATUS_LABELS[o.status] ?? o.status}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {PRIORITY_LABELS[o.priority] ?? o.priority}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">
+                              {o.notes ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 cursor-pointer" onClick={() => openEditOrder(o)} aria-label="რედაქტირება">
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteOrderId(o.id)} aria-label="წაშლა">
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <Button variant="outline" onClick={() => setViewRow(null)} className="cursor-pointer">
+                დახურვა
+              </Button>
             </div>
           </div>
         )}
       </Dialog>
 
-      {/* Edit Modal */}
+      {/* ── Product Edit Modal ───────────────────────────────────────────────── */}
       <Dialog open={!!editRow} onClose={closeEdit} title={`პროდუქტის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
@@ -186,13 +584,15 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
             <Input id="prod-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
-              <Button onClick={handleSave} disabled={saving} className="cursor-pointer">{saving ? "ინახება..." : "შენახვა"}</Button>
+              <Button onClick={handleSave} disabled={saving} className="cursor-pointer">
+                {saving ? "ინახება..." : "შენახვა"}
+              </Button>
             </div>
           </div>
         )}
       </Dialog>
 
-      {/* Delete Confirm */}
+      {/* ── Product Delete Confirm ───────────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteRow}
         onClose={() => setDeleteRow(null)}
@@ -200,6 +600,107 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
         title="პროდუქტის წაშლა"
         description={`გსურთ პროდუქტი "${deleteRow?.name}" წაშლა? ეს მოქმედება შეუქცევადია.`}
         loading={deleting}
+      />
+
+      {/* ── Sub-sale Edit Modal ──────────────────────────────────────────────── */}
+      <Dialog
+        open={!!editSaleRow}
+        onClose={() => { setEditSaleRow(null); setEditSaleState(null); }}
+        title={`გაყიდვის რედაქტირება #${editSaleRow?.id}`}
+      >
+        {editSaleState && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Input id="sale-qty" label="რაოდენობა" type="number" min="1" value={editSaleState.quantity} onChange={setSaleField("quantity")} />
+              <Input id="sale-price" label="ერთ. ფასი (₾)" type="number" min="0" step="0.01" value={editSaleState.unit_price} onChange={setSaleField("unit_price")} />
+            </div>
+            <Select
+              id="sale-pay"
+              label="გადახდის მეთოდი"
+              value={editSaleState.payment_method}
+              onChange={setSaleField("payment_method")}
+              options={[
+                { value: "cash", label: "ხელზე 💵" },
+                { value: "transfer", label: "დარიცხვა 🏦" },
+                { value: "credit", label: "ნისია 📋" },
+              ]}
+            />
+            <Input id="sale-cust" label="მყიდველი" type="text" value={editSaleState.customer_name} onChange={setSaleField("customer_name")} placeholder="სურვილისამებრ" />
+            <Input id="sale-date" label="გაყიდვის თარიღი" type="datetime-local" value={editSaleState.sold_at} onChange={setSaleField("sold_at")} />
+            <Input id="sale-notes" label="შენიშვნა" type="text" value={editSaleState.notes} onChange={setSaleField("notes")} placeholder="სურვილისამებრ" />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => { setEditSaleRow(null); setEditSaleState(null); }} disabled={subSaving} className="cursor-pointer">
+                გაუქმება
+              </Button>
+              <Button onClick={handleSaveSale} disabled={subSaving} className="cursor-pointer">
+                {subSaving ? "ინახება..." : "შენახვა"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* ── Sub-sale Delete Confirm ──────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteSaleId}
+        onClose={() => setDeleteSaleId(null)}
+        onConfirm={handleDeleteSale}
+        title="გაყიდვის წაშლა"
+        description={`გსურთ გაყიდვა #${deleteSaleId} წაშლა? ეს მოქმედება შეუქცევადია.`}
+        loading={subDeleting}
+      />
+
+      {/* ── Sub-order Edit Modal ─────────────────────────────────────────────── */}
+      <Dialog
+        open={!!editOrderRow}
+        onClose={() => { setEditOrderRow(null); setEditOrderState(null); }}
+        title={`შეკვეთის რედაქტირება #${editOrderRow?.id}`}
+      >
+        {editOrderState && (
+          <div className="space-y-3">
+            <Input id="ord-qty" label="საჭირო რ-ბა" type="number" min="1" value={editOrderState.quantity_needed} onChange={setOrderField("quantity_needed")} />
+            <Select
+              id="ord-status"
+              label="სტატუსი"
+              value={editOrderState.status}
+              onChange={setOrderField("status")}
+              options={[
+                { value: "pending", label: "⏳ მოლოდინი" },
+                { value: "completed", label: "✅ შესრულდა" },
+              ]}
+            />
+            <Select
+              id="ord-priority"
+              label="პრიორიტეტი"
+              value={editOrderState.priority}
+              onChange={setOrderField("priority")}
+              options={[
+                { value: "urgent", label: "🔴 სასწრაფო" },
+                { value: "normal", label: "🟡 ჩვეულებრივი" },
+                { value: "low", label: "🟢 დაბალი" },
+              ]}
+            />
+            <Input id="ord-notes" label="შენიშვნა" type="text" value={editOrderState.notes} onChange={setOrderField("notes")} placeholder="სურვილისამებრ" />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => { setEditOrderRow(null); setEditOrderState(null); }} disabled={subSaving} className="cursor-pointer">
+                გაუქმება
+              </Button>
+              <Button onClick={handleSaveOrder} disabled={subSaving} className="cursor-pointer">
+                {subSaving ? "ინახება..." : "შენახვა"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* ── Sub-order Delete Confirm ─────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteOrderId}
+        onClose={() => setDeleteOrderId(null)}
+        onConfirm={handleDeleteOrder}
+        title="შეკვეთის წაშლა"
+        description={`გსურთ შეკვეთა #${deleteOrderId} წაშლა? ეს მოქმედება შეუქცევადია.`}
+        loading={subDeleting}
       />
     </div>
   );
