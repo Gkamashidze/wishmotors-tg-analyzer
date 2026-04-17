@@ -37,6 +37,7 @@ from bot.handlers.topic_messages import (
     mark_updated,
     topic_expense_kb,
     topic_nisia_kb,
+    topic_sale_kb,
 )
 from bot.reports.formatter import (
     format_topic_expense,
@@ -372,6 +373,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
 
     # Mirror to topic and save message_id for later deletion/edit
     topic_id = config.NISIAS_TOPIC_ID if payment == "credit" else config.SALES_TOPIC_ID
+    topic_kb = topic_nisia_kb(sale_id) if payment == "credit" else topic_sale_kb(sale_id)
     try:
         topic_msg = await callback.bot.send_message(
             chat_id=config.GROUP_ID,
@@ -385,6 +387,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
                 unknown_product=is_freeform,
             ),
             parse_mode=_PARSE,
+            reply_markup=topic_kb,
         )
         await db.update_sale_topic_message(sale_id, topic_id, topic_msg.message_id)
     except Exception as exc:
@@ -1451,12 +1454,18 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
             await mark_cancelled(
                 callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text,
             )
+        new_topic_kb = (
+            topic_nisia_kb(sale_id)
+            if updated["payment_method"] == "credit"
+            else topic_sale_kb(sale_id)
+        )
         try:
             new_topic = await callback.bot.send_message(
                 chat_id=config.GROUP_ID,
                 message_thread_id=new_topic_id,
                 text=new_topic_text,
                 parse_mode=_PARSE,
+                reply_markup=new_topic_kb,
             )
             await db.update_sale_topic_message(sale_id, new_topic_id, new_topic.message_id)
         except Exception as exc:
