@@ -198,3 +198,164 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
     notes: r.notes,
   }));
 }
+
+// ─── Sales ────────────────────────────────────────────────────────────────────
+
+export type SaleRow = {
+  id: number;
+  productId: number | null;
+  productName: string | null;
+  quantity: number;
+  unitPrice: number;
+  costAmount: number;
+  paymentMethod: string;
+  sellerType: string;
+  customerName: string | null;
+  soldAt: string;
+  notes: string | null;
+  receiptPrinted: boolean;
+};
+
+export async function getSales(limit: number = 500): Promise<SaleRow[]> {
+  const rows = await query<{
+    id: number;
+    product_id: number | null;
+    product_name: string | null;
+    quantity: number;
+    unit_price: string;
+    cost_amount: string;
+    payment_method: string;
+    seller_type: string;
+    customer_name: string | null;
+    sold_at: Date;
+    notes: string | null;
+    receipt_printed: boolean;
+  }>(
+    `
+    SELECT
+      s.id,
+      s.product_id,
+      p.name        AS product_name,
+      s.quantity,
+      s.unit_price,
+      s.cost_amount,
+      s.payment_method,
+      s.seller_type,
+      s.customer_name,
+      s.sold_at,
+      s.notes,
+      s.receipt_printed
+    FROM sales s
+    LEFT JOIN products p ON p.id = s.product_id
+    ORDER BY s.sold_at DESC
+    LIMIT $1
+    `,
+    [limit],
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    productId: r.product_id,
+    productName: r.product_name,
+    quantity: r.quantity,
+    unitPrice: Number(r.unit_price),
+    costAmount: Number(r.cost_amount),
+    paymentMethod: r.payment_method,
+    sellerType: r.seller_type,
+    customerName: r.customer_name,
+    soldAt:
+      r.sold_at instanceof Date
+        ? r.sold_at.toISOString()
+        : String(r.sold_at),
+    notes: r.notes,
+    receiptPrinted: r.receipt_printed,
+  }));
+}
+
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+
+export type ExpenseRow = {
+  id: number;
+  amount: number;
+  description: string | null;
+  category: string | null;
+  paymentMethod: string;
+  createdAt: string;
+};
+
+export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
+  const rows = await query<{
+    id: number;
+    amount: string;
+    description: string | null;
+    category: string | null;
+    payment_method: string;
+    created_at: Date;
+  }>(
+    `
+    SELECT id, amount, description, category, payment_method, created_at
+    FROM expenses
+    ORDER BY created_at DESC
+    LIMIT $1
+    `,
+    [limit],
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    amount: Number(r.amount),
+    description: r.description,
+    category: r.category,
+    paymentMethod: r.payment_method,
+    createdAt:
+      r.created_at instanceof Date
+        ? r.created_at.toISOString()
+        : String(r.created_at),
+  }));
+}
+
+// ─── Products (Inventory) ─────────────────────────────────────────────────────
+
+export type ProductRow = {
+  id: number;
+  name: string;
+  oemCode: string | null;
+  currentStock: number;
+  minStock: number;
+  unitPrice: number;
+  unit: string;
+  createdAt: string;
+};
+
+export async function getProducts(): Promise<ProductRow[]> {
+  const rows = await query<{
+    id: number;
+    name: string;
+    oem_code: string | null;
+    current_stock: number;
+    min_stock: number;
+    unit_price: string;
+    unit: string;
+    created_at: Date;
+  }>(
+    `
+    SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
+    FROM products
+    ORDER BY name ASC
+    `,
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    oemCode: r.oem_code,
+    currentStock: r.current_stock,
+    minStock: r.min_stock,
+    unitPrice: Number(r.unit_price),
+    unit: r.unit,
+    createdAt:
+      r.created_at instanceof Date
+        ? r.created_at.toISOString()
+        : String(r.created_at),
+  }));
+}

@@ -5,6 +5,9 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   ClipboardList,
+  TrendingUp,
+  Receipt,
+  Package,
   Settings,
   LifeBuoy,
   Wrench,
@@ -18,8 +21,11 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "მთავარი დაფა", icon: LayoutDashboard },
   { href: "/orders", label: "შეკვეთები", icon: ClipboardList },
+  { href: "/sales", label: "გაყიდვები", icon: TrendingUp },
+  { href: "/expenses", label: "ხარჯები", icon: Receipt },
+  { href: "/inventory", label: "მარაგი", icon: Package },
 ];
 
 const BOTTOM_NAV: NavItem[] = [

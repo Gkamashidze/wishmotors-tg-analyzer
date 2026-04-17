@@ -1,19 +1,13 @@
 import { TopBar } from "@/components/top-bar";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrdersTable } from "@/components/dashboard/orders-table";
-import { getOrders } from "@/lib/queries";
+import { getOrders, getProducts } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function OrdersPage() {
-  const orders = await getOrders(500);
+  const [orders, products] = await Promise.all([getOrders(500), getProducts()]);
 
   return (
     <>
@@ -27,7 +21,7 @@ export default async function OrdersPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <OrdersTable rows={orders} />
+            <OrdersTable rows={orders} products={products} />
           </CardContent>
         </Card>
       </main>
