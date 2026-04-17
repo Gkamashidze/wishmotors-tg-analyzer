@@ -3,6 +3,7 @@ import html
 import logging
 import os
 import sys
+from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict
 
 # Guard: prevent accidental local runs that conflict with Railway
@@ -22,6 +23,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
+from bot.financial_ai import generate_weekly_advice
 from bot.handlers.addorder import addorder_router
 from bot.handlers.commands import commands_router
 from bot.handlers.wizard import wizard_router
@@ -83,8 +85,13 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
         returns = await db.get_weekly_returns()
         expenses = await db.get_weekly_expenses()
         products = await db.get_all_products()
+        cash = await db.get_cash_on_hand()
 
-        text = format_weekly_report(sales, returns, expenses, products)
+        tz = pytz.timezone(config.TIMEZONE)
+        now = datetime.now(tz)
+        ai_advice = await generate_weekly_advice(db, now - timedelta(days=7), now)
+
+        text = format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice)
 
         # DM each admin
         for admin_id in config.ADMIN_IDS:

@@ -3,9 +3,11 @@ import hashlib
 import html
 import io
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
 import openpyxl
+import pytz
 
 from aiogram import Router
 from aiogram.enums import ParseMode
@@ -15,6 +17,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
+from bot.financial_ai import generate_weekly_advice
 from bot.handlers import IsAdmin, is_rate_limited
 from bot.handlers.topic_messages import mark_cancelled, restore_original
 from bot.reports.formatter import (
@@ -137,9 +140,13 @@ async def cmd_report(message: Message, db: Database) -> None:
         db.get_cash_on_hand(),
     )
 
+    tz = pytz.timezone(config.TIMEZONE)
+    now = datetime.now(tz)
+    ai_advice = await generate_weekly_advice(db, now - timedelta(days=7), now)
+
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=format_weekly_report(sales, returns, expenses, products, cash),
+        text=format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice),
         parse_mode=_PARSE,
     )
 

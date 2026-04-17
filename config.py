@@ -44,3 +44,8 @@ REPORT_HOUR: int = int(os.getenv("REPORT_HOUR", "22"))
 REPORT_MINUTE: int = int(os.getenv("REPORT_MINUTE", "0"))
 MIN_STOCK_THRESHOLD: int = int(os.getenv("MIN_STOCK_THRESHOLD", "20"))
 MAX_EXCEL_BYTES: int = int(os.getenv("MAX_EXCEL_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+
+# Optional: Anthropic API key for the AI Financial Manager.
+# When set, weekly reports include an AI-generated business analysis block.
+# When unset, reports go out exactly as before.
+ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")

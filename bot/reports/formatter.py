@@ -303,6 +303,7 @@ def format_weekly_report(
     expenses: Sequence[Any],
     products: Sequence[Any],
     cash_on_hand: Optional[Dict[str, float]] = None,
+    ai_advice: Optional[str] = None,
 ) -> str:
     now = _now()
     week_start = now - timedelta(days=7)
@@ -324,6 +325,9 @@ def format_weekly_report(
                 f"• {_e(p['name'])}: {p['current_stock']}ც "
                 f"(მინ: {p['min_stock']}ც)"
             )
+
+    if ai_advice:
+        lines += ["", "━━━━━━━━━━━━━━━━━━━━━", ai_advice]
 
     lines += ["", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
     return _truncate("\n".join(lines))
