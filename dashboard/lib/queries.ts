@@ -327,6 +327,70 @@ export type ProductRow = {
   createdAt: string;
 };
 
+export async function getDashboardSummaryRange(
+  from: Date,
+  to: Date,
+): Promise<DashboardSummary> {
+  const row = await queryOne<{
+    total_sales: string | null;
+    total_cogs: string | null;
+    total_expenses: string | null;
+    sales_count: string | null;
+    pending_orders: string | null;
+    urgent_orders: string | null;
+  }>(
+    `
+    WITH
+      sales_agg AS (
+        SELECT
+          COALESCE(SUM(quantity * unit_price), 0) AS total_sales,
+          COALESCE(SUM(cost_amount), 0)           AS total_cogs,
+          COUNT(*)                                 AS sales_count
+        FROM sales
+        WHERE sold_at >= $1::timestamptz
+          AND sold_at <  $2::timestamptz + INTERVAL '1 day'
+      ),
+      exp_agg AS (
+        SELECT COALESCE(SUM(amount), 0) AS total_expenses
+        FROM expenses
+        WHERE created_at >= $1::timestamptz
+          AND created_at <  $2::timestamptz + INTERVAL '1 day'
+      ),
+      ord_agg AS (
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'pending')                          AS pending_orders,
+          COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'urgent')  AS urgent_orders
+        FROM orders
+      )
+    SELECT
+      sales_agg.total_sales,
+      sales_agg.total_cogs,
+      sales_agg.sales_count,
+      exp_agg.total_expenses,
+      ord_agg.pending_orders,
+      ord_agg.urgent_orders
+    FROM sales_agg, exp_agg, ord_agg
+    `,
+    [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)],
+  );
+
+  const totalSales = Number(row?.total_sales ?? 0);
+  const totalCogs = Number(row?.total_cogs ?? 0);
+  const totalExpenses = Number(row?.total_expenses ?? 0);
+  const grossProfit = totalSales - totalCogs;
+
+  return {
+    totalSales,
+    totalCogs,
+    totalExpenses,
+    grossProfit,
+    netProfit: grossProfit - totalExpenses,
+    salesCount: Number(row?.sales_count ?? 0),
+    pendingOrders: Number(row?.pending_orders ?? 0),
+    urgentOrders: Number(row?.urgent_orders ?? 0),
+  };
+}
+
 export async function getProducts(): Promise<ProductRow[]> {
   const rows = await query<{
     id: number;

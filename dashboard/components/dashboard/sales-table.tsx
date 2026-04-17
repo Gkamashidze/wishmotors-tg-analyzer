@@ -3,6 +3,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2 } from "lucide-react";
+import { startOfMonth, format } from "date-fns";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -10,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
+import { DateRangePicker, type DateRange } from "@/components/dashboard/date-range-picker";
 import type { SaleRow, ProductRow } from "@/lib/queries";
 import { formatGEL, formatNumber } from "@/lib/utils";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
@@ -70,6 +72,12 @@ function rowToEdit(r: SaleRow): EditState {
 
 export function SalesTable({ rows, products }: { rows: SaleRow[]; products: ProductRow[] }) {
   const router = useRouter();
+  const today = new Date();
+
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: startOfMonth(today),
+    to: today,
+  });
   const [search, setSearch] = useState("");
   const [viewRow, setViewRow] = useState<SaleRow | null>(null);
   const [editRow, setEditRow] = useState<SaleRow | null>(null);
@@ -83,16 +91,31 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
     ...products.map((p) => ({ value: String(p.id), label: p.name })),
   ], [products]);
 
+  const fromTime = useMemo(() => dateRange.from.getTime(), [dateRange.from]);
+  const toTime = useMemo(() => {
+    const d = new Date(dateRange.to);
+    d.setHours(23, 59, 59, 999);
+    return d.getTime();
+  }, [dateRange.to]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.productName ?? "", r.customerName ?? "", r.notes ?? "", String(r.id)]
+    return rows.filter((r) => {
+      const t = new Date(r.soldAt).getTime();
+      if (t < fromTime || t > toTime) return false;
+      if (!q) return true;
+      return [r.productName ?? "", r.customerName ?? "", r.notes ?? "", String(r.id)]
         .join(" ")
         .toLowerCase()
-        .includes(q),
-    );
-  }, [rows, search]);
+        .includes(q);
+    });
+  }, [rows, search, fromTime, toTime]);
+
+  const totals = useMemo(() => ({
+    sales: filtered.reduce((s, r) => s + r.quantity * r.unitPrice, 0),
+    cost: filtered.reduce((s, r) => s + r.costAmount, 0),
+    profit: filtered.reduce((s, r) => s + (r.quantity * r.unitPrice - r.costAmount), 0),
+  }), [filtered]);
 
   const openEdit = useCallback((r: SaleRow) => {
     setEditRow(r);
@@ -150,6 +173,39 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
 
   return (
     <div className="space-y-4">
+      {/* Date range picker */}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <DateRangePicker value={dateRange} onChange={setDateRange} defaultPreset="month" />
+      </div>
+
+      {/* Totals summary */}
+      <div className="flex flex-wrap items-center gap-4 px-1">
+        <span className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{formatNumber(filtered.length)}</span> ჩანაწერი
+          {filtered.length < rows.length && (
+            <span className="ml-1 text-xs text-muted-foreground">/ {formatNumber(rows.length)}</span>
+          )}
+        </span>
+        <span className="h-4 w-px bg-border" />
+        <span className="text-sm">
+          <span className="text-muted-foreground">გაყიდვა: </span>
+          <span className="font-semibold">{formatGEL(totals.sales)}</span>
+        </span>
+        <span className="h-4 w-px bg-border" />
+        <span className="text-sm">
+          <span className="text-muted-foreground">ღირებ.: </span>
+          <span className="font-medium text-muted-foreground">{formatGEL(totals.cost)}</span>
+        </span>
+        <span className="h-4 w-px bg-border" />
+        <span className="text-sm">
+          <span className="text-muted-foreground">მოგება: </span>
+          <span className={["font-semibold", totals.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"].join(" ")}>
+            {formatGEL(totals.profit)}
+          </span>
+        </span>
+      </div>
+
+      {/* Search */}
       <div className="flex items-center justify-between gap-3">
         <input
           value={search}
@@ -158,9 +214,9 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
           aria-label="ძიება გაყიდვებში"
           className="h-9 w-72 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
-        <p className="text-xs text-muted-foreground">
-          {formatNumber(filtered.length)} / {formatNumber(rows.length)} ჩანაწერი
-        </p>
+        <span className="text-xs text-muted-foreground">
+          {format(dateRange.from, "d MMM yyyy")} — {format(dateRange.to, "d MMM yyyy")}
+        </span>
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-auto">

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
+import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import type { ExpenseRow } from "@/lib/queries";
 import { formatGEL, formatNumber } from "@/lib/utils";
 
@@ -52,6 +53,7 @@ function rowToEdit(r: ExpenseRow): EditState {
 export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [viewRow, setViewRow] = useState<ExpenseRow | null>(null);
   const [editRow, setEditRow] = useState<ExpenseRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ExpenseRow | null>(null);
@@ -127,7 +129,10 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
         />
         <div className="flex items-center gap-4 text-sm">
           <span className="text-muted-foreground">{formatNumber(filtered.length)} ჩანაწერი</span>
-          <span className="font-semibold">ჯამი: <span className="text-destructive">{formatGEL(total)}</span></span>
+          <span className="font-semibold">
+            ჯამი:{" "}
+            <span className="text-destructive tabular-nums">{formatGEL(total)}</span>
+          </span>
         </div>
       </div>
 
@@ -141,7 +146,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
               <TableHead>აღწერა</TableHead>
               <TableHead>გადახდა</TableHead>
               <TableHead>თარიღი</TableHead>
-              <TableHead className="w-20 text-right">მოქ.</TableHead>
+              <TableHead className="w-24 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -176,10 +181,31 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 cursor-pointer"
+                        onClick={() => setViewRow(r)}
+                        aria-label="ნახვა"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 cursor-pointer"
+                        onClick={() => openEdit(r)}
+                        aria-label="რედაქტირება"
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer"
+                        onClick={() => setDeleteRow(r)}
+                        aria-label="წაშლა"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -191,6 +217,38 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
         </Table>
       </div>
 
+      {/* View Modal */}
+      <Dialog
+        open={!!viewRow}
+        onClose={() => setViewRow(null)}
+        title={`ხარჯის დეტალები #${viewRow?.id}`}
+      >
+        {viewRow && (
+          <div className="space-y-3">
+            <ViewFieldGrid>
+              <ViewField
+                label="თანხა"
+                value={
+                  <span className="text-destructive font-semibold tabular-nums">
+                    {formatGEL(viewRow.amount)}
+                  </span>
+                }
+              />
+              <ViewField label="კატეგორია" value={viewRow.category} />
+              <ViewField label="აღწერა" value={viewRow.description} className="sm:col-span-2" />
+              <ViewField label="გადახდის მეთოდი" value={paymentLabel(viewRow.paymentMethod)} />
+              <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />
+            </ViewFieldGrid>
+            <div className="flex justify-end pt-2">
+              <Button variant="outline" onClick={() => setViewRow(null)} className="cursor-pointer">
+                დახურვა
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* Edit Modal */}
       <Dialog open={!!editRow} onClose={closeEdit} title={`ხარჯის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">

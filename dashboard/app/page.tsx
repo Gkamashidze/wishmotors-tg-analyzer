@@ -1,7 +1,4 @@
 import {
-  TrendingUp,
-  Receipt,
-  Wallet,
   PackageSearch,
   AlertTriangle,
 } from "lucide-react";
@@ -13,58 +10,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { StatCard } from "@/components/dashboard/stat-card";
+import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { AiFinancialManager } from "@/components/dashboard/ai-financial-manager";
-import { formatGEL, formatNumber } from "@/lib/utils";
-import { getDailySeries, getDashboardSummary } from "@/lib/queries";
+import { formatNumber } from "@/lib/utils";
+import { getDailySeries, getDashboardSummaryRange } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function DashboardPage() {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
   const [summary, series] = await Promise.all([
-    getDashboardSummary(30),
+    getDashboardSummaryRange(monthStart, today),
     getDailySeries(30),
   ]);
-
-  const netTone =
-    summary.netProfit >= 0 ? "success" : ("destructive" as const);
 
   return (
     <>
       <TopBar title="მთავარი დაფა" />
       <main className="p-6 space-y-6 animate-fade-in">
-        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard
-            label="ჯამური გაყიდვები (30 დღე)"
-            value={formatGEL(summary.totalSales)}
-            hint={`${formatNumber(summary.salesCount)} ტრანზაქცია`}
-            icon={TrendingUp}
-            tone="default"
-          />
-          <StatCard
-            label="ჯამური ხარჯები"
-            value={formatGEL(summary.totalExpenses)}
-            hint="ბოლო 30 დღე"
-            icon={Receipt}
-            tone="warning"
-          />
-          <StatCard
-            label="მთლიანი მოგება"
-            value={formatGEL(summary.grossProfit)}
-            hint={`თვითღირებულება: ${formatGEL(summary.totalCogs)}`}
-            icon={Wallet}
-            tone="default"
-          />
-          <StatCard
-            label="წმინდა მოგება"
-            value={formatGEL(summary.netProfit)}
-            hint="გაყიდვები − ხარჯი − თვითღირებულება"
-            icon={TrendingUp}
-            tone={netTone}
-          />
-        </section>
+        <DashboardStats initial={summary} />
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
@@ -107,7 +75,7 @@ export default async function DashboardPage() {
                 tone="destructive"
               />
               <p className="text-xs text-muted-foreground pt-2 border-t border-border">
-                სრულ სიაში გადასვლისთვის გვერდით მენიუდან — „შეკვეთები“.
+                სრულ სიაში გადასვლისთვის გვერდით მენიუდან — „შეკვეთები".
               </p>
             </CardContent>
           </Card>
