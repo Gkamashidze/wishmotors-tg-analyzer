@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import html
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+import re
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -43,6 +44,21 @@ from database.db import Database
 
 logger = logging.getLogger(__name__)
 addorder_router = Router(name="addorder")
+
+# Matches "4571234000 უკანა სუხოის რეზინა" → OEM digits + product name
+_OEM_NAME_RE = re.compile(r'^(\d{4,})\s+(.{2,})$', re.UNICODE)
+
+
+def _split_oem_name(query: str) -> Tuple[Optional[str], str]:
+    """Extract leading OEM digits from a combined 'CODE NAME' query.
+
+    Returns (oem_code, product_name). oem_code is None when the input
+    is name-only or digits-only without a trailing description.
+    """
+    m = _OEM_NAME_RE.match(query.strip())
+    if m:
+        return m.group(1), m.group(2).strip()
+    return None, query.strip()
 
 _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
@@ -281,6 +297,15 @@ async def on_product_input(message: Message, state: FSMContext, db: Database) ->
 
     products = await db.search_products(query, limit=6)
 
+    # Fallback: if full query found nothing and it looks like "OEM_CODE NAME",
+    # try searching by the OEM part alone, then by the name part alone.
+    if not products:
+        oem_part, name_part = _split_oem_name(query)
+        if oem_part:
+            products = await db.search_products(oem_part, limit=6)
+        if not products and oem_part:
+            products = await db.search_products(name_part, limit=6)
+
     if len(products) == 1:
         p = products[0]
         await state.update_data(
@@ -333,14 +358,42 @@ async def on_product_selected(callback: CallbackQuery, state: FSMContext, db: Da
 
     if choice == "free":
         data = await state.get_data()
-        name = (data.get("current_freeform_query") or "უცნობი").strip() or "უცნობი"
+        raw = (data.get("current_freeform_query") or "").strip() or "უცნობი"
+
+        oem_part, name_part = _split_oem_name(raw)
+
+        resolved_product_id: Optional[int] = None
+        resolved_oem: Optional[str] = oem_part
+        resolved_name: str = name_part
+
+        if oem_part:
+            # Product not in DB yet — create a placeholder so the order
+            # gets a real product_id and OEM code instead of a freeform note.
+            try:
+                existing = await db.get_product_by_oem(oem_part)
+                if existing:
+                    resolved_product_id = existing["id"]
+                    resolved_name = existing["name"]
+                    resolved_oem = existing.get("oem_code")
+                else:
+                    resolved_product_id = await db.create_product(
+                        name=name_part,
+                        oem_code=oem_part,
+                        stock=0,
+                        min_stock=0,
+                        price=0.0,
+                    )
+            except Exception:
+                logger.exception("Failed to auto-create product for freeform OEM %r", oem_part)
+                # Fall through with NULL product_id — order still saved
+
         await state.update_data(
-            current_product_id=None,
-            current_product_name=name,
-            current_oem_code=None,
+            current_product_id=resolved_product_id,
+            current_product_name=resolved_name,
+            current_oem_code=resolved_oem,
             current_is_freeform=True,
         )
-        await _goto_quantity(callback.message, state, name, edit=True)
+        await _goto_quantity(callback.message, state, resolved_name, edit=True)
         await callback.answer()
         return
 
@@ -484,7 +537,15 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
                 "priority": item["priority"],
                 "notes": (
                     f"manual /addorder by {requester_name or 'admin'}"
-                    + (f" — freeform: {item['product_name']}" if item.get("is_freeform") else "")
+                    + (
+                        f" — auto-created product: {item['product_name']}"
+                        if item.get("is_freeform") and item.get("product_id")
+                        else (
+                            f" — not in catalog: {item['product_name']}"
+                            if item.get("is_freeform")
+                            else ""
+                        )
+                    )
                 ),
             }
             for item in items
