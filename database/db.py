@@ -1183,6 +1183,38 @@ class Database:
             )
             return row["id"]
 
+    async def create_orders_bulk(
+        self,
+        items: List[Dict[str, Any]],
+    ) -> List[int]:
+        """Insert several orders atomically.
+
+        Each entry must contain: ``product_id`` (Optional[int]),
+        ``quantity_needed`` (int > 0), ``priority`` (str), ``notes``
+        (Optional[str]). Returns the inserted IDs in the same order.
+        Wrapped in a single transaction — a partial failure rolls back
+        the whole batch.
+        """
+        if not items:
+            return []
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                ids: List[int] = []
+                for item in items:
+                    row = await conn.fetchrow(
+                        """INSERT INTO orders
+                               (product_id, quantity_needed, priority, notes)
+                           VALUES ($1, $2, $3, $4)
+                           RETURNING id""",
+                        item.get("product_id"),
+                        int(item["quantity_needed"]),
+                        item.get("priority", "normal"),
+                        item.get("notes"),
+                    )
+                    ids.append(row["id"])
+                return ids
+
     async def get_pending_orders(self) -> List[OrderRow]:
         """Return pending orders sorted by priority (urgent first), then date."""
         async with self.pool.acquire() as conn:

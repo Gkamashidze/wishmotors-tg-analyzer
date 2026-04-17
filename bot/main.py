@@ -22,6 +22,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import config
+from bot.handlers.addorder import addorder_router
 from bot.handlers.commands import commands_router
 from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
@@ -135,6 +136,7 @@ async def main() -> None:
         BotCommand(command="import",        description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"),
         BotCommand(command="editproduct",   description="✏️ პროდუქტის რედაქტირება — ID ველი"),
         BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
+        BotCommand(command="addorder",      description="📝 ახალი შეკვეთის დამატება — wizard"),
         BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — ID საჭიროა"),
         # ── 💰 ანგარიში და ფული ───────────────────────
         BotCommand(command="report",        description="📊 კვირის ანგარიში"),
@@ -162,6 +164,7 @@ async def main() -> None:
     dp.callback_query.middleware(DatabaseMiddleware(db))
 
     dp.include_router(wizard_router)
+    dp.include_router(addorder_router)
     dp.include_router(sales_router)
     dp.include_router(orders_router)
     dp.include_router(period_router)
