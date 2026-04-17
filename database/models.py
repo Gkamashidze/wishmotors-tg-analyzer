@@ -234,6 +234,8 @@ class SaleRow(TypedDict):
     sold_at: object  # datetime
     notes: Optional[str]
     receipt_printed: bool
+    topic_id: Optional[int]
+    topic_message_id: Optional[int]
     # Joined fields (present in report queries)
     product_name: Optional[str]
     oem_code: Optional[str]

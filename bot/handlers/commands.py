@@ -3,7 +3,7 @@ import hashlib
 import html
 import io
 import logging
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 import openpyxl
 
@@ -577,30 +577,36 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True)
 
 
-async def _resolve_sale_display_name(db: Database, sale: dict) -> str:
+async def _resolve_sale_display_name(db: Database, sale: Mapping[str, Any]) -> str:
     """Best-effort product name for a sale dict that lacks the joined column."""
     name = sale.get("product_name")
     if name:
-        return name
+        return str(name)
     product_id = sale.get("product_id")
     if product_id:
-        p = await db.get_product_by_id(product_id)
+        p = await db.get_product_by_id(int(product_id))
         if p:
             return p["name"]
-    return sale.get("notes") or f"#{sale.get('id') or sale.get('original_sale_id') or '—'}"
+    notes = sale.get("notes")
+    if notes:
+        return str(notes)
+    return f"#{sale.get('id') or sale.get('original_sale_id') or '—'}"
 
 
-def _format_topic_text_for_sale(sale: dict, sale_id: int, product_name: str) -> str:
+def _format_topic_text_for_sale(
+    sale: Mapping[str, Any], sale_id: int, product_name: str,
+) -> str:
     """Rebuild the original topic-post text for a sale / nisia."""
     qty = int(sale["quantity"])
     price = float(sale["unit_price"])
-    pm = sale["payment_method"]
+    pm = str(sale["payment_method"])
     customer = sale.get("customer_name")
+    customer_str = str(customer) if customer else None
     unknown = sale.get("product_id") is None
 
-    if pm == "credit" and customer:
+    if pm == "credit" and customer_str:
         return format_topic_nisia(
-            customer_name=customer,
+            customer_name=customer_str,
             product_name=product_name,
             qty=qty,
             price=price,
@@ -613,7 +619,7 @@ def _format_topic_text_for_sale(sale: dict, sale_id: int, product_name: str) -> 
         price=price,
         payment=pm,
         sale_id=sale_id,
-        customer_name=customer,
+        customer_name=customer_str,
         unknown_product=unknown,
     )
 
