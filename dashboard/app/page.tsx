@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
+import { AiFinancialManager } from "@/components/dashboard/ai-financial-manager";
 import { formatGEL, formatNumber } from "@/lib/utils";
 import { getDailySeries, getDashboardSummary } from "@/lib/queries";
 
@@ -110,6 +111,10 @@ export default async function DashboardPage() {
               </p>
             </CardContent>
           </Card>
+        </section>
+
+        <section>
+          <AiFinancialManager />
         </section>
       </main>
     </>
