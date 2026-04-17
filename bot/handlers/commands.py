@@ -16,11 +16,14 @@ from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKe
 
 import config
 from bot.handlers import IsAdmin, is_rate_limited
+from bot.handlers.topic_messages import mark_cancelled, restore_original
 from bot.reports.formatter import (
     format_cash_on_hand,
     format_credit_sales_report,
     format_orders_report,
     format_stock_report,
+    format_topic_nisia,
+    format_topic_sale,
     format_weekly_report,
 )
 from database.db import Database
@@ -574,6 +577,47 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True)
 
 
+async def _resolve_sale_display_name(db: Database, sale: dict) -> str:
+    """Best-effort product name for a sale dict that lacks the joined column."""
+    name = sale.get("product_name")
+    if name:
+        return name
+    product_id = sale.get("product_id")
+    if product_id:
+        p = await db.get_product_by_id(product_id)
+        if p:
+            return p["name"]
+    return sale.get("notes") or f"#{sale.get('id') or sale.get('original_sale_id') or '—'}"
+
+
+def _format_topic_text_for_sale(sale: dict, sale_id: int, product_name: str) -> str:
+    """Rebuild the original topic-post text for a sale / nisia."""
+    qty = int(sale["quantity"])
+    price = float(sale["unit_price"])
+    pm = sale["payment_method"]
+    customer = sale.get("customer_name")
+    unknown = sale.get("product_id") is None
+
+    if pm == "credit" and customer:
+        return format_topic_nisia(
+            customer_name=customer,
+            product_name=product_name,
+            qty=qty,
+            price=price,
+            sale_id=sale_id,
+            unknown_product=unknown,
+        )
+    return format_topic_sale(
+        product_name=product_name,
+        qty=qty,
+        price=price,
+        payment=pm,
+        sale_id=sale_id,
+        customer_name=customer,
+        unknown_product=unknown,
+    )
+
+
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("ds:"), IsAdmin())
 async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
     """Delete a sale: soft-deletes to deleted_sales (24h restore window), removes topic message."""
@@ -594,16 +638,17 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
         deleted.get("product_id"), deleted.get("quantity"), deleted.get("unit_price"),
     )
 
-    # Delete the topic message if we know where it was posted
-    topic_id  = deleted.get("topic_id")
+    # Edit the bot's original topic confirmation in place: prepend a
+    # cancellation banner instead of deleting the message so the topic
+    # keeps a clear audit trail. If the message is too old / missing,
+    # mark_cancelled swallows the error.
     topic_msg = deleted.get("topic_message_id")
-    if topic_id and topic_msg:
-        try:
-            await callback.bot.delete_message(
-                chat_id=config.GROUP_ID, message_id=topic_msg
-            )
-        except Exception as exc:
-            logger.debug("Could not delete topic message for sale #%d: %s", sale_id, exc)
+    if topic_msg:
+        product_name = await _resolve_sale_display_name(db, deleted)
+        original_text = _format_topic_text_for_sale(deleted, sale_id, product_name)
+        await mark_cancelled(
+            callback.bot, config.GROUP_ID, topic_msg, original_text,
+        )
 
     total = float(deleted["unit_price"]) * deleted["quantity"]
     deleted_id = deleted["deleted_id"]
@@ -651,42 +696,30 @@ async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
         callback.from_user.id, ds.get("original_sale_id", "?"), new_sale_id,
     )
 
-    # Re-post to topic
+    # Prefer editing the original (cancelled) topic post back to its
+    # restored form so topic history stays clean. Fall back to posting
+    # a fresh message only if the old message is gone.
     topic_id  = ds.get("topic_id")
+    old_topic_msg = ds.get("topic_message_id")
     new_topic_msg_id: Optional[int] = None
     if topic_id:
-        try:
-            from bot.reports.formatter import format_topic_sale, format_topic_nisia
-            product_name = ds.get("notes") or f"გაყიდვა #{new_sale_id}"
-            is_nisia = ds.get("payment_method") == "credit"
-            customer = ds.get("customer_name")
-
-            if is_nisia and customer:
-                text = format_topic_nisia(
-                    customer_name=customer,
-                    product_name=product_name,
-                    qty=ds["quantity"],
-                    price=float(ds["unit_price"]),
-                    sale_id=new_sale_id,
+        text = _format_topic_text_for_sale(ds, new_sale_id, await _resolve_sale_display_name(db, ds))
+        edited = await restore_original(
+            callback.bot, config.GROUP_ID, old_topic_msg, text,
+        )
+        if edited and old_topic_msg:
+            new_topic_msg_id = old_topic_msg
+        else:
+            try:
+                r = await callback.bot.send_message(
+                    chat_id=config.GROUP_ID,
+                    message_thread_id=topic_id,
+                    text=text,
+                    parse_mode=_PARSE,
                 )
-            else:
-                text = format_topic_sale(
-                    product_name=product_name,
-                    qty=ds["quantity"],
-                    price=float(ds["unit_price"]),
-                    payment=ds["payment_method"],
-                    sale_id=new_sale_id,
-                    customer_name=customer,
-                )
-            r = await callback.bot.send_message(
-                chat_id=config.GROUP_ID,
-                message_thread_id=topic_id,
-                text=text,
-                parse_mode=_PARSE,
-            )
-            new_topic_msg_id = r.message_id
-        except Exception as exc:
-            logger.warning("Could not re-post restored sale to topic: %s", exc)
+                new_topic_msg_id = r.message_id
+            except Exception as exc:
+                logger.warning("Could not re-post restored sale to topic: %s", exc)
 
     if new_topic_msg_id:
         await db.update_sale_topic_message(new_sale_id, topic_id, new_topic_msg_id)
@@ -984,6 +1017,15 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
 
     name = deleted.get("notes") or f"ID {deleted.get('product_id', '—')}"
     total = float(deleted["unit_price"]) * deleted["quantity"]
+
+    # Mark the bot's original topic post as cancelled (edit in place).
+    topic_msg = deleted.get("topic_message_id")
+    if topic_msg:
+        display_name = await _resolve_sale_display_name(db, deleted)
+        original_text = _format_topic_text_for_sale(deleted, sale_id, display_name)
+        await mark_cancelled(
+            message.bot, config.GROUP_ID, topic_msg, original_text,
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,

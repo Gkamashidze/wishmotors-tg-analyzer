@@ -1847,8 +1847,9 @@ class Database:
                     """INSERT INTO deleted_sales
                            (original_sale_id, product_id, quantity, unit_price,
                             payment_method, seller_type, customer_name,
-                            sold_at, notes, topic_id, cost_amount, expires_at)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                            sold_at, notes, topic_id, topic_message_id,
+                            cost_amount, expires_at)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
                        RETURNING id""",
                     sale_dict["id"],
                     product_id,
@@ -1860,6 +1861,7 @@ class Database:
                     sale_dict.get("sold_at"),
                     sale_dict.get("notes"),
                     sale_dict.get("topic_id"),
+                    sale_dict.get("topic_message_id"),
                     cost_amount,
                     expires,
                 )

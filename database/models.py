@@ -199,6 +199,12 @@ END $$;
 -- cost originally posted to the ledger (WAC can drift after later receipts).
 ALTER TABLE sales         ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(14, 2) NOT NULL DEFAULT 0;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(14, 2) NOT NULL DEFAULT 0;
+
+-- Topic message tracking for orders and deleted_sales (so edit/cancel/restore
+-- flows can update the original bot confirmation in the group topic).
+ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
+ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 """
 
 

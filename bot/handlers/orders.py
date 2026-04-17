@@ -118,7 +118,7 @@ async def handle_expense_message(message: Message, db: Database) -> None:
         )
 
         try:
-            await message.bot.send_message(
+            topic_msg = await message.bot.send_message(
                 chat_id=config.GROUP_ID,
                 message_thread_id=config.EXPENSES_TOPIC_ID,
                 text=format_topic_expense(
@@ -128,6 +128,9 @@ async def handle_expense_message(message: Message, db: Database) -> None:
                     expense_id=expense_id,
                 ),
                 parse_mode=_PARSE,
+            )
+            await db.update_expense_topic_message(
+                expense_id, config.EXPENSES_TOPIC_ID, topic_msg.message_id,
             )
         except Exception as _te:
             logger.warning("Failed to post expense to topic: %s", _te)

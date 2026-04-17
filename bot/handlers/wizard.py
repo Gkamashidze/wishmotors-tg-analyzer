@@ -32,6 +32,7 @@ from aiogram.types import (
 
 import config
 from bot.handlers import IsAdmin
+from bot.handlers.topic_messages import mark_cancelled, mark_updated
 from bot.reports.formatter import (
     format_topic_expense,
     format_topic_nisia,
@@ -1206,35 +1207,39 @@ async def nisia_edit_confirm(
         ]),
     )
 
-    # Refresh the topic message (delete old, post new) so the group stays in sync
+    # Refresh the topic message. When the topic stays the same (still a
+    # nisia), edit the original post in place with a "შეცვლილია" banner;
+    # otherwise cancel the old post and send a new one to the new topic.
     old_topic_id  = updated.get("topic_id")
     old_topic_msg = updated.get("topic_message_id")
-    if old_topic_id and old_topic_msg:
-        try:
-            await callback.bot.delete_message(
-                chat_id=config.GROUP_ID, message_id=old_topic_msg
+    new_topic_text = format_topic_nisia(
+        customer_name=updated.get("customer_name") or "",
+        product_name=product,
+        qty=qty,
+        price=price,
+        sale_id=sale_id,
+        unknown_product=updated.get("product_id") is None,
+    )
+
+    if old_topic_msg and old_topic_id == config.NISIAS_TOPIC_ID:
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+    else:
+        if old_topic_msg:
+            await mark_cancelled(
+                callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text,
             )
-        except Exception:
-            pass
-    try:
-        new_topic = await callback.bot.send_message(
-            chat_id=config.GROUP_ID,
-            message_thread_id=config.NISIAS_TOPIC_ID,
-            text=format_topic_nisia(
-                customer_name=updated.get("customer_name") or "",
-                product_name=product,
-                qty=qty,
-                price=price,
-                sale_id=sale_id,
-                unknown_product=updated.get("product_id") is None,
-            ),
-            parse_mode=_PARSE,
-        )
-        await db.update_sale_topic_message(
-            sale_id, config.NISIAS_TOPIC_ID, new_topic.message_id,
-        )
-    except Exception as exc:
-        logger.warning("Failed to refresh topic after nisia edit #%d: %s", sale_id, exc)
+        try:
+            new_topic = await callback.bot.send_message(
+                chat_id=config.GROUP_ID,
+                message_thread_id=config.NISIAS_TOPIC_ID,
+                text=new_topic_text,
+                parse_mode=_PARSE,
+            )
+            await db.update_sale_topic_message(
+                sale_id, config.NISIAS_TOPIC_ID, new_topic.message_id,
+            )
+        except Exception as exc:
+            logger.warning("Failed to refresh topic after nisia edit #%d: %s", sale_id, exc)
 
     await callback.answer(f"✅ #{sale_id} განახლდა")
 
@@ -1377,33 +1382,38 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
                           _btn(f"✏️ რედ. #{sale_id}", f"edit:sale:{sale_id}")]),
     )
 
-    # Refresh the topic message
+    # Refresh the topic message: edit in place when the topic does not
+    # change; otherwise cancel the old post and mirror to the new topic.
     old_topic_id  = updated.get("topic_id")
     old_topic_msg = updated.get("topic_message_id")
-    if old_topic_id and old_topic_msg:
+    new_topic_id  = config.NISIAS_TOPIC_ID if updated["payment_method"] == "credit" else config.SALES_TOPIC_ID
+    product_name  = updated.get("product_name") or updated.get("notes") or f"გაყიდვა #{sale_id}"
+    new_topic_text = format_topic_sale(
+        product_name=product_name,
+        qty=qty,
+        price=price,
+        payment=updated["payment_method"],
+        sale_id=sale_id,
+        customer_name=updated.get("customer_name"),
+    )
+
+    if old_topic_msg and old_topic_id == new_topic_id:
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+    else:
+        if old_topic_msg:
+            await mark_cancelled(
+                callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text,
+            )
         try:
-            await callback.bot.delete_message(chat_id=config.GROUP_ID, message_id=old_topic_msg)
-        except Exception:
-            pass
-    topic_id = config.NISIAS_TOPIC_ID if updated["payment_method"] == "credit" else config.SALES_TOPIC_ID
-    try:
-        product_name = updated.get("product_name") or updated.get("notes") or f"გაყიდვა #{sale_id}"
-        new_topic = await callback.bot.send_message(
-            chat_id=config.GROUP_ID,
-            message_thread_id=topic_id,
-            text=format_topic_sale(
-                product_name=product_name,
-                qty=qty,
-                price=price,
-                payment=updated["payment_method"],
-                sale_id=sale_id,
-                customer_name=updated.get("customer_name"),
-            ),
-            parse_mode=_PARSE,
-        )
-        await db.update_sale_topic_message(sale_id, topic_id, new_topic.message_id)
-    except Exception as exc:
-        logger.warning("Failed to refresh topic after sale edit #%d: %s", sale_id, exc)
+            new_topic = await callback.bot.send_message(
+                chat_id=config.GROUP_ID,
+                message_thread_id=new_topic_id,
+                text=new_topic_text,
+                parse_mode=_PARSE,
+            )
+            await db.update_sale_topic_message(sale_id, new_topic_id, new_topic.message_id)
+        except Exception as exc:
+            logger.warning("Failed to refresh topic after sale edit #%d: %s", sale_id, exc)
 
     await callback.answer(f"✅ #{sale_id} განახლდა")
 
@@ -1579,29 +1589,32 @@ async def expense_edit_confirm(callback: CallbackQuery, state: FSMContext, db: D
         reply_markup=_kb([_btn(f"✏️ რედ. #{expense_id}", f"edit:exp:{expense_id}")]),
     )
 
-    # Refresh the topic message
-    old_topic_id  = updated.get("topic_id")
+    # Refresh the topic message: edit in place with the "შეცვლილია"
+    # banner. Expenses always live in the same topic, so no cross-topic
+    # cancel+re-post path is needed.
     old_topic_msg = updated.get("topic_message_id")
-    if old_topic_id and old_topic_msg:
+    new_topic_text = format_topic_expense(
+        amount=amt,
+        category=cat,
+        description=desc or None,
+        expense_id=expense_id,
+    )
+
+    if old_topic_msg:
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+    else:
         try:
-            await callback.bot.delete_message(chat_id=config.GROUP_ID, message_id=old_topic_msg)
-        except Exception:
-            pass
-    try:
-        new_topic = await callback.bot.send_message(
-            chat_id=config.GROUP_ID,
-            message_thread_id=config.EXPENSES_TOPIC_ID,
-            text=format_topic_expense(
-                amount=amt,
-                category=cat,
-                description=desc or None,
-                expense_id=expense_id,
-            ),
-            parse_mode=_PARSE,
-        )
-        await db.update_expense_topic_message(expense_id, config.EXPENSES_TOPIC_ID, new_topic.message_id)
-    except Exception as exc:
-        logger.warning("Failed to refresh topic after expense edit #%d: %s", expense_id, exc)
+            new_topic = await callback.bot.send_message(
+                chat_id=config.GROUP_ID,
+                message_thread_id=config.EXPENSES_TOPIC_ID,
+                text=new_topic_text,
+                parse_mode=_PARSE,
+            )
+            await db.update_expense_topic_message(
+                expense_id, config.EXPENSES_TOPIC_ID, new_topic.message_id,
+            )
+        except Exception as exc:
+            logger.warning("Failed to refresh topic after expense edit #%d: %s", expense_id, exc)
 
     await callback.answer(f"✅ #{expense_id} განახლდა")
 
