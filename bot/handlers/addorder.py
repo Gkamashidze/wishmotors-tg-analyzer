@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import html
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -75,6 +75,15 @@ def _e(v: object) -> str:
 
 _CANCEL = _btn("❌ გაუქმება", "ao:cancel")
 _CANCEL_ROW = [_CANCEL]
+
+# Callback data for the "order completed" button attached to the grouped
+# summary posted in ORDERS_TOPIC_ID. No IDs encoded here — the handler
+# resolves the batch via (chat_id, message_id) → orders.topic_message_id.
+_CB_COMPLETE = "ao:complete"
+
+
+def _completed_kb() -> InlineKeyboardMarkup:
+    return _kb([_btn("✅ შესრულდა", _CB_COMPLETE)])
 
 
 def _priority_kb() -> InlineKeyboardMarkup:
@@ -229,7 +238,6 @@ def _format_topic_summary(
         f"📊 სულ: <b>{len(items_with_ids)}</b> ნივთი "
         f"(🚨 {len(urgent)} · 🟢 {len(low)})"
     )
-    lines.append("<i>დახურვა: <code>/completeorder ID</code></i>")
     return "\n".join(lines)
 
 
@@ -504,15 +512,32 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
     # if the topic post fails, the orders are saved and the wizard is done.
     await state.clear()
 
-    # Build + post the grouped summary into the ORDERS topic.
+    # Build + post the grouped summary into the ORDERS topic, with a
+    # single "✅ შესრულდა" button. The posted message_id is stored on
+    # every order in the batch so the callback can resolve "which orders
+    # does this button complete?" purely from chat/message identifiers.
     summary_text = _format_topic_summary(items_with_ids, requester_name)
     try:
-        await callback.bot.send_message(
+        posted = await callback.bot.send_message(
             chat_id=config.GROUP_ID,
             message_thread_id=config.ORDERS_TOPIC_ID,
             text=summary_text,
             parse_mode=_PARSE,
+            reply_markup=_completed_kb(),
         )
+        try:
+            await db.update_orders_topic_message(
+                order_ids=order_ids,
+                topic_id=config.ORDERS_TOPIC_ID,
+                topic_message_id=posted.message_id,
+            )
+        except Exception as link_exc:
+            # Orders are saved — just log if the back-reference write fails.
+            # The /completeorder command still works as a fallback.
+            logger.warning(
+                "Failed to store topic_message_id for orders %r: %s",
+                order_ids, link_exc,
+            )
     except Exception as exc:
         logger.warning("Failed to post addorder summary to ORDERS topic: %s", exc)
 
@@ -527,3 +552,97 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         parse_mode=_PARSE,
     )
     await callback.answer("✅ შენახულია")
+
+
+# ─── "✅ შესრულდა" — close the whole batch from the topic message ────────────
+
+def _format_completed_summary(
+    original_html: str,
+    orders: Sequence[Mapping[str, Any]],
+    completed_by: Optional[str],
+) -> str:
+    """Prepend a completion banner to the original summary.
+
+    The original body is preserved so the reader still sees what was
+    ordered; a banner on top + a trailing footer visibly mark the whole
+    batch as delivered.
+    """
+    banner = "✅ <b>შეკვეთა ჩამოსულია / შესრულებულია</b>"
+    if completed_by:
+        banner += f"\n👤 დახურა: {_e(completed_by)}"
+    footer_ids = ", ".join(f"#{o['id']}" for o in orders)
+    footer = (
+        f"\n\n✅ <b>დახურული შეკვეთები ({len(orders)}):</b> {footer_ids}"
+        if orders else ""
+    )
+    return f"{banner}\n\n{original_html}{footer}"
+
+
+@addorder_router.callback_query(F.data == _CB_COMPLETE, IsAdmin())
+async def cb_complete(callback: CallbackQuery, db: Database) -> None:
+    """Mark every order tied to this topic message as completed.
+
+    Security: IsAdmin filter already restricts this to admins.
+    Idempotency: DB update filters on status='pending', so double-taps
+    from a stale keyboard become no-ops and get a friendly alert.
+    """
+    msg = callback.message
+    if not isinstance(msg, Message):
+        await callback.answer("❌ შეტყობინება არ არის ხელმისაწვდომი", show_alert=True)
+        return
+
+    topic_id = msg.message_thread_id or config.ORDERS_TOPIC_ID
+    message_id = msg.message_id
+
+    try:
+        completed = await db.complete_orders_by_topic_message(
+            topic_id=topic_id,
+            topic_message_id=message_id,
+        )
+    except Exception:
+        logger.exception(
+            "complete_orders_by_topic_message failed (topic=%s msg=%s)",
+            topic_id, message_id,
+        )
+        await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
+        return
+
+    if not completed:
+        # Either already completed, or the back-reference was never
+        # written (e.g. old messages from before this feature shipped).
+        await callback.answer(
+            "ℹ️ შეკვეთა უკვე დახურულია ან ვერ მოიძებნა",
+            show_alert=True,
+        )
+        try:
+            await msg.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
+    completed_by: Optional[str] = None
+    if callback.from_user:
+        completed_by = (
+            callback.from_user.full_name
+            or callback.from_user.username
+            or str(callback.from_user.id)
+        )
+
+    # Preserve the original body (as rendered HTML) so the reader still
+    # sees what was ordered; the banner + footer make completion obvious.
+    original_html = msg.html_text or msg.text or ""
+    new_text = _format_completed_summary(original_html, completed, completed_by)
+
+    try:
+        await msg.edit_text(
+            new_text,
+            parse_mode=_PARSE,
+            reply_markup=None,
+        )
+    except Exception as exc:
+        # DB is already updated — editing can still fail (message too
+        # old, deleted, rate-limited). Surface a soft warning to the
+        # admin but don't undo the completion.
+        logger.warning("Failed to edit ORDERS topic message after completion: %s", exc)
+
+    await callback.answer(f"✅ დახურულია {len(completed)} შეკვეთა")

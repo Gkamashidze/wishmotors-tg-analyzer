@@ -1021,11 +1021,12 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
     if deleted.get("product_id"):
         product_note = f"\n📊 მარაგი აღდგა +{deleted['quantity']}ც"
 
-    name = deleted.get("notes") or f"ID {deleted.get('product_id', '—')}"
+    name = deleted.get("notes") or f"ID {deleted.get('product_id') or '—'}"
     total = float(deleted["unit_price"]) * deleted["quantity"]
 
     # Mark the bot's original topic post as cancelled (edit in place).
-    topic_msg = deleted.get("topic_message_id")
+    topic_msg_raw = deleted.get("topic_message_id")
+    topic_msg: Optional[int] = int(topic_msg_raw) if topic_msg_raw else None
     if topic_msg:
         display_name = await _resolve_sale_display_name(db, deleted)
         original_text = _format_topic_text_for_sale(deleted, sale_id, display_name)

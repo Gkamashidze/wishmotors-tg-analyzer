@@ -1243,6 +1243,72 @@ class Database:
             )
             return result == "UPDATE 1"
 
+    async def update_orders_topic_message(
+        self,
+        order_ids: List[int],
+        topic_id: int,
+        topic_message_id: int,
+    ) -> None:
+        """Attach the same group-topic message to a batch of orders.
+
+        Used by /addorder: after the grouped summary is posted to
+        ORDERS_TOPIC_ID, every order in that batch stores the posted
+        message_id so the '✅ შესრულდა' callback can look them up and
+        mark the whole batch completed in one shot.
+        """
+        if not order_ids:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE orders
+                   SET topic_id = $1, topic_message_id = $2
+                   WHERE id = ANY($3::int[])""",
+                topic_id, topic_message_id, list(order_ids),
+            )
+
+    async def complete_orders_by_topic_message(
+        self,
+        topic_id: int,
+        topic_message_id: int,
+    ) -> List[OrderRow]:
+        """Mark every pending order tied to this topic message as completed.
+
+        Returns the full OrderRow list (with joined product_name / oem_code)
+        of the orders that were actually transitioned from pending→completed.
+        Orders already in a non-pending state are left untouched and are
+        NOT included in the returned list.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """UPDATE orders o
+                       SET status = 'completed'
+                       WHERE o.topic_id = $1
+                         AND o.topic_message_id = $2
+                         AND o.status = 'pending'
+                       RETURNING o.id""",
+                    topic_id, topic_message_id,
+                )
+                if not rows:
+                    return []
+                completed_ids = [r["id"] for r in rows]
+                full = await conn.fetch(
+                    """SELECT o.*, p.name AS product_name, p.oem_code
+                       FROM orders o
+                       LEFT JOIN products p ON o.product_id = p.id
+                       WHERE o.id = ANY($1::int[])
+                       ORDER BY
+                         CASE o.priority
+                           WHEN 'urgent' THEN 1
+                           WHEN 'normal' THEN 2
+                           WHEN 'low'    THEN 3
+                           ELSE 2
+                         END,
+                         o.id""",
+                    completed_ids,
+                )
+                return self._rows(full)  # type: ignore[return-value]
+
     # ─── Expenses ─────────────────────────────────────────────────────────────
 
     async def create_expense(
