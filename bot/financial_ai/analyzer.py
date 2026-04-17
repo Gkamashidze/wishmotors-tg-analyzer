@@ -123,7 +123,11 @@ async def generate_weekly_advice(
         logger.warning("Anthropic API call failed: %s", exc)
         return None
 
-    text_parts = [block.text for block in response.content if getattr(block, "type", None) == "text"]
+    text_parts: list[str] = []
+    for block in response.content:
+        text_value = getattr(block, "text", None)
+        if isinstance(text_value, str):
+            text_parts.append(text_value)
     advice = "".join(text_parts).strip()
     if not advice:
         logger.warning("Anthropic returned empty content.")
