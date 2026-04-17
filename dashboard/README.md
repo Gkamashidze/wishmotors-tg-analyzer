@@ -104,8 +104,47 @@ npm run typecheck
 | `ECONNREFUSED` | შეამოწმე Railway-ის DATABASE_URL ჯერ კიდევ აქტიურია |
 | ცარიელი გრაფიკი | ნორმალურია, თუ ბოლო 30 დღეში გაყიდვები არ არის |
 
-## Deployment (მომავალი ფაზა)
+## Deployment — Railway (რეკომენდებული)
 
-- **Vercel** — ერთი კლიკით ("Import project" → აირჩიე `dashboard/` სუბდირექტორია → დაუმატე env vars).
-- **Railway** — იგივე Postgres service-ის გვერდით ცალკე web service-ად.
-- ორივე შემთხვევაში აუცილებლად დააყენე `DASHBOARD_BASIC_AUTH`.
+Dashboard-ი მზადაა Railway-ზე ცალკე web service-ად, იმავე პროექტში სადაც ბოტი
+და Postgres უკვე მუშაობს. `railway.toml` ფაილი უკვე კონფიგურაციასთან ერთად
+ჩართულია.
+
+### ნაბიჯები
+
+1. **ახალი service-ის დამატება:**
+   - შედი Railway-ის პროექტში, სადაც უკვე დგას ბოტი და Postgres.
+   - ღილაკი: **New → Deploy from GitHub → wishmotors-tg-analyzer**.
+   - **Root Directory:** `dashboard` ← ეს ძალიან მნიშვნელოვანია.
+   - Railway ავტომატურად გამოიყენებს `dashboard/railway.toml`-ს.
+
+2. **Environment Variables (აუცილებლად):**
+
+   | ცვლადი | მნიშვნელობა |
+   |--------|-------------|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Postgres service-დან reference) |
+   | `PGSSL` | `true` |
+   | `DASHBOARD_BASIC_AUTH` | `admin:LONG_RANDOM_PASSWORD` ← **აუცილებელია!** |
+   | `NODE_ENV` | `production` (Railway ავტომატურად აყენებს) |
+
+   **უსაფრთხოება:** თუ `DASHBOARD_BASIC_AUTH` დაყენებული არ არის,
+   Dashboard უარს ამბობს აამუშაოს საიტი — 503 კოდით. ეს დაცვაა
+   შემთხვევითი გასაჯაროებისგან.
+
+3. **Generate Domain:**
+   - Service Settings → **Networking → Generate Domain**.
+   - მიიღებ მისამართს: `your-dashboard.up.railway.app`.
+   - საიტი მოითხოვს მომხმარებელ/პაროლს (Basic Auth pop-up).
+
+4. **Custom Domain (სურვილისამებრ):**
+   - Networking → Custom Domains → დაამატე `dashboard.wishmotors.ge`.
+
+### Healthcheck
+
+`/healthz` endpoint ღიაა ავტორიზაციის გარეშე — Railway იყენებს მას
+service-ის ჯანმრთელობის შესამოწმებლად.
+
+### Security Headers
+
+middleware ავტომატურად ამატებს `X-Frame-Options`, `X-Content-Type-Options`,
+`Strict-Transport-Security`, `Referrer-Policy`, `Permissions-Policy`.

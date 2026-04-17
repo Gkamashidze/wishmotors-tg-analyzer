@@ -105,6 +105,34 @@ class LedgerAccountBalance:
 
 
 @dataclass(frozen=True)
+class ProductWAC:
+    """Current Weighted Average Cost for a product, computed from the
+    remaining quantity across all active `inventory_batches` rows."""
+
+    product_id: int
+    name: str
+    oem_code: Optional[str]
+    on_hand_units: float
+    wac_per_unit_gel: float
+    inventory_value_gel: float
+    last_purchase_cost_gel: Optional[float]
+    cost_drift_pct: Optional[float]  # (last_purchase - WAC) / WAC * 100
+
+
+@dataclass(frozen=True)
+class OrdersPipeline:
+    """Snapshot of the `orders` queue — pending restocks customers or staff
+    have requested but not yet fulfilled."""
+
+    total_pending: int
+    urgent_pending: int
+    normal_pending: int
+    low_pending: int
+    oldest_pending_days: Optional[int]
+    top_pending_products: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class FinancialSnapshot:
     """Bundle: everything the AI needs in a single call."""
 
@@ -114,6 +142,8 @@ class FinancialSnapshot:
     top_products_by_velocity: List[ProductVelocity] = field(default_factory=list)
     restock_alerts: List[RestockAlert] = field(default_factory=list)
     ledger_top_accounts: List[LedgerAccountBalance] = field(default_factory=list)
+    wac_top_products: List[ProductWAC] = field(default_factory=list)
+    orders_pipeline: Optional[OrdersPipeline] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """JSON-friendly representation handed to the LLM."""
@@ -124,6 +154,10 @@ class FinancialSnapshot:
             "top_products_by_velocity": [asdict(p) for p in self.top_products_by_velocity],
             "restock_alerts": [asdict(p) for p in self.restock_alerts],
             "ledger_top_accounts": [asdict(p) for p in self.ledger_top_accounts],
+            "wac_top_products": [asdict(p) for p in self.wac_top_products],
+            "orders_pipeline": (
+                asdict(self.orders_pipeline) if self.orders_pipeline else None
+            ),
         }
 
 
@@ -482,6 +516,161 @@ class FinancialDataReader:
             for r in rows
         ]
 
+    # ─── Tool 7: WAC per product (from inventory_batches) ────────────────────
+
+    _SQL_WAC_TOP = """
+        WITH active AS (
+            SELECT
+                b.product_id,
+                SUM(b.remaining_quantity)                         AS on_hand,
+                SUM(b.remaining_quantity * b.unit_cost)           AS inv_value,
+                MAX(b.received_at)                                AS last_received_at
+            FROM inventory_batches b
+            WHERE b.remaining_quantity > 0
+            GROUP BY b.product_id
+        ),
+        latest AS (
+            SELECT DISTINCT ON (b.product_id)
+                b.product_id,
+                b.unit_cost AS last_purchase_cost
+            FROM inventory_batches b
+            ORDER BY b.product_id, b.received_at DESC, b.id DESC
+        )
+        SELECT
+            a.product_id                                          AS product_id,
+            COALESCE(p.name, 'უცნობი')                            AS name,
+            p.oem_code                                            AS oem_code,
+            a.on_hand                                             AS on_hand_units,
+            a.inv_value                                           AS inv_value,
+            l.last_purchase_cost                                  AS last_purchase_cost
+        FROM active a
+        LEFT JOIN products p ON p.id = a.product_id
+        LEFT JOIN latest l   ON l.product_id = a.product_id
+        ORDER BY a.inv_value DESC
+        LIMIT $1
+    """
+
+    async def get_wac_per_product(
+        self, limit: int = _DEFAULT_TOP_N
+    ) -> List[ProductWAC]:
+        """Current WAC for the top-N products by inventory value.
+
+        WAC = sum(remaining_quantity * unit_cost) / sum(remaining_quantity)
+        computed over active batches (remaining_quantity > 0).
+
+        Also reports drift between the most recent purchase cost and the
+        blended WAC — a big positive drift means supplier prices are rising
+        and margins will compress unless retail is raised.
+        """
+        limit = self._clamp_limit(limit)
+        conn = await self._conn()
+        try:
+            rows = await conn.fetch(self._SQL_WAC_TOP, limit)
+        finally:
+            await self._pool.release(conn)
+
+        result: List[ProductWAC] = []
+        for r in rows:
+            on_hand = float(r["on_hand_units"] or 0)
+            inv_value = float(r["inv_value"] or 0)
+            wac = (inv_value / on_hand) if on_hand > 0 else 0.0
+            last_cost_raw = r["last_purchase_cost"]
+            last_cost = float(last_cost_raw) if last_cost_raw is not None else None
+            drift_pct: Optional[float]
+            if last_cost is not None and wac > 0:
+                drift_pct = round((last_cost - wac) / wac * 100.0, 2)
+            else:
+                drift_pct = None
+            result.append(
+                ProductWAC(
+                    product_id=int(r["product_id"]),
+                    name=str(r["name"]),
+                    oem_code=r["oem_code"],
+                    on_hand_units=round(on_hand, 3),
+                    wac_per_unit_gel=round(wac, 4),
+                    inventory_value_gel=round(inv_value, 2),
+                    last_purchase_cost_gel=(
+                        round(last_cost, 4) if last_cost is not None else None
+                    ),
+                    cost_drift_pct=drift_pct,
+                )
+            )
+        return result
+
+    # ─── Tool 8: pending orders pipeline ─────────────────────────────────────
+
+    _SQL_ORDERS_PIPELINE = """
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'pending')                       AS total_pending,
+            COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'urgent') AS urgent_pending,
+            COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'normal') AS normal_pending,
+            COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'low')    AS low_pending,
+            MIN(created_at) FILTER (WHERE status = 'pending')                AS oldest_pending_at
+        FROM orders
+    """
+
+    _SQL_ORDERS_TOP_PENDING = """
+        SELECT
+            COALESCE(p.name, o.notes, 'უცნობი')                              AS name,
+            p.oem_code                                                        AS oem_code,
+            SUM(o.quantity_needed)                                            AS qty_needed,
+            COUNT(*)                                                          AS order_count,
+            MAX(o.priority)                                                   AS max_priority
+        FROM orders o
+        LEFT JOIN products p ON p.id = o.product_id
+        WHERE o.status = 'pending'
+        GROUP BY COALESCE(p.name, o.notes, 'უცნობი'), p.oem_code
+        ORDER BY
+            CASE MAX(o.priority) WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+            SUM(o.quantity_needed) DESC
+        LIMIT $1
+    """
+
+    async def get_orders_pipeline(
+        self, limit: int = _DEFAULT_TOP_N
+    ) -> OrdersPipeline:
+        """Snapshot of the pending orders queue.
+
+        Helps the AI recommend follow-up actions: "6 urgent orders pending
+        average age 9 days — call supplier today."
+        """
+        limit = self._clamp_limit(limit)
+        conn = await self._conn()
+        try:
+            summary = await conn.fetchrow(self._SQL_ORDERS_PIPELINE)
+            top = await conn.fetch(self._SQL_ORDERS_TOP_PENDING, limit)
+        finally:
+            await self._pool.release(conn)
+
+        oldest_at = summary["oldest_pending_at"]
+        oldest_days: Optional[int]
+        if oldest_at is not None:
+            # asyncpg returns tz-aware datetime; use aware "now" to subtract
+            now_aware = datetime.now(oldest_at.tzinfo) if oldest_at.tzinfo else datetime.now()
+            oldest_days = max(0, (now_aware - oldest_at).days)
+        else:
+            oldest_days = None
+
+        top_list: List[Dict[str, Any]] = [
+            {
+                "name": str(r["name"]),
+                "oem_code": r["oem_code"],
+                "qty_needed": int(r["qty_needed"]),
+                "order_count": int(r["order_count"]),
+                "max_priority": str(r["max_priority"]),
+            }
+            for r in top
+        ]
+
+        return OrdersPipeline(
+            total_pending=int(summary["total_pending"] or 0),
+            urgent_pending=int(summary["urgent_pending"] or 0),
+            normal_pending=int(summary["normal_pending"] or 0),
+            low_pending=int(summary["low_pending"] or 0),
+            oldest_pending_days=oldest_days,
+            top_pending_products=top_list,
+        )
+
     # ─── Composite: full snapshot for the AI ─────────────────────────────────
 
     async def get_financial_snapshot(
@@ -507,6 +696,8 @@ class FinancialDataReader:
         ledger = await self.get_ledger_top_accounts(
             period_start, period_end, limit=top_n
         )
+        wac = await self.get_wac_per_product(limit=top_n)
+        orders = await self.get_orders_pipeline(limit=top_n)
 
         return FinancialSnapshot(
             overview=overview,
@@ -515,4 +706,6 @@ class FinancialDataReader:
             top_products_by_velocity=top_velocity,
             restock_alerts=alerts,
             ledger_top_accounts=ledger,
+            wac_top_products=wac,
+            orders_pipeline=orders,
         )
