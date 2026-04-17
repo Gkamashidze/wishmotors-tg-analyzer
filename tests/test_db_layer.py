@@ -300,8 +300,28 @@ class TestReceiveInventoryBatch:
             )
 
     @pytest.mark.asyncio
-    async def test_existing_product_posts_batch_stock_and_ledger(self):
-        """Existing product: stock += qty, 1 batch insert, 2 ledger rows, WAC returned."""
+    async def test_raises_when_oem_is_missing(self):
+        """No OEM code → ValueError raised immediately (strict OEM-only mode)."""
+        db = _make_db()
+        with pytest.raises(ValueError, match="oem_code"):
+            await db.receive_inventory_batch(
+                name="სარკე", oem_code=None, quantity=5,
+                unit_cost=10.0, min_stock=20,
+            )
+
+    @pytest.mark.asyncio
+    async def test_raises_when_oem_is_empty_string(self):
+        """Empty-string OEM → ValueError raised (treated same as missing)."""
+        db = _make_db()
+        with pytest.raises(ValueError, match="oem_code"):
+            await db.receive_inventory_batch(
+                name="სარკე", oem_code="   ", quantity=5,
+                unit_cost=10.0, min_stock=20,
+            )
+
+    @pytest.mark.asyncio
+    async def test_existing_product_updates_name_price_and_posts_batch(self):
+        """Existing product: name+unit_price updated, stock += qty, 1 batch, 2 ledger rows."""
         db = _make_db()
         pool, conn = _make_pool_mock()
 
@@ -320,7 +340,7 @@ class TestReceiveInventoryBatch:
         db._pool = pool
 
         result = await db.receive_inventory_batch(
-            name="სარკე", oem_code="12345", quantity=10,
+            name="სარკე განახლებული", oem_code="12345", quantity=10,
             unit_cost=15.0, min_stock=20,
         )
 
@@ -330,12 +350,12 @@ class TestReceiveInventoryBatch:
         assert result["new_wac"] == pytest.approx(10.0)
         assert result["total_cost"] == pytest.approx(150.0)
         assert result["was_created"] is False
-        # Two ledger inserts were executed (debit + credit).
-        assert conn.execute.call_count == 2
+        # execute calls: 1 UPDATE (name+unit_price) + 2 ledger inserts = 3.
+        assert conn.execute.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_new_product_is_created_when_oem_missing(self):
-        """Unknown OEM → product row is inserted and was_created == True."""
+    async def test_new_product_is_created_when_oem_not_in_db(self):
+        """OEM not found in DB → product row inserted and was_created == True."""
         db = _make_db()
         pool, conn = _make_pool_mock()
 

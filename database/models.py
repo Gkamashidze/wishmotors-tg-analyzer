@@ -206,6 +206,13 @@ ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
 ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 
+-- Ensure oem_code has a UNIQUE constraint (idempotent: catches both fresh
+-- databases already carrying products_oem_code_key and re-runs of this migration).
+DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT products_oem_code_unique UNIQUE (oem_code);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- Real-time immutable audit log: every write operation posts a JSON snapshot
 -- here via a fire-and-forget background task (see database/audit_log.py).
 -- Rows are NEVER updated or deleted — append-only for tamper evidence.

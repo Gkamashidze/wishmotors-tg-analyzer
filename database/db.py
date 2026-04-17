@@ -619,45 +619,34 @@ class Database:
         total_cost = round(float(quantity) * float(unit_cost), 2)
         clean_oem = oem_code.strip() if oem_code else None
 
+        if not clean_oem:
+            raise ValueError("oem_code სავალდებულოა — იდენტიფიკაცია მხოლოდ OEM-ით ხდება")
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 was_created = False
                 product_id: Optional[int] = None
 
-                if clean_oem:
-                    existing = await conn.fetchrow(
-                        "SELECT id FROM products WHERE oem_code = $1",
-                        clean_oem,
+                existing = await conn.fetchrow(
+                    "SELECT id FROM products WHERE oem_code = $1",
+                    clean_oem,
+                )
+                if existing:
+                    product_id = existing["id"]
+                    await conn.execute(
+                        "UPDATE products SET name = $1, unit_price = $2 WHERE id = $3",
+                        name, unit_cost, product_id,
                     )
-                    if existing:
-                        product_id = existing["id"]
-                    else:
-                        row = await conn.fetchrow(
-                            """INSERT INTO products
-                                   (name, oem_code, current_stock, min_stock, unit_price)
-                               VALUES ($1, $2, 0, $3, $4)
-                               RETURNING id""",
-                            name, clean_oem, min_stock, unit_cost,
-                        )
-                        product_id = row["id"]
-                        was_created = True
                 else:
-                    existing = await conn.fetchrow(
-                        "SELECT id FROM products WHERE name ILIKE $1",
-                        f"%{name.strip()}%",
+                    row = await conn.fetchrow(
+                        """INSERT INTO products
+                               (name, oem_code, current_stock, min_stock, unit_price)
+                           VALUES ($1, $2, 0, $3, $4)
+                           RETURNING id""",
+                        name, clean_oem, min_stock, unit_cost,
                     )
-                    if existing:
-                        product_id = existing["id"]
-                    else:
-                        row = await conn.fetchrow(
-                            """INSERT INTO products
-                                   (name, oem_code, current_stock, min_stock, unit_price)
-                               VALUES ($1, NULL, 0, $2, $3)
-                               RETURNING id""",
-                            name, min_stock, unit_cost,
-                        )
-                        product_id = row["id"]
-                        was_created = True
+                    product_id = row["id"]
+                    was_created = True
 
                 stock_row = await conn.fetchrow(
                     """UPDATE products
