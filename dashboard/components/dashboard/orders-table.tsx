@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
+import { CreatableCombobox } from "@/components/ui/creatable-combobox";
+import type { ComboOption } from "@/components/ui/creatable-combobox";
 import type { OrderRow, ProductRow } from "@/lib/queries";
 import { formatNumber } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -87,11 +89,38 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
   const [deleteRow, setDeleteRow] = useState<OrderRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [localProducts, setLocalProducts] = useState<ProductRow[]>(products);
 
-  const productOptions = useMemo(() => [
+  const productOptions = useMemo<ComboOption[]>(() => [
     { value: "", label: "— პროდუქტი არ არის —" },
-    ...products.map((p) => ({ value: String(p.id), label: p.name })),
-  ], [products]);
+    ...localProducts.map((p) => ({
+      value: String(p.id),
+      label: p.name,
+      sublabel: p.oemCode ?? undefined,
+    })),
+  ], [localProducts]);
+
+  const handleCreateProduct = useCallback(async (name: string): Promise<ComboOption> => {
+    const res = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error("product create failed");
+    const data = (await res.json()) as { id: number; name: string };
+    const newProduct: ProductRow = {
+      id: data.id,
+      name: data.name,
+      oemCode: null,
+      currentStock: 0,
+      minStock: 20,
+      unitPrice: 0,
+      unit: "ც",
+      createdAt: new Date().toISOString(),
+    };
+    setLocalProducts((prev) => [...prev, newProduct].sort((a, b) => a.name.localeCompare(b.name)));
+    return { value: String(data.id), label: data.name };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = queryText.trim().toLowerCase();
@@ -238,7 +267,15 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
       <Dialog open={!!editRow} onClose={closeEdit} title={`შეკვეთის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
-            <Select id="ord-product" label="პროდუქტი" options={productOptions} value={editState.product_id} onChange={set("product_id")} />
+            <CreatableCombobox
+                id="ord-product"
+                label="პროდუქტი"
+                options={productOptions}
+                value={editState.product_id}
+                onChange={(val) => setEditState((prev) => prev ? { ...prev, product_id: val } : prev)}
+                onCreateOption={handleCreateProduct}
+                createLabel="ახალი პროდუქტი"
+              />
             <Input id="ord-qty" label="საჭირო რაოდენობა" type="number" min="1" value={editState.quantity_needed} onChange={set("quantity_needed")} />
             <div className="grid grid-cols-2 gap-3">
               <Select id="ord-status" label="სტატუსი" options={STATUS_OPTIONS} value={editState.status} onChange={set("status")} />
