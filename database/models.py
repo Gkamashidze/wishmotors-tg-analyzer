@@ -205,6 +205,22 @@ ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(14, 2) NO
 ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
 ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
+
+-- Real-time immutable audit log: every write operation posts a JSON snapshot
+-- here via a fire-and-forget background task (see database/audit_log.py).
+-- Rows are NEVER updated or deleted — append-only for tamper evidence.
+CREATE TABLE IF NOT EXISTS transaction_audit_log (
+    id           BIGSERIAL    PRIMARY KEY,
+    event_type   TEXT         NOT NULL,
+    reference_id TEXT,
+    payload      JSONB        NOT NULL,
+    checksum     TEXT         NOT NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_event_type  ON transaction_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON transaction_audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_reference   ON transaction_audit_log(reference_id);
 """
 
 

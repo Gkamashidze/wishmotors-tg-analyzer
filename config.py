@@ -49,3 +49,10 @@ MAX_EXCEL_BYTES: int = int(os.getenv("MAX_EXCEL_BYTES", str(5 * 1024 * 1024)))  
 # When set, weekly reports include an AI-generated business analysis block.
 # When unset, reports go out exactly as before.
 ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+
+# Optional: Telegram channel/chat ID for real-time transaction audit forwarding.
+# When set, every write operation (sale, expense, order, inventory) sends a
+# structured JSON message to this channel as a secondary backup.
+# Example: AUDIT_CHANNEL_ID=-1001234567890  (private channel, bot must be admin)
+_audit_raw = os.getenv("AUDIT_CHANNEL_ID")
+AUDIT_CHANNEL_ID: Optional[int] = int(_audit_raw) if _audit_raw else None

@@ -25,6 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import config
 from bot.financial_ai import generate_weekly_advice
 from bot.handlers.addorder import addorder_router
+from database.audit_log import AuditLogger
 from bot.handlers.commands import commands_router
 from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
@@ -57,6 +58,31 @@ class DatabaseMiddleware(BaseMiddleware):
 
 
 # ─── Scheduled weekly report ──────────────────────────────────────────────────
+
+async def _run_integrity_check(db: Database, bot: Bot) -> None:
+    """Hourly: verify audit log checksums and warn admins if tampering is found."""
+    if db.audit is None:
+        return
+    try:
+        result = await db.audit.verify_integrity(since_hours=25)
+        if result.get("tampered"):
+            warn = (
+                f"⚠️ <b>Audit integrity alert</b>\n"
+                f"Tampered rows: {result['tampered']}\n"
+                f"Checked: {result['checked']}, OK: {result['ok']}"
+            )
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(chat_id=admin_id, text=warn, parse_mode="HTML")
+                except Exception:
+                    pass
+        else:
+            logger.info(
+                "Integrity check OK — %d rows verified.", result.get("checked", 0)
+            )
+    except Exception as exc:
+        logger.warning("Integrity check failed: %s", exc)
+
 
 async def _purge_expired_deleted_sales(db: Database) -> None:
     """Hourly cleanup: remove deleted_sales records past their 24h restore window."""
@@ -130,6 +156,16 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
+    # Attach real-time audit logger — fire-and-forget, never blocks the bot
+    db.audit = AuditLogger(
+        pool=db.pool,
+        bot=bot if config.AUDIT_CHANNEL_ID else None,
+    )
+    logger.info(
+        "AuditLogger ready (Telegram forwarding: %s)",
+        "enabled" if config.AUDIT_CHANNEL_ID else "disabled — set AUDIT_CHANNEL_ID to enable",
+    )
+
     await bot.set_my_commands([
         # ── ✏️ შეყვანა ────────────────────────────────
         BotCommand(command="new",           description="✏️ გაყიდვა / ნისია / ხარჯი"),
@@ -199,6 +235,13 @@ async def main() -> None:
         trigger=CronTrigger(minute=30, timezone=tz),  # every hour at :30
         kwargs={"db": db},
         id="purge_deleted_sales",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _run_integrity_check,
+        trigger=CronTrigger(minute=45, timezone=tz),  # every hour at :45
+        kwargs={"db": db, "bot": bot},
+        id="audit_integrity_check",
         replace_existing=True,
     )
     scheduler.start()

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -5,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import asyncpg
 import pytz
 
+from database.audit_log import AuditLogger
 from database.models import (
     CREATE_TABLES_SQL,
     MIGRATE_SQL,
@@ -25,6 +27,7 @@ class Database:
         self.dsn = dsn
         self.tz = pytz.timezone(timezone)
         self._pool: Optional[asyncpg.Pool] = None  # type: ignore[type-arg]
+        self.audit: Optional[AuditLogger] = None
 
     @property
     def pool(self) -> asyncpg.Pool:  # type: ignore[type-arg]
@@ -62,6 +65,22 @@ class Database:
 
     def _row(self, record: Any) -> Optional[Dict[str, Any]]:
         return dict(record) if record else None
+
+    def _audit(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        reference_id: Optional[str] = None,
+    ) -> None:
+        """Fire-and-forget: schedule an audit log write without blocking the caller."""
+        if self.audit is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(
+                self.audit.log_safe(event_type, payload, reference_id)
+            )
+        except RuntimeError:
+            pass
 
     # ─── Products ─────────────────────────────────────────────────────────────
 
@@ -695,7 +714,7 @@ class Database:
                 else:
                     new_wac = 0.0
 
-        return {
+        result = {
             "product_id": product_id,
             "batch_id": batch_id,
             "new_stock": new_stock,
@@ -703,6 +722,8 @@ class Database:
             "total_cost": total_cost,
             "was_created": was_created,
         }
+        self._audit("inventory_received", result, reference_id=f"inventory:{batch_id}")
+        return result
 
     # ─── Sales (atomic: record sale + update stock in one transaction) ─────────
 
@@ -781,6 +802,19 @@ class Database:
                     description=description,
                 )
 
+        self._audit("sale_created", {
+            "sale_id": sale_id,
+            "product_id": product_id,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "revenue": revenue,
+            "cost_amount": cost_amount,
+            "payment_method": payment_method,
+            "seller_type": seller_type,
+            "customer_name": customer_name,
+            "notes": notes,
+            "new_stock": new_stock,
+        }, reference_id=f"sale:{sale_id}")
         return sale_id, new_stock
 
     async def delete_sale(self, sale_id: int) -> Optional[SaleRow]:
@@ -833,7 +867,9 @@ class Database:
                     description=f"Sale #{sale_id} — {label}",
                 )
                 await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
-                return sale_dict  # type: ignore[return-value]
+
+        self._audit("sale_deleted", sale_dict, reference_id=f"reversal:sale:{sale_id}")
+        return sale_dict  # type: ignore[return-value]
 
     async def mark_sale_paid(self, sale_id: int, payment_method: str) -> bool:
         """Mark a credit (ნისია) sale as paid + post AR settlement to ledger.
@@ -869,7 +905,13 @@ class Database:
                     amount=amount,
                     description=f"Nisia payment #{sale_id} — {label}",
                 )
-                return True
+        self._audit("nisia_paid", {
+            "sale_id": sale_id,
+            "payment_method": payment_method,
+            "amount": amount,
+            "customer_name": sale["customer_name"],
+        }, reference_id=f"payment:{sale_id}")
+        return True
 
     async def mark_customer_sales_paid(self, customer_name: str, payment_method: str) -> int:
         """Mark all credit sales for a customer as paid + post one AR settlement.
@@ -1181,7 +1223,15 @@ class Database:
                    RETURNING id""",
                 product_id, quantity_needed, priority, notes,
             )
-            return row["id"]
+            order_id: int = row["id"]
+        self._audit("order_created", {
+            "order_id": order_id,
+            "product_id": product_id,
+            "quantity_needed": quantity_needed,
+            "priority": priority,
+            "notes": notes,
+        }, reference_id=f"order:{order_id}")
+        return order_id
 
     async def create_orders_bulk(
         self,
@@ -1213,7 +1263,12 @@ class Database:
                         item.get("notes"),
                     )
                     ids.append(row["id"])
-                return ids
+        self._audit("orders_bulk_created", {
+            "order_ids": ids,
+            "items": items,
+            "count": len(ids),
+        }, reference_id=f"bulk_order:{ids[0]}..{ids[-1]}" if ids else None)
+        return ids
 
     async def get_pending_orders(self) -> List[OrderRow]:
         """Return pending orders sorted by priority (urgent first), then date."""
@@ -1343,7 +1398,14 @@ class Database:
                     amount=amt,
                     description=f"Expense #{expense_id} — {label}",
                 )
-            return expense_id
+        self._audit("expense_created", {
+            "expense_id": expense_id,
+            "amount": amt,
+            "description": description,
+            "category": category,
+            "payment_method": payment_method,
+        }, reference_id=f"expense:{expense_id}")
+        return expense_id
 
     async def get_weekly_expenses(self) -> List[ExpenseRow]:
         async with self.pool.acquire() as conn:
