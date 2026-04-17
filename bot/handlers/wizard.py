@@ -52,6 +52,13 @@ wizard_router = Router(name="wizard")
 _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
 
+# Detects combined OEM+name input like "8390132500მარჭვენა სარკე" — digits/latin prefix
+# immediately followed by (or space-separated from) a Georgian-script product name.
+_OEM_SPLIT_RE = re.compile(
+    r'^([\dA-Za-z][\dA-Za-z\-]*)\s+([\u10d0-\u10ff].+)$',
+    re.UNICODE,
+)
+
 # ─── Shared helpers ────────────────────────────────────────────────────────────
 
 def _kb(*rows: list) -> InlineKeyboardMarkup:
@@ -1701,7 +1708,22 @@ async def _handle_product_search(
     if not query:
         return
 
-    products = await db.search_products(query, limit=6)
+    # Detect combined "OEM_CODE Georgian_Name" input (e.g. "8390132500მარჭვენა სარკე")
+    # and try searching by the OEM part first, then by the name part.
+    oem_split = _OEM_SPLIT_RE.match(query)
+    if oem_split:
+        oem_part  = oem_split.group(1).strip()
+        name_part = oem_split.group(2).strip()
+        products_by_oem = await db.search_products(oem_part, limit=6)
+        if products_by_oem:
+            products = products_by_oem
+        else:
+            products_by_name = await db.search_products(name_part, limit=6)
+            products = products_by_name if products_by_name else await db.search_products(query, limit=6)
+        # Pre-fill product_name as the human-readable part so freeform fallback is useful
+        await state.update_data(product_name=name_part)
+    else:
+        products = await db.search_products(query, limit=6)
 
     if len(products) == 1:
         p = products[0]

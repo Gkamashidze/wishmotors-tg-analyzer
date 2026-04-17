@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+export async function GET() {
+  const rows = await query<{
+    id: number;
+    name: string;
+    oem_code: string | null;
+    current_stock: number;
+    min_stock: number;
+    unit_price: string;
+    unit: string;
+    created_at: Date;
+  }>(
+    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
+     FROM products
+     ORDER BY name ASC`,
+  );
+
+  return NextResponse.json(
+    rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      oemCode: r.oem_code,
+      currentStock: r.current_stock,
+      minStock: r.min_stock,
+      unitPrice: Number(r.unit_price),
+      unit: r.unit,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    })),
+  );
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as Record<string, unknown>;
   const name = typeof body.name === "string" ? body.name.trim() : null;

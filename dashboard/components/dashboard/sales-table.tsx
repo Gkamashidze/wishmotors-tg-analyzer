@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -12,6 +12,7 @@ import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
 import type { SaleRow, ProductRow } from "@/lib/queries";
 import { formatGEL, formatNumber } from "@/lib/utils";
+import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "ნაღდი" },
@@ -70,6 +71,7 @@ function rowToEdit(r: SaleRow): EditState {
 export function SalesTable({ rows, products }: { rows: SaleRow[]; products: ProductRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [viewRow, setViewRow] = useState<SaleRow | null>(null);
   const [editRow, setEditRow] = useState<SaleRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<SaleRow | null>(null);
@@ -215,6 +217,9 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
@@ -230,6 +235,34 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
           </TableBody>
         </Table>
       </div>
+
+      {/* View Modal */}
+      <Dialog open={!!viewRow} onClose={() => setViewRow(null)} title={`გაყიდვის დეტალები #${viewRow?.id}`}>
+        {viewRow && (() => {
+          const total = viewRow.quantity * viewRow.unitPrice;
+          const profit = total - viewRow.costAmount;
+          return (
+            <div className="space-y-3">
+              <ViewFieldGrid>
+                <ViewField label="პროდუქტი" value={viewRow.productName} className="sm:col-span-2" />
+                <ViewField label="რაოდენობა" value={formatNumber(viewRow.quantity)} />
+                <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
+                <ViewField label="ჯამი" value={formatGEL(total)} />
+                <ViewField label="თვითღირებულება" value={formatGEL(viewRow.costAmount)} />
+                <ViewField label="მოგება" value={<span className={profit >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}>{formatGEL(profit)}</span>} />
+                <ViewField label="გადახდა" value={paymentLabel(viewRow.paymentMethod)} />
+                <ViewField label="გამყიდველი ტიპი" value={viewRow.sellerType} />
+                <ViewField label="მყიდველი" value={viewRow.customerName} />
+                <ViewField label="თარიღი" value={formatDate(viewRow.soldAt)} />
+                {viewRow.notes && <ViewField label="შენიშვნა" value={viewRow.notes} className="sm:col-span-2" />}
+              </ViewFieldGrid>
+              <div className="flex justify-end pt-2">
+                <Button variant="outline" onClick={() => setViewRow(null)} className="cursor-pointer">დახურვა</Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Dialog>
 
       {/* Edit Modal */}
       <Dialog open={!!editRow} onClose={closeEdit} title={`გაყიდვის რედაქტირება #${editRow?.id}`}>

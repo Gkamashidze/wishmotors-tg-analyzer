@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -14,6 +14,7 @@ import { CreatableCombobox } from "@/components/ui/creatable-combobox";
 import type { ComboOption } from "@/components/ui/creatable-combobox";
 import type { OrderRow, ProductRow } from "@/lib/queries";
 import { formatNumber } from "@/lib/utils";
+import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import { cn } from "@/lib/utils";
 
 type PriorityFilter = "all" | "urgent" | "normal" | "low";
@@ -84,6 +85,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
   const [priority, setPriority] = useState<PriorityFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("pending");
   const [queryText, setQueryText] = useState("");
+  const [viewRow, setViewRow] = useState<OrderRow | null>(null);
   const [editRow, setEditRow] = useState<OrderRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<OrderRow | null>(null);
@@ -245,6 +247,9 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
                   <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{r.notes ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -263,6 +268,26 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
       <p className="text-xs text-muted-foreground">
         ნაჩვენებია {formatNumber(filtered.length)} / {formatNumber(rows.length)} შეკვეთა
       </p>
+
+      {/* View Modal */}
+      <Dialog open={!!viewRow} onClose={() => setViewRow(null)} title={`შეკვეთის დეტალები #${viewRow?.id}`}>
+        {viewRow && (
+          <div className="space-y-3">
+            <ViewFieldGrid>
+              <ViewField label="პროდუქტი" value={viewRow.productName} />
+              <ViewField label="OEM კოდი" value={viewRow.oemCode} />
+              <ViewField label="საჭირო რ-ბა" value={formatNumber(viewRow.quantityNeeded)} />
+              <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />
+              <ViewField label="პრიორიტეტი" value={priorityBadge(viewRow.priority)} />
+              <ViewField label="სტატუსი" value={statusBadge(viewRow.status)} />
+              {viewRow.notes && <ViewField label="შენიშვნა" value={viewRow.notes} className="sm:col-span-2" />}
+            </ViewFieldGrid>
+            <div className="flex justify-end pt-2">
+              <Button variant="outline" onClick={() => setViewRow(null)} className="cursor-pointer">დახურვა</Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
 
       <Dialog open={!!editRow} onClose={closeEdit} title={`შეკვეთის რედაქტირება #${editRow?.id}`}>
         {editState && (

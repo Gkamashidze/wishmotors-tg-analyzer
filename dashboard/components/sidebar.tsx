@@ -8,6 +8,7 @@ import {
   TrendingUp,
   Receipt,
   Package,
+  ShoppingBag,
   Settings,
   LifeBuoy,
   Wrench,
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { href: "/sales", label: "გაყიდვები", icon: TrendingUp },
   { href: "/expenses", label: "ხარჯები", icon: Receipt },
   { href: "/inventory", label: "მარაგი", icon: Package },
+  { href: "/products", label: "პროდუქცია", icon: ShoppingBag },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
