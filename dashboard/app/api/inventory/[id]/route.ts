@@ -17,8 +17,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   const body = (await req.json()) as Record<string, unknown>;
   const { name, oem_code, current_stock, min_stock, unit_price, unit } = body;
 
-  const prev = await queryOne<{ name: string }>(
-    "SELECT name FROM products WHERE id = $1",
+  const prev = await queryOne<{ name: string; oem_code: string | null }>(
+    "SELECT name, oem_code FROM products WHERE id = $1",
     [rowId],
   );
 
@@ -34,23 +34,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
     [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit],
   );
 
-  if (prev && prev.name !== (name as string) && GROUP_ID) {
-    const newName = name as string;
+  const newName = name as string;
+  const newOem = (oem_code as string | null | undefined) ?? null;
+  const nameChanged = prev?.name !== newName;
+  const oemChanged = (prev?.oem_code ?? null) !== newOem;
+
+  if (prev && (nameChanged || oemChanged) && GROUP_ID) {
     void (async () => {
       const sales = await query<{
         id: number;
-        topic_id: number;
         topic_message_id: number;
         quantity: number;
         unit_price: string;
         payment_method: string;
         customer_name: string | null;
       }>(
-        `SELECT id, topic_id, topic_message_id, quantity, unit_price,
+        `SELECT id, topic_message_id, quantity, unit_price,
                 payment_method, customer_name
          FROM sales
-         WHERE product_id = $1
-           AND topic_id IS NOT NULL AND topic_message_id IS NOT NULL`,
+         WHERE product_id = $1 AND topic_message_id IS NOT NULL`,
         [rowId],
       );
       for (const s of sales) {
@@ -61,24 +63,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
           paymentMethod: s.payment_method,
           saleId: s.id,
           customerName: s.customer_name,
+          oemCode: newOem,
         });
         await telegramMarkUpdated(GROUP_ID, s.topic_message_id, text);
       }
 
       const orders = await query<{
         id: number;
-        topic_id: number;
         topic_message_id: number;
         quantity_needed: number;
         status: string;
         priority: string;
         notes: string | null;
       }>(
-        `SELECT id, topic_id, topic_message_id, quantity_needed,
-                status, priority, notes
+        `SELECT id, topic_message_id, quantity_needed, status, priority, notes
          FROM orders
-         WHERE product_id = $1
-           AND topic_id IS NOT NULL AND topic_message_id IS NOT NULL`,
+         WHERE product_id = $1 AND topic_message_id IS NOT NULL`,
         [rowId],
       );
       for (const o of orders) {

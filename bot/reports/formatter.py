@@ -483,12 +483,14 @@ def format_topic_sale(
     sale_id: int,
     customer_name: Optional[str] = None,
     unknown_product: bool = False,
+    oem_code: Optional[str] = None,
 ) -> str:
     total = qty * price
     pay = _payment_label(payment)
     cust = f" | 👤 {_e(customer_name)}" if customer_name else ""
     warn = " ⚠️ (ბაზაში არ არის)" if unknown_product else ""
-    return f"📦 <b>{_e(product_name)}</b>{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | {pay}{cust} | <code>#{sale_id}</code>"
+    oem = f" <code>{_e(oem_code)}</code>" if oem_code else ""
+    return f"📦 <b>{_e(product_name)}</b>{oem}{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | {pay}{cust} | <code>#{sale_id}</code>"
 
 
 def format_topic_nisia(
@@ -498,12 +500,14 @@ def format_topic_nisia(
     price: float,
     sale_id: int,
     unknown_product: bool = False,
+    oem_code: Optional[str] = None,
 ) -> str:
     total = qty * price
     warn = " ⚠️" if unknown_product else ""
+    oem = f" <code>{_e(oem_code)}</code>" if oem_code else ""
     return (
         f"📋 <b>ნისია</b> | 👤 {_e(customer_name)}\n"
-        f"📦 {_e(product_name)}{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | <code>#{sale_id}</code>"
+        f"📦 {_e(product_name)}{oem}{warn} — {qty}ც × {price:.2f}₾ = <b>{total:.2f}₾</b> | <code>#{sale_id}</code>"
     )
 
 

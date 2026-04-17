@@ -611,6 +611,7 @@ def _format_topic_text_for_sale(
     customer = sale.get("customer_name")
     customer_str = str(customer) if customer else None
     unknown = sale.get("product_id") is None
+    oem_code: Optional[str] = sale.get("oem_code") if not unknown else None
 
     if pm == "credit" and customer_str:
         return format_topic_nisia(
@@ -620,6 +621,7 @@ def _format_topic_text_for_sale(
             price=price,
             sale_id=sale_id,
             unknown_product=unknown,
+            oem_code=oem_code,
         )
     return format_topic_sale(
         product_name=product_name,
@@ -629,6 +631,7 @@ def _format_topic_text_for_sale(
         sale_id=sale_id,
         customer_name=customer_str,
         unknown_product=unknown,
+        oem_code=oem_code,
     )
 
 

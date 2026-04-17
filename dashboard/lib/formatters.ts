@@ -51,21 +51,23 @@ export interface TopicSaleOpts {
   paymentMethod: string;
   saleId: number;
   customerName?: string | null;
+  oemCode?: string | null;
 }
 
 export function formatTopicSale(opts: TopicSaleOpts): string {
   const total = opts.qty * opts.price;
   const pay = PAYMENT_LABELS[opts.paymentMethod] ?? opts.paymentMethod;
   const cust = opts.customerName ? ` | 👤 ${esc(opts.customerName)}` : "";
+  const oem = opts.oemCode ? ` <code>${esc(opts.oemCode)}</code>` : "";
 
   if (opts.paymentMethod === "credit" && opts.customerName) {
     return (
       `📋 <b>ნისია</b> | 👤 ${esc(opts.customerName)}\n` +
-      `📦 ${esc(opts.productName)} — ${opts.qty}ც × ${opts.price.toFixed(2)}₾ = <b>${total.toFixed(2)}₾</b> | <code>#${opts.saleId}</code>`
+      `📦 ${esc(opts.productName)}${oem} — ${opts.qty}ც × ${opts.price.toFixed(2)}₾ = <b>${total.toFixed(2)}₾</b> | <code>#${opts.saleId}</code>`
     );
   }
   return (
-    `📦 <b>${esc(opts.productName)}</b> — ${opts.qty}ც × ${opts.price.toFixed(2)}₾ = ` +
+    `📦 <b>${esc(opts.productName)}</b>${oem} — ${opts.qty}ც × ${opts.price.toFixed(2)}₾ = ` +
     `<b>${total.toFixed(2)}₾</b> | ${pay}${cust} | <code>#${opts.saleId}</code>`
   );
 }

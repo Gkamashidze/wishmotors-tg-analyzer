@@ -249,6 +249,7 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
                 payment=parsed.payment_method,
                 sale_id=sale_id,
                 customer_name=parsed.customer_name or None,
+                oem_code=product.get("oem_code"),
             ),
             parse_mode=_PARSE,
             reply_markup=kb,

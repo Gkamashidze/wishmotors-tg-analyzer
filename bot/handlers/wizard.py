@@ -329,6 +329,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
 
     product_id: Optional[int] = d.get("product_id")
     product_name: str         = d["product_name"]
+    oem_code: Optional[str]   = d.get("oem_code")
     qty: int                  = d["quantity"]
     price: float              = d["unit_price"]
     payment: str              = d["payment"]
@@ -392,6 +393,7 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
                 payment=payment,
                 sale_id=sale_id,
                 unknown_product=is_freeform,
+                oem_code=oem_code if not is_freeform else None,
             ),
             parse_mode=_PARSE,
             reply_markup=topic_kb,
@@ -497,6 +499,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
 
     product_id: Optional[int] = d.get("product_id")
     product_name: str         = d["product_name"]
+    oem_code: Optional[str]   = d.get("oem_code")
     qty: int                  = d["quantity"]
     price: float              = d["unit_price"]
     customer: str             = d["customer_name"]
@@ -547,6 +550,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
                 price=price,
                 sale_id=sale_id,
                 unknown_product=is_freeform,
+                oem_code=oem_code if not is_freeform else None,
             ),
             parse_mode=_PARSE,
             reply_markup=topic_nisia_kb(sale_id),
@@ -1275,6 +1279,7 @@ async def nisia_edit_confirm(
         price=price,
         sale_id=sale_id,
         unknown_product=updated.get("product_id") is None,
+        oem_code=updated.get("oem_code"),
     )
 
     if old_topic_msg and old_topic_id == config.NISIAS_TOPIC_ID:
@@ -1452,6 +1457,7 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
         payment=updated["payment_method"],
         sale_id=sale_id,
         customer_name=updated.get("customer_name"),
+        oem_code=updated.get("oem_code"),
     )
 
     if old_topic_msg and old_topic_id == new_topic_id:
@@ -1730,6 +1736,7 @@ async def _handle_product_search(
         await state.update_data(
             product_id=p["id"],
             product_name=p["name"],
+            oem_code=p.get("oem_code"),
             is_freeform=False,
         )
         await _goto_quantity(message, state, wizard, p["name"], send=True)
@@ -1799,6 +1806,7 @@ async def _handle_product_selected(
     await state.update_data(
         product_id=product_id,
         product_name=product["name"],
+        oem_code=product.get("oem_code"),
         is_freeform=False,
     )
     await _goto_quantity(callback.message, state, wizard, product["name"], send=False)
