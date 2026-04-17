@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,12 @@ export function CreatableCombobox({
   const [inputValue, setInputValue] = useState("");
   const [focused, setFocused] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
   const displayValue = focused ? inputValue : (selectedOption?.label ?? "");
@@ -61,8 +67,26 @@ export function CreatableCombobox({
   const hasResults = filtered.length > 0 || showCreate;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open || !inputWrapRef.current) return;
+    const rect = inputWrapRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }, [open]);
+
+  useEffect(() => {
     function handler(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const inContainer = containerRef.current?.contains(e.target as Node);
+      const inDropdown = dropdownRef.current?.contains(e.target as Node);
+      if (!inContainer && !inDropdown) {
         setOpen(false);
         setFocused(false);
         setInputValue("");
@@ -104,6 +128,57 @@ export function CreatableCombobox({
     }
   }
 
+  const dropdown = open && hasResults && mounted ? (
+    <div ref={dropdownRef} style={dropdownStyle} className="rounded-lg border border-border bg-popover shadow-lg">
+      <ul className="max-h-52 overflow-y-auto py-1" role="listbox" aria-label="პროდუქტის სია">
+        {filtered.map((o) => (
+          <li
+            key={o.value}
+            role="option"
+            aria-selected={o.value === value}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground select-none",
+              o.value === value && "bg-accent/40",
+            )}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleSelect(o);
+            }}
+          >
+            <Check
+              className={cn("h-3.5 w-3.5 shrink-0", o.value === value ? "opacity-100 text-primary" : "opacity-0")}
+            />
+            <div className="flex flex-col min-w-0">
+              <span className="truncate">{o.label}</span>
+              {o.sublabel && (
+                <span className="text-xs text-muted-foreground font-mono truncate">{o.sublabel}</span>
+              )}
+            </div>
+          </li>
+        ))}
+
+        {showCreate && (
+          <li
+            role="option"
+            aria-selected={false}
+            className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground border-t border-border select-none"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleCreate();
+            }}
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span>
+              <span className="text-muted-foreground">{createLabel}: </span>
+              <span className="font-medium">"{inputValue.trim()}"</span>
+            </span>
+            {creating && <span className="ml-auto text-xs text-muted-foreground animate-pulse">ინახება...</span>}
+          </li>
+        )}
+      </ul>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-1.5" ref={containerRef}>
       {label && (
@@ -111,7 +186,7 @@ export function CreatableCombobox({
           {label}
         </label>
       )}
-      <div className="relative">
+      <div className="relative" ref={inputWrapRef}>
         <input
           id={inputId}
           type="text"
@@ -142,58 +217,9 @@ export function CreatableCombobox({
         >
           <ChevronDown className={cn("h-4 w-4 transition-transform duration-150", open && "rotate-180")} />
         </button>
-
-        {open && hasResults && (
-          <div className="absolute z-50 top-full mt-1 w-full rounded-lg border border-border bg-popover shadow-lg">
-            <ul className="max-h-52 overflow-y-auto py-1" role="listbox" aria-label="პროდუქტის სია">
-              {filtered.map((o) => (
-                <li
-                  key={o.value}
-                  role="option"
-                  aria-selected={o.value === value}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground select-none",
-                    o.value === value && "bg-accent/40",
-                  )}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSelect(o);
-                  }}
-                >
-                  <Check
-                    className={cn("h-3.5 w-3.5 shrink-0", o.value === value ? "opacity-100 text-primary" : "opacity-0")}
-                  />
-                  <div className="flex flex-col min-w-0">
-                    <span className="truncate">{o.label}</span>
-                    {o.sublabel && (
-                      <span className="text-xs text-muted-foreground font-mono truncate">{o.sublabel}</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-
-              {showCreate && (
-                <li
-                  role="option"
-                  aria-selected={false}
-                  className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground border-t border-border select-none"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleCreate();
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span>
-                    <span className="text-muted-foreground">{createLabel}: </span>
-                    <span className="font-medium">"{inputValue.trim()}"</span>
-                  </span>
-                  {creating && <span className="ml-auto text-xs text-muted-foreground animate-pulse">ინახება...</span>}
-                </li>
-              )}
-            </ul>
-          </div>
-        )}
       </div>
+
+      {mounted && createPortal(dropdown, document.body)}
     </div>
   );
 }

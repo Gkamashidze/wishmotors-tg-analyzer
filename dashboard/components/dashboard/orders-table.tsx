@@ -64,6 +64,7 @@ function formatDate(iso: string) {
 
 interface EditState {
   product_id: string;
+  oem_code: string;
   quantity_needed: string;
   status: string;
   priority: string;
@@ -73,6 +74,7 @@ interface EditState {
 function rowToEdit(r: OrderRow): EditState {
   return {
     product_id: String(r.productId ?? ""),
+    oem_code: r.oemCode ?? "",
     quantity_needed: String(r.quantityNeeded),
     status: r.status,
     priority: r.priority,
@@ -151,11 +153,31 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
     if (!editRow || !editState) return;
     setSaving(true);
     try {
+      const productId = editState.product_id ? Number(editState.product_id) : null;
+
+      if (productId && editState.oem_code !== (editRow.oemCode ?? "")) {
+        const product = localProducts.find((p) => p.id === productId);
+        if (product) {
+          await fetch(`/api/inventory/${productId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: product.name,
+              oem_code: editState.oem_code || null,
+              current_stock: product.currentStock,
+              min_stock: product.minStock,
+              unit_price: product.unitPrice,
+              unit: product.unit,
+            }),
+          });
+        }
+      }
+
       const res = await fetch(`/api/orders/${editRow.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          product_id: editState.product_id ? Number(editState.product_id) : null,
+          product_id: productId,
           quantity_needed: Number(editState.quantity_needed),
           status: editState.status,
           priority: editState.priority,
@@ -168,7 +190,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
     } finally {
       setSaving(false);
     }
-  }, [editRow, editState, closeEdit, router]);
+  }, [editRow, editState, localProducts, closeEdit, router]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteRow) return;
@@ -297,10 +319,14 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
                 label="პროდუქტი"
                 options={productOptions}
                 value={editState.product_id}
-                onChange={(val) => setEditState((prev) => prev ? { ...prev, product_id: val } : prev)}
+                onChange={(val) => {
+                  const product = localProducts.find((p) => String(p.id) === val);
+                  setEditState((prev) => prev ? { ...prev, product_id: val, oem_code: product?.oemCode ?? "" } : prev);
+                }}
                 onCreateOption={handleCreateProduct}
                 createLabel="ახალი პროდუქტი"
               />
+            <Input id="ord-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
             <Input id="ord-qty" label="საჭირო რაოდენობა" type="number" min="1" value={editState.quantity_needed} onChange={set("quantity_needed")} />
             <div className="grid grid-cols-2 gap-3">
               <Select id="ord-status" label="სტატუსი" options={STATUS_OPTIONS} value={editState.status} onChange={set("status")} />
