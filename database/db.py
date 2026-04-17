@@ -1901,6 +1901,33 @@ class Database:
                 topic_id, topic_message_id, expense_id,
             )
 
+    async def delete_expense(self, expense_id: int) -> Optional[Dict[str, Any]]:
+        """Hard-delete an expense, reversing the ledger posting atomically.
+
+        Returns the deleted row (including topic_id / topic_message_id so the
+        caller can update the topic message in place) or None when the row
+        does not exist.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE", expense_id,
+                )
+                if not row:
+                    return None
+                current = dict(row)
+
+                label = current.get("description") or current.get("category") or f"Expense #{expense_id}"
+                await self._reverse_expense_ledger(
+                    conn,
+                    expense_id=expense_id,
+                    payment_method=current["payment_method"],
+                    amount=float(current["amount"]),
+                    description=f"Expense #{expense_id} — {label}",
+                )
+                await conn.execute("DELETE FROM expenses WHERE id = $1", expense_id)
+                return current
+
     # ─── Topic message tracking ───────────────────────────────────────────────
 
     async def update_sale_topic_message(

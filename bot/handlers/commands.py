@@ -78,20 +78,21 @@ _HELP_TEXT = """
 🏪 <b>საწყობი:</b>
 /stock — საწყობის მდგომარეობა
 /addproduct — პროდუქტის დამატება
-/editproduct ID ველი მნიშვნელობა — რედაქტირება
-  ველები: <code>name</code> | <code>oem</code> | <code>price</code> | <code>minstock</code>
 
 📋 <b>შეკვეთები:</b>
 /orders — მომლოდინე შეკვეთები (ავტო: 0 მარაგი)
-/completeorder ID — შეკვეთის დახურვა
+/addorder — ახალი შეკვეთის დამატება (wizard)
 
 💳 <b>ნისია:</b>
-/nisias — სია + ღილაკები გადახდისთვის
-/paid ID ხელზე — ნისიის გადახდა ნაღდით
-/paid ID დარიცხა — ნისიის გადახდა გადარიცხვით
+/nisias — გადაუხდელი ნისიების სია
 
-🗑 <b>გასწორება:</b>
-/deletesale ID — გაყიდვის წაშლა + მარაგის აღდგენა
+━━━━━━━━━━━━━━━━━━━━━
+✏️ <b>რედაქტირება / წაშლა:</b>
+ყველა ტრანზაქცია (გაყიდვა, ნისია, ხარჯი, შეკვეთა) რედაქტირდება და წაიშლება
+უშუალოდ ჯგუფში — ბოტის შეტყობინებაზე ღილაკებით:
+• <b>✏️ რედაქტირება</b> — მონაცემების შეცვლა
+• <b>❌ წაშლა</b> — ჩანაწერის გაუქმება + მარაგის/ბალანსის აღდგენა
+• <b>✅ შესრულდა</b> — შეკვეთის დახურვა (მხოლოდ Orders topic)
 
 🔧 <b>სისტემა:</b>
 /diagnostics — ვერ ამოცნობილი შეტყობინებები
@@ -661,21 +662,98 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
 
     await callback.answer(f"🗑 #{sale_id} წაიშალა — {total:.2f}₾", show_alert=False)
 
+    restore_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="↩️ აღდგენა (24სთ)", callback_data=f"rs:{deleted_id}")
+    ]])
+    restore_text = (
+        f"🗑 <b>გაყიდვა #{sale_id} წაიშალა</b>\n"
+        f"💰 {deleted['quantity']}ც × {float(deleted['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
+        "<i>24 საათის განმავლობაში შეგიძლია აღადგინო.</i>"
+    )
+
     if isinstance(callback.message, InaccessibleMessage):
         return
+
+    # From a group topic: mark_cancelled already rewrote the topic post with
+    # the cancellation banner. Leave it as-is and DM the admin with the
+    # restore option so the banner stays visible in the topic.
+    from_group = callback.message.chat.id != callback.from_user.id
+    if from_group:
+        try:
+            await callback.bot.send_message(
+                chat_id=callback.from_user.id,
+                text=restore_text,
+                parse_mode=_PARSE,
+                reply_markup=restore_kb,
+            )
+        except Exception as exc:
+            logger.debug("Could not DM restore option after topic deletion: %s", exc)
+        return
+
     try:
-        restore_kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="↩️ აღდგენა (24სთ)", callback_data=f"rs:{deleted_id}")
-        ]])
         await callback.message.edit_text(
-            f"🗑 <b>გაყიდვა #{sale_id} წაიშალა</b>\n"
-            f"💰 {deleted['quantity']}ც × {float(deleted['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
-            "<i>24 საათის განმავლობაში შეგიძლია აღადგინო.</i>",
+            restore_text,
             parse_mode=_PARSE,
             reply_markup=restore_kb,
         )
     except Exception as exc:
         logger.debug("Could not update message after sale deletion: %s", exc)
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("de:"), IsAdmin())
+async def callback_delete_expense(callback: CallbackQuery, db: Database) -> None:
+    """Delete an expense: reverses ledger + removes topic message banner."""
+    try:
+        expense_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    deleted = await db.delete_expense(expense_id)
+    if not deleted:
+        await callback.answer(f"⚠️ #{expense_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True)
+        return
+
+    logger.info(
+        "AUDIT: admin %d deleted expense #%d (amount=%s, payment=%s)",
+        callback.from_user.id, expense_id,
+        deleted.get("amount"), deleted.get("payment_method"),
+    )
+
+    # Prepend the cancellation banner to the topic post (if any).
+    topic_msg = deleted.get("topic_message_id")
+    if topic_msg:
+        amt = float(deleted["amount"])
+        cat = deleted.get("category") or "—"
+        desc = deleted.get("description") or ""
+        original = (
+            f"🧾 <b>ხარჯი #{expense_id}</b>\n"
+            f"💰 <b>{amt:.2f}₾</b>  |  🏷 {html.escape(str(cat))}"
+            + (f"\n📝 {html.escape(str(desc))}" if desc else "")
+        )
+        await mark_cancelled(
+            callback.bot, config.GROUP_ID, topic_msg, original,
+        )
+
+    amt = float(deleted["amount"])
+    await callback.answer(f"🗑 ხარჯი #{expense_id} წაიშალა — {amt:.2f}₾", show_alert=False)
+
+    if isinstance(callback.message, InaccessibleMessage):
+        return
+
+    # If invoked from the topic itself, the banner above is already the final
+    # state — skip the DM/rewrite step.
+    from_group = callback.message.chat.id != callback.from_user.id
+    if from_group:
+        return
+    try:
+        await callback.message.edit_text(
+            f"🗑 <b>ხარჯი #{expense_id} წაიშალა</b>\n"
+            f"💰 <b>{amt:.2f}₾</b>",
+            parse_mode=_PARSE,
+        )
+    except Exception as exc:
+        logger.debug("Could not update DM after expense deletion: %s", exc)
 
 
 @commands_router.callback_query(lambda c: c.data and c.data.startswith("rs:"), IsAdmin())

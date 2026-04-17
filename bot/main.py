@@ -126,18 +126,14 @@ async def main() -> None:
     await bot.set_my_commands([
         # ── ✏️ შეყვანა ────────────────────────────────
         BotCommand(command="new",           description="✏️ გაყიდვა / ნისია / ხარჯი"),
-        BotCommand(command="deletesale",    description="🗑 გაყიდვის წაშლა — /deletesale ID"),
         # ── 💳 ნისია ──────────────────────────────────
         BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები"),
-        BotCommand(command="paid",          description="💵 ნისიის გადახდა — /paid ID ხელზე"),
         # ── 📦 საწყობი ────────────────────────────────
         BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
         BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
         BotCommand(command="import",        description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"),
-        BotCommand(command="editproduct",   description="✏️ პროდუქტის რედაქტირება — ID ველი"),
         BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
         BotCommand(command="addorder",      description="📝 ახალი შეკვეთის დამატება — wizard"),
-        BotCommand(command="completeorder", description="✅ შეკვეთის დახურვა — ID საჭიროა"),
         # ── 💰 ანგარიში და ფული ───────────────────────
         BotCommand(command="report",        description="📊 კვირის ანგარიში"),
         BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),

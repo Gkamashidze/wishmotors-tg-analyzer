@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
+from bot.handlers.topic_messages import topic_nisia_kb, topic_sale_kb
 from bot.parsers.message_parser import (
     ParsedSale,
     parse_batch_sales,
@@ -236,6 +237,7 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
 
     # Mirror to topic and save message_id for later deletion
     topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
+    kb = topic_nisia_kb(sale_id) if parsed.payment_method == "credit" else topic_sale_kb(sale_id)
     try:
         topic_msg = await message.bot.send_message(
             chat_id=config.GROUP_ID,
@@ -249,6 +251,7 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
                 customer_name=parsed.customer_name or None,
             ),
             parse_mode=_PARSE,
+            reply_markup=kb,
         )
         await db.update_sale_topic_message(sale_id, topic_id, topic_msg.message_id)
     except Exception as _te:
@@ -309,6 +312,7 @@ async def _record_sale_freeform(
     )
 
     topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
+    kb = topic_nisia_kb(sale_id) if parsed.payment_method == "credit" else topic_sale_kb(sale_id)
     try:
         topic_msg = await message.bot.send_message(
             chat_id=config.GROUP_ID,
@@ -323,6 +327,7 @@ async def _record_sale_freeform(
                 unknown_product=True,
             ),
             parse_mode=_PARSE,
+            reply_markup=kb,
         )
         await db.update_sale_topic_message(sale_id, topic_id, topic_msg.message_id)
     except Exception as _te:

@@ -7,6 +7,7 @@ from aiogram.types import Message
 
 import config
 from bot.handlers import InTopic, IsAdmin
+from bot.handlers.topic_messages import topic_expense_kb
 from bot.parsers.message_parser import (
     ORDER_PRIORITY_LOW,
     ORDER_PRIORITY_URGENT,
@@ -128,6 +129,7 @@ async def handle_expense_message(message: Message, db: Database) -> None:
                     expense_id=expense_id,
                 ),
                 parse_mode=_PARSE,
+                reply_markup=topic_expense_kb(expense_id),
             )
             await db.update_expense_topic_message(
                 expense_id, config.EXPENSES_TOPIC_ID, topic_msg.message_id,

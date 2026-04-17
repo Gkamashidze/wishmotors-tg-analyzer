@@ -32,7 +32,12 @@ from aiogram.types import (
 
 import config
 from bot.handlers import IsAdmin
-from bot.handlers.topic_messages import mark_cancelled, mark_updated
+from bot.handlers.topic_messages import (
+    mark_cancelled,
+    mark_updated,
+    topic_expense_kb,
+    topic_nisia_kb,
+)
 from bot.reports.formatter import (
     format_topic_expense,
     format_topic_nisia,
@@ -534,6 +539,7 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
                 unknown_product=is_freeform,
             ),
             parse_mode=_PARSE,
+            reply_markup=topic_nisia_kb(sale_id),
         )
         await db.update_sale_topic_message(sale_id, config.NISIAS_TOPIC_ID, topic_msg.message_id)
     except Exception as exc:
@@ -733,6 +739,7 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
                 expense_id=expense_id,
             ),
             parse_mode=_PARSE,
+            reply_markup=topic_expense_kb(expense_id),
         )
         await db.update_expense_topic_message(expense_id, config.EXPENSES_TOPIC_ID, topic_msg.message_id)
     except Exception as exc:
@@ -783,10 +790,14 @@ async def sale_edit_start(callback: CallbackQuery, state: FSMContext, db: Databa
         await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
         return
 
+    # When triggered from a group topic, route the edit wizard to DM so the
+    # topic stays clean and the admin can input values privately.
+    target_chat_id = _edit_target_chat(callback)
+
     # Nisias get their own richer edit flow (Name / Phone / Product / Qty / Price)
     if sale.get("payment_method") == "credit":
-        await _start_nisia_edit(callback.message, state, sale, send=True)
-        await callback.answer()
+        await _start_nisia_edit(callback.message, state, sale, send=True, target_chat_id=target_chat_id)
+        await callback.answer("✏️ ნისიის რედაქტირება DM-ში" if target_chat_id != callback.message.chat.id else None)
         return
 
     await state.set_state(SaleEditWizard.field)
@@ -800,16 +811,21 @@ async def sale_edit_start(callback: CallbackQuery, state: FSMContext, db: Databa
     name  = sale.get("product_name") or sale.get("notes") or "—"
     cust  = sale.get("customer_name") or "—"
 
-    await callback.message.answer(
+    text = (
         f"✏️ <b>გაყიდვა #{sale_id} — რედაქტირება</b>\n\n"
         f"📦 {_e(name)}\n"
         f"🔢 რაოდ: {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
         f"💳 {pay}  |  👤 {_e(cust)}\n\n"
-        "რომელი ველი შეიცვალოს?",
-        parse_mode=_PARSE,
-        reply_markup=_sale_edit_field_kb(sale_id, sale["payment_method"] == "credit"),
+        "რომელი ველი შეიცვალოს?"
     )
-    await callback.answer()
+    kb = _sale_edit_field_kb(sale_id, sale["payment_method"] == "credit")
+    await callback.bot.send_message(
+        chat_id=target_chat_id, text=text, parse_mode=_PARSE, reply_markup=kb,
+    )
+    if target_chat_id != callback.message.chat.id:
+        await callback.answer("✏️ რედაქტირება DM-ში")
+    else:
+        await callback.answer()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -876,9 +892,15 @@ def _nisia_edit_confirm_kb() -> InlineKeyboardMarkup:
 
 
 async def _start_nisia_edit(
-    msg: Message, state: FSMContext, sale: dict, *, send: bool
+    msg: Message, state: FSMContext, sale: dict, *, send: bool,
+    target_chat_id: Optional[int] = None,
 ) -> None:
-    """Render the 5-field edit menu for a specific ნისია."""
+    """Render the 5-field edit menu for a specific ნისია.
+
+    If `target_chat_id` is provided and differs from the source chat, the
+    menu is sent as a new message to that chat (used when the edit was
+    triggered from a group topic: we redirect to the admin's DM).
+    """
     sale_id = sale["id"]
     qty     = sale["quantity"]
     price   = float(sale["unit_price"])
@@ -900,10 +922,28 @@ async def _start_nisia_edit(
         "რომელი ველი შეიცვალოს?"
     )
     kb = _nisia_edit_field_kb(sale_id)
+    if target_chat_id is not None and target_chat_id != msg.chat.id:
+        await msg.bot.send_message(
+            chat_id=target_chat_id, text=text, parse_mode=_PARSE, reply_markup=kb,
+        )
+        return
     if send:
         await msg.answer(text, parse_mode=_PARSE, reply_markup=kb)
     else:
         await msg.edit_text(text, parse_mode=_PARSE, reply_markup=kb)
+
+
+def _edit_target_chat(callback: CallbackQuery) -> int:
+    """Return the chat ID where the next edit-wizard step should be sent.
+
+    When the edit was triggered from a group topic, route the wizard into
+    the admin's DM so the topic stays clean and input flows privately.
+    """
+    assert isinstance(callback.message, Message)
+    assert callback.from_user is not None
+    if callback.message.chat.type == ChatType.PRIVATE:
+        return callback.message.chat.id
+    return callback.from_user.id
 
 
 @wizard_router.callback_query(F.data.startswith("edit:nisia:"), IsAdmin())
@@ -924,8 +964,14 @@ async def nisia_edit_start(callback: CallbackQuery, state: FSMContext, db: Datab
         await callback.answer("⚠️ ეს ჩანაწერი ნისია არ არის.", show_alert=True)
         return
 
-    await _start_nisia_edit(callback.message, state, sale, send=True)
-    await callback.answer()
+    target_chat_id = _edit_target_chat(callback)
+    await _start_nisia_edit(
+        callback.message, state, sale, send=True, target_chat_id=target_chat_id,
+    )
+    if target_chat_id != callback.message.chat.id:
+        await callback.answer("✏️ რედაქტირება DM-ში")
+    else:
+        await callback.answer()
 
 
 @wizard_router.callback_query(F.data.startswith("nef:"), IsAdmin(), StateFilter(NisiaEditWizard.field))
@@ -1234,6 +1280,7 @@ async def nisia_edit_confirm(
                 message_thread_id=config.NISIAS_TOPIC_ID,
                 text=new_topic_text,
                 parse_mode=_PARSE,
+                reply_markup=topic_nisia_kb(sale_id),
             )
             await db.update_sale_topic_message(
                 sale_id, config.NISIAS_TOPIC_ID, new_topic.message_id,
@@ -1457,19 +1504,26 @@ async def expense_edit_start(callback: CallbackQuery, state: FSMContext, db: Dat
     desc = exp.get("description") or "—"
     cat  = exp.get("category") or "სხვა"
 
-    await callback.message.answer(
+    text = (
         f"✏️ <b>ხარჯი #{expense_id} — რედაქტირება</b>\n\n"
         f"💰 {amt:.2f}₾  |  🏷 {_e(cat)}  |  📝 {_e(desc)}\n\n"
-        "რომელი ველი შეიცვალოს?",
-        parse_mode=_PARSE,
-        reply_markup=_kb(
-            [_btn("💰 თანხა",    f"eef:{expense_id}:amt"),
-             _btn("📝 აღწერა",   f"eef:{expense_id}:desc")],
-            [_btn("🏷 კატეგორია", f"eef:{expense_id}:cat")],
-            _CANCEL_ROW,
-        ),
+        "რომელი ველი შეიცვალოს?"
     )
-    await callback.answer()
+    kb = _kb(
+        [_btn("💰 თანხა",    f"eef:{expense_id}:amt"),
+         _btn("📝 აღწერა",   f"eef:{expense_id}:desc")],
+        [_btn("🏷 კატეგორია", f"eef:{expense_id}:cat")],
+        _CANCEL_ROW,
+    )
+
+    target_chat_id = _edit_target_chat(callback)
+    await callback.bot.send_message(
+        chat_id=target_chat_id, text=text, parse_mode=_PARSE, reply_markup=kb,
+    )
+    if target_chat_id != callback.message.chat.id:
+        await callback.answer("✏️ რედაქტირება DM-ში")
+    else:
+        await callback.answer()
 
 
 @wizard_router.callback_query(F.data.startswith("eef:"), IsAdmin(), StateFilter(ExpenseEditWizard.field))
@@ -1609,6 +1663,7 @@ async def expense_edit_confirm(callback: CallbackQuery, state: FSMContext, db: D
                 message_thread_id=config.EXPENSES_TOPIC_ID,
                 text=new_topic_text,
                 parse_mode=_PARSE,
+                reply_markup=topic_expense_kb(expense_id),
             )
             await db.update_expense_topic_message(
                 expense_id, config.EXPENSES_TOPIC_ID, new_topic.message_id,

@@ -18,6 +18,7 @@ from typing import Optional
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,43 @@ UPDATED_BANNER   = "✏️ <b>შეცვლილია</b>"
 
 # Telegram caps message text at 4096 chars; leave headroom for banner.
 _MAX_LEN = 4000
+
+
+# ─── Topic keyboards ──────────────────────────────────────────────────────────
+# Compact Edit/Delete (+Complete) keyboards attached to bot confirmation posts
+# in group topics so admins can fully manage transactions from the group
+# without touching DM-only commands.
+
+def _kb(*rows: list[InlineKeyboardButton]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=list(rows))
+
+
+def _btn(text: str, data: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=data)
+
+
+def topic_sale_kb(sale_id: int) -> InlineKeyboardMarkup:
+    """Edit/Delete keyboard for a sale topic post."""
+    return _kb(
+        [_btn("✏️ რედაქტირება", f"edit:sale:{sale_id}"),
+         _btn("❌ წაშლა",        f"ds:{sale_id}")],
+    )
+
+
+def topic_nisia_kb(sale_id: int) -> InlineKeyboardMarkup:
+    """Edit/Delete keyboard for a nisia (credit sale) topic post."""
+    return _kb(
+        [_btn("✏️ რედაქტირება", f"edit:nisia:{sale_id}"),
+         _btn("❌ წაშლა",        f"ds:{sale_id}")],
+    )
+
+
+def topic_expense_kb(expense_id: int) -> InlineKeyboardMarkup:
+    """Edit/Delete keyboard for an expense topic post."""
+    return _kb(
+        [_btn("✏️ რედაქტირება", f"edit:exp:{expense_id}"),
+         _btn("❌ წაშლა",        f"de:{expense_id}")],
+    )
 
 
 async def _safe_edit(
