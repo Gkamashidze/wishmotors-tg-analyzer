@@ -1375,6 +1375,70 @@ class Database:
                 )
                 return self._rows(full)  # type: ignore[return-value]
 
+    async def get_orders_by_topic_message(
+        self,
+        topic_id: int,
+        topic_message_id: int,
+    ) -> List[OrderRow]:
+        """Return all orders linked to a specific topic message (any status)."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT o.*, p.name AS product_name, p.oem_code
+                   FROM orders o
+                   LEFT JOIN products p ON o.product_id = p.id
+                   WHERE o.topic_id = $1 AND o.topic_message_id = $2
+                   ORDER BY
+                     CASE o.priority
+                       WHEN 'urgent' THEN 1
+                       WHEN 'normal' THEN 2
+                       WHEN 'low'    THEN 3
+                       ELSE 2
+                     END,
+                     o.id""",
+                topic_id, topic_message_id,
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
+    async def delete_orders_by_topic_message(
+        self,
+        topic_id: int,
+        topic_message_id: int,
+    ) -> int:
+        """Delete all orders linked to a topic message. Returns deleted count."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """DELETE FROM orders
+                   WHERE topic_id = $1 AND topic_message_id = $2""",
+                topic_id, topic_message_id,
+            )
+        count = int((result or "DELETE 0").split()[-1])
+        self._audit("orders_deleted_by_topic_message", {
+            "topic_id": topic_id,
+            "topic_message_id": topic_message_id,
+            "deleted_count": count,
+        })
+        return count
+
+    async def update_order_quantity(
+        self,
+        order_id: int,
+        new_quantity: int,
+    ) -> bool:
+        """Update quantity_needed for a pending order. Returns True if updated."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """UPDATE orders SET quantity_needed = $1
+                   WHERE id = $2 AND status = 'pending'""",
+                new_quantity, order_id,
+            )
+        updated = result == "UPDATE 1"
+        if updated:
+            self._audit("order_quantity_updated", {
+                "order_id": order_id,
+                "new_quantity": new_quantity,
+            }, reference_id=f"order:{order_id}")
+        return updated
+
     # ─── Expenses ─────────────────────────────────────────────────────────────
 
     async def create_expense(

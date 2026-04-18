@@ -83,14 +83,18 @@ def _e(v: object) -> str:
 _CANCEL = _btn("❌ გაუქმება", "ao:cancel")
 _CANCEL_ROW = [_CANCEL]
 
-# Callback data for the "order completed" button attached to the grouped
-# summary posted in ORDERS_TOPIC_ID. No IDs encoded here — the handler
-# resolves the batch via (chat_id, message_id) → orders.topic_message_id.
+# Callback data for buttons attached to the grouped summary in ORDERS_TOPIC_ID.
+# No IDs encoded — handlers resolve the batch via (chat_id, message_id).
 _CB_COMPLETE = "ao:complete"
+_CB_EDIT = "ao:edit"
+_CB_DELETE = "ao:delete"
 
 
 def _completed_kb() -> InlineKeyboardMarkup:
-    return _kb([_btn("✅ შესრულდა", _CB_COMPLETE)])
+    return _kb(
+        [_btn("✅ შესრულდა", _CB_COMPLETE)],
+        [_btn("✏️ რედაქტირება", _CB_EDIT), _btn("🗑 წაშლა", _CB_DELETE)],
+    )
 
 
 def _priority_kb() -> InlineKeyboardMarkup:
@@ -117,6 +121,10 @@ class AddOrderWizard(StatesGroup):
     quantity  = State()   # how many units
     priority  = State()   # urgent / low
     next_step = State()   # add another or finish
+
+
+class OrderEditWizard(StatesGroup):
+    quantity = State()    # waiting for new quantity from admin
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
@@ -661,3 +669,220 @@ async def cb_complete(callback: CallbackQuery, db: Database) -> None:
         logger.warning("Failed to edit ORDERS topic message after completion: %s", exc)
 
     await callback.answer(f"✅ დახურულია {len(completed)} შეკვეთა")
+
+
+# ─── Helper: convert DB OrderRow to _format_topic_summary item ───────────────
+
+def _order_row_to_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "product_name": row.get("product_name") or "?",
+        "oem_code": row.get("oem_code"),
+        "quantity": row["quantity_needed"],
+        "priority": row.get("priority", "low"),
+    }
+
+
+# ─── "🗑 წაშლა" — delete all orders in the batch ────────────────────────────
+
+@addorder_router.callback_query(F.data == _CB_DELETE, IsAdmin())
+async def cb_delete(callback: CallbackQuery, db: Database) -> None:
+    msg = callback.message
+    if not isinstance(msg, Message):
+        await callback.answer("❌ შეტყობინება არ არის ხელმისაწვდომი", show_alert=True)
+        return
+
+    topic_id = msg.message_thread_id or config.ORDERS_TOPIC_ID
+    message_id = msg.message_id
+
+    try:
+        count = await db.delete_orders_by_topic_message(
+            topic_id=topic_id,
+            topic_message_id=message_id,
+        )
+    except Exception:
+        logger.exception(
+            "delete_orders_by_topic_message failed (topic=%s msg=%s)",
+            topic_id, message_id,
+        )
+        await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
+        return
+
+    try:
+        await msg.edit_text("❌ შეკვეთა წაშლილია", parse_mode=_PARSE)
+    except Exception as exc:
+        logger.warning("Failed to edit message after order delete: %s", exc)
+
+    await callback.answer(f"🗑 წაშლილია {count} შეკვეთა")
+
+
+# ─── "✏️ რედაქტირება" — enter edit mode ────────────────────────────────────
+
+@addorder_router.callback_query(F.data == _CB_EDIT, IsAdmin())
+async def cb_edit(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    msg = callback.message
+    if not isinstance(msg, Message):
+        await callback.answer("❌ შეტყობინება არ არის ხელმისაწვდომი", show_alert=True)
+        return
+
+    topic_id = msg.message_thread_id or config.ORDERS_TOPIC_ID
+    message_id = msg.message_id
+
+    try:
+        orders = await db.get_orders_by_topic_message(
+            topic_id=topic_id,
+            topic_message_id=message_id,
+        )
+    except Exception:
+        logger.exception(
+            "get_orders_by_topic_message failed (topic=%s msg=%s)",
+            topic_id, message_id,
+        )
+        await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
+        return
+
+    pending = [o for o in orders if o["status"] == "pending"]
+    if not pending:
+        await callback.answer("ℹ️ ჩასარედაქტირებელი შეკვეთა ვერ მოიძებნა", show_alert=True)
+        return
+
+    await state.set_state(OrderEditWizard.quantity)
+    await state.update_data(
+        edit_topic_id=topic_id,
+        edit_message_id=message_id,
+        edit_chat_id=msg.chat.id,
+        edit_order_ids=[o["id"] for o in pending],
+    )
+
+    if len(pending) == 1:
+        o = pending[0]
+        prompt = (
+            f"✏️ <b>შეკვეთის რედაქტირება</b>\n\n"
+            f"• <b>#{o['id']}</b> {_e(o.get('product_name') or '?')} — "
+            f"ამჟამად: <b>{o['quantity_needed']}ც</b>\n\n"
+            "მიუთითეთ ახალი რაოდენობა:"
+        )
+    else:
+        lines: List[str] = []
+        for i, o in enumerate(pending, 1):
+            lines.append(
+                f"{i}. <b>#{o['id']}</b> {_e(o.get('product_name') or '?')} — "
+                f"{o['quantity_needed']}ც"
+            )
+        prompt = (
+            "✏️ <b>შეკვეთების რედაქტირება</b>\n\n"
+            + "\n".join(lines)
+            + "\n\nჩაწერეთ: <code>ნომერი ახალი_რაოდენობა</code>\n"
+            "<i>მაგ: <code>1 3</code> — პირველ ნივთს 3 ცალი</i>"
+        )
+
+    await msg.answer(prompt, parse_mode=_PARSE)
+    await callback.answer("✏️ რედაქტირების რეჟიმი")
+
+
+# ─── Edit wizard: quantity input ─────────────────────────────────────────────
+
+@addorder_router.message(OrderEditWizard.quantity, IsAdmin())
+async def on_edit_qty_input(message: Message, state: FSMContext, db: Database) -> None:
+    data = await state.get_data()
+    order_ids: List[int] = list(data.get("edit_order_ids") or [])
+    topic_id: int = int(data.get("edit_topic_id") or config.ORDERS_TOPIC_ID)
+    edit_message_id: int = int(data.get("edit_message_id") or 0)
+    edit_chat_id: int = int(data.get("edit_chat_id") or config.GROUP_ID)
+
+    if not order_ids or not edit_message_id:
+        await message.answer("❌ სესია ამოიწურა. სცადეთ თავიდან.", parse_mode=_PARSE)
+        await state.clear()
+        return
+
+    raw = (message.text or "").strip()
+
+    if len(order_ids) == 1:
+        try:
+            new_qty = int(raw)
+        except ValueError:
+            await message.answer(
+                "⚠️ ჩაწერე მთელი დადებითი რიცხვი, მაგ: <code>2</code>",
+                parse_mode=_PARSE,
+            )
+            return
+        if new_qty <= 0:
+            await message.answer("⚠️ რაოდენობა უნდა იყოს 1 ან მეტი.", parse_mode=_PARSE)
+            return
+        target_order_id = order_ids[0]
+    else:
+        parts = raw.split()
+        if len(parts) != 2:
+            await message.answer(
+                "⚠️ ფორმატი: <code>ნომერი ახალი_რაოდენობა</code>\n"
+                "<i>მაგ: <code>1 3</code></i>",
+                parse_mode=_PARSE,
+            )
+            return
+        try:
+            item_no = int(parts[0])
+            new_qty = int(parts[1])
+        except ValueError:
+            await message.answer(
+                "⚠️ ჩაწერე მხოლოდ ციფრები, მაგ: <code>1 3</code>",
+                parse_mode=_PARSE,
+            )
+            return
+        if item_no < 1 or item_no > len(order_ids):
+            await message.answer(
+                f"⚠️ ნივთის ნომერი უნდა იყოს 1-დან {len(order_ids)}-მდე",
+                parse_mode=_PARSE,
+            )
+            return
+        if new_qty <= 0:
+            await message.answer("⚠️ რაოდენობა უნდა იყოს 1 ან მეტი.", parse_mode=_PARSE)
+            return
+        target_order_id = order_ids[item_no - 1]
+
+    try:
+        updated = await db.update_order_quantity(
+            order_id=target_order_id,
+            new_quantity=new_qty,
+        )
+    except Exception:
+        logger.exception("update_order_quantity failed for order_id=%s", target_order_id)
+        await message.answer("❌ შეცდომა ბაზაში", parse_mode=_PARSE)
+        await state.clear()
+        return
+
+    if not updated:
+        await message.answer(
+            "ℹ️ შეკვეთა ვერ განახლდა (შესაძლოა უკვე დახურულია).",
+            parse_mode=_PARSE,
+        )
+        await state.clear()
+        return
+
+    await state.clear()
+
+    # Rebuild the topic message from DB with updated quantities.
+    try:
+        refreshed = await db.get_orders_by_topic_message(
+            topic_id=topic_id,
+            topic_message_id=edit_message_id,
+        )
+        items_for_summary = [
+            _order_row_to_item(dict(o)) for o in refreshed if o["status"] == "pending"
+        ]
+        new_text = _format_topic_summary(items_for_summary, requester=None)
+        bot = message.bot
+        assert bot is not None
+        await bot.edit_message_text(
+            chat_id=edit_chat_id,
+            message_id=edit_message_id,
+            text=new_text,
+            parse_mode=_PARSE,
+            reply_markup=_completed_kb(),
+        )
+    except Exception as exc:
+        logger.warning("Failed to update topic message after qty edit: %s", exc)
+
+    await message.answer(
+        f"✅ შეკვეთა <b>#{target_order_id}</b> განახლდა — ახალი რაოდენობა: <b>{new_qty}ც</b>",
+        parse_mode=_PARSE,
+    )
