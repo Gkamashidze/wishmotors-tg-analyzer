@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { query } from "@/lib/db";
 
@@ -26,15 +26,47 @@ const STATUS_MAP: Record<string, string> = {
   cancelled: "გაუქმებული",
 };
 
-export async function GET() {
+const VALID_PRIORITIES = new Set(["all", "urgent", "normal", "low"]);
+const VALID_STATUSES = new Set(["all", "pending", "ordered", "received", "cancelled"]);
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = req.nextUrl;
+  const priority = searchParams.get("priority") ?? "all";
+  const status = searchParams.get("status") ?? "all";
+  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
+
+  const safeP = VALID_PRIORITIES.has(priority) ? priority : "all";
+  const safeS = VALID_STATUSES.has(status) ? status : "all";
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (safeP !== "all") {
+    params.push(safeP);
+    conditions.push(`o.priority = $${params.length}`);
+  }
+  if (safeS !== "all") {
+    params.push(safeS);
+    conditions.push(`o.status = $${params.length}`);
+  }
+  if (q) {
+    params.push(`%${q}%`);
+    const n = params.length;
+    conditions.push(`(LOWER(p.name) LIKE $${n} OR LOWER(p.oem_code) LIKE $${n} OR LOWER(o.notes) LIKE $${n})`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
   const rows = await query<OrderExportRow>(
     `SELECT o.id, p.oem_code, p.name AS product_name,
             o.quantity_needed, o.priority, o.status, o.notes, o.created_at
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id
+     ${where}
      ORDER BY CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
               CASE o.priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
               o.created_at DESC`,
+    params,
   );
 
   const sheetData = [
