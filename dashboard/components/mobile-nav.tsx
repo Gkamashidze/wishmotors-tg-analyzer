@@ -82,19 +82,20 @@ export function MobileNav() {
       >
         {/* Drawer header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 min-w-0">
             <Image
               src="/logo.jpg"
-              alt="WishMotors logo"
-              width={36}
-              height={36}
-              className="rounded-lg object-contain"
+              alt="WishMotors"
+              width={44}
+              height={44}
+              priority
+              className="shrink-0 rounded-xl object-contain"
             />
-            <div className="flex flex-col leading-tight">
-              <span className="font-semibold text-sm text-foreground">
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="font-semibold text-sm text-foreground tracking-tight truncate">
                 WishMotors
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground truncate">
                 Sales Console
               </span>
             </div>

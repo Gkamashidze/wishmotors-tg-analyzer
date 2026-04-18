@@ -39,17 +39,18 @@ export function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-border bg-card">
-      <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
+      <div className="h-16 flex items-center gap-3 px-4 border-b border-border">
         <Image
           src="/logo.jpg"
-          alt="WishMotors logo"
-          width={36}
-          height={36}
-          className="rounded-lg object-contain"
+          alt="WishMotors"
+          width={44}
+          height={44}
+          priority
+          className="shrink-0 rounded-xl object-contain"
         />
-        <div className="flex flex-col leading-tight">
-          <span className="font-semibold">WishMotors</span>
-          <span className="text-xs text-muted-foreground">Sales Console</span>
+        <div className="flex flex-col leading-tight min-w-0">
+          <span className="font-semibold text-sm tracking-tight truncate">WishMotors</span>
+          <span className="text-xs text-muted-foreground truncate">Sales Console</span>
         </div>
       </div>
 
