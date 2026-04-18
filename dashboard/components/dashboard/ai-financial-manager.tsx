@@ -10,6 +10,11 @@ import {
   Wallet,
   Clock,
   Sparkles,
+  RotateCcw,
+  BarChart3,
+  Layers,
+  Banknote,
+  ShoppingCart,
 } from "lucide-react";
 import type { AiInsightsResponse, AiMetrics } from "@/app/api/ai-insights/route";
 import { formatGEL } from "@/lib/utils";
@@ -93,53 +98,98 @@ function MetricsRow({ metrics }: { metrics: AiMetrics }) {
         : "destructive";
 
   const ordersTone = metrics.urgentOrders > 3 ? "destructive" : metrics.urgentOrders > 0 ? "warning" : "default";
-
   const arTone = metrics.accountsReceivable > metrics.cashOnHand ? "warning" : "default";
+  const roiTone =
+    (metrics.roiPct ?? 0) >= 30 ? "success" : (metrics.roiPct ?? 0) >= 10 ? "default" : "destructive";
+  const turnoverTone =
+    (metrics.inventoryTurnoverRatio ?? 0) >= 4 ? "success" :
+    (metrics.inventoryTurnoverRatio ?? 0) >= 1 ? "default" : "destructive";
+  const gmroiTone =
+    (metrics.gmroi ?? 0) >= 2 ? "success" : (metrics.gmroi ?? 0) >= 1 ? "default" : "destructive";
+  const cfTone = (metrics.realtimeCashflowGel ?? 0) >= 0 ? "success" : "destructive";
 
   return (
-    <div className="flex flex-wrap gap-2 pt-4 border-t border-border/60">
-      <MetricChip
-        icon={TrendingDown}
-        label="მარჟა"
-        value={`${metrics.grossMarginPct.toFixed(1)}%`}
-        tone={marginTone}
-      />
-      {metrics.urgentOrders > 0 && (
-        <MetricChip
-          icon={AlertTriangle}
-          label="სასწრაფო"
-          value={String(metrics.urgentOrders)}
-          tone={ordersTone}
-        />
-      )}
-      {metrics.restockAlerts > 0 && (
-        <MetricChip
-          icon={Package}
-          label="მარაგი"
-          value={String(metrics.restockAlerts)}
-          tone="warning"
-        />
-      )}
-      {metrics.driftAlerts > 0 && (
+    <div className="space-y-3 pt-4 border-t border-border/60">
+      {/* Existing chips */}
+      <div className="flex flex-wrap gap-2">
         <MetricChip
           icon={TrendingDown}
-          label="WAC drift"
-          value={String(metrics.driftAlerts)}
-          tone="warning"
+          label="მარჟა"
+          value={`${metrics.grossMarginPct.toFixed(1)}%`}
+          tone={marginTone}
         />
+        {metrics.urgentOrders > 0 && (
+          <MetricChip
+            icon={AlertTriangle}
+            label="სასწრაფო"
+            value={String(metrics.urgentOrders)}
+            tone={ordersTone}
+          />
+        )}
+        {metrics.restockAlerts > 0 && (
+          <MetricChip
+            icon={Package}
+            label="მარაგი"
+            value={String(metrics.restockAlerts)}
+            tone="warning"
+          />
+        )}
+        {metrics.driftAlerts > 0 && (
+          <MetricChip
+            icon={TrendingDown}
+            label="WAC drift"
+            value={String(metrics.driftAlerts)}
+            tone="warning"
+          />
+        )}
+        <MetricChip
+          icon={Wallet}
+          label="ნისია"
+          value={formatGEL(metrics.accountsReceivable)}
+          tone={arTone}
+        />
+        <MetricChip
+          icon={Clock}
+          label="პერიოდი"
+          value={`${metrics.periodDays}დ`}
+          tone="default"
+        />
+      </div>
+      {/* 5 new advanced metric chips */}
+      {(metrics.inventoryTurnoverRatio != null) && (
+        <div className="flex flex-wrap gap-2">
+          <MetricChip
+            icon={RotateCcw}
+            label="ბრუნვა"
+            value={`${(metrics.inventoryTurnoverRatio ?? 0).toFixed(2)}×`}
+            tone={turnoverTone}
+          />
+          <MetricChip
+            icon={ShoppingCart}
+            label="AOV"
+            value={formatGEL(metrics.aovGel ?? 0)}
+            tone="default"
+          />
+          <MetricChip
+            icon={BarChart3}
+            label="ROI"
+            value={`${(metrics.roiPct ?? 0).toFixed(1)}%`}
+            tone={roiTone}
+          />
+          <MetricChip
+            icon={Layers}
+            label="GMROI"
+            value={`${(metrics.gmroi ?? 0).toFixed(2)}×`}
+            tone={gmroiTone}
+          />
+          <MetricChip
+            icon={Banknote}
+            label="ნეტო CF"
+            value={formatGEL(metrics.realtimeCashflowGel ?? 0)}
+            tone={cfTone}
+          />
+        </div>
       )}
-      <MetricChip
-        icon={Wallet}
-        label="ნისია"
-        value={formatGEL(metrics.accountsReceivable)}
-        tone={arTone}
-      />
-      <MetricChip
-        icon={Clock}
-        label="პერიოდი"
-        value={`${metrics.periodDays}დ`}
-        tone="default"
-      />
     </div>
   );
 }

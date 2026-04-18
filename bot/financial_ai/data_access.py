@@ -133,6 +133,39 @@ class OrdersPipeline:
 
 
 @dataclass(frozen=True)
+class ProductMetrics:
+    """Turnover and ROI per product for the given period."""
+
+    product_id: int
+    name: str
+    oem_code: Optional[str]
+    revenue_gel: float
+    cogs_gel: float
+    roi_pct: float            # (gross_profit / cogs) * 100
+    inventory_value_gel: float
+    turnover_ratio: float     # cogs / inventory_value; 0 when no inventory
+
+
+@dataclass(frozen=True)
+class AdvancedMetrics:
+    """5 advanced financial KPIs for the given period."""
+
+    # 1. Inventory Turnover — how many times inventory was sold
+    inventory_turnover_ratio: float
+    # 2. Average Order Value
+    aov_gel: float
+    # 3. ROI = (Net Profit / COGS) * 100
+    roi_pct: float
+    # 4. GMROI = Gross Margin / avg inventory value
+    gmroi: float
+    # 5. Real-time Cash Flow = all-time revenue − expenses − tied-up inventory capital
+    realtime_cashflow_gel: float
+    total_inventory_value_gel: float
+    top_by_turnover: List[ProductMetrics] = field(default_factory=list)
+    top_by_roi: List[ProductMetrics] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class FinancialSnapshot:
     """Bundle: everything the AI needs in a single call."""
 
@@ -144,12 +177,16 @@ class FinancialSnapshot:
     ledger_top_accounts: List[LedgerAccountBalance] = field(default_factory=list)
     wac_top_products: List[ProductWAC] = field(default_factory=list)
     orders_pipeline: Optional[OrdersPipeline] = None
+    advanced_metrics: Optional[AdvancedMetrics] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """JSON-friendly representation handed to the LLM."""
         return {
             "overview": asdict(self.overview),
             "cashflow": asdict(self.cashflow),
+            "advanced_metrics": (
+                asdict(self.advanced_metrics) if self.advanced_metrics else None
+            ),
             "top_products_by_profit": [asdict(p) for p in self.top_products_by_profit],
             "top_products_by_velocity": [asdict(p) for p in self.top_products_by_velocity],
             "restock_alerts": [asdict(p) for p in self.restock_alerts],
@@ -671,6 +708,161 @@ class FinancialDataReader:
             top_pending_products=top_list,
         )
 
+    # ─── Tool 9: advanced financial metrics (Turnover, AOV, ROI, GMROI, CF) ──
+
+    _SQL_ADVANCED_GLOBAL = """
+        WITH
+          sales_agg AS (
+            SELECT
+              COALESCE(SUM(unit_price * quantity), 0) AS revenue,
+              COALESCE(SUM(cost_amount), 0)            AS cogs,
+              COUNT(*)                                 AS sales_count
+            FROM sales
+            WHERE sold_at >= $1 AND sold_at < $2
+          ),
+          exp_agg AS (
+            SELECT COALESCE(SUM(amount), 0) AS expenses
+            FROM expenses
+            WHERE created_at >= $1 AND created_at < $2
+          ),
+          returns_agg AS (
+            SELECT COALESCE(SUM(refund_amount), 0) AS returns_total
+            FROM returns
+            WHERE returned_at >= $1 AND returned_at < $2
+          ),
+          inv_val AS (
+            SELECT COALESCE(SUM(remaining_quantity * unit_cost), 0) AS inv_value
+            FROM inventory_batches
+            WHERE remaining_quantity > 0
+          ),
+          alltime_sales AS (
+            SELECT COALESCE(SUM(unit_price * quantity), 0) AS total_rev FROM sales
+          ),
+          alltime_exp AS (
+            SELECT COALESCE(SUM(amount), 0) AS total_exp FROM expenses
+          )
+        SELECT
+          s.revenue, s.cogs, s.sales_count,
+          e.expenses, r.returns_total,
+          i.inv_value,
+          at.total_rev, ae.total_exp
+        FROM sales_agg s, exp_agg e, returns_agg r, inv_val i,
+             alltime_sales at, alltime_exp ae
+    """
+
+    _SQL_PRODUCT_METRICS = """
+        WITH prod_sales AS (
+            SELECT
+                p.id                                              AS product_id,
+                COALESCE(p.name, 'უცნობი')                        AS name,
+                p.oem_code,
+                COALESCE(SUM(s.unit_price * s.quantity), 0)       AS revenue,
+                COALESCE(SUM(s.cost_amount), 0)                   AS cogs
+            FROM products p
+            JOIN sales s ON s.product_id = p.id
+                AND s.sold_at >= $1 AND s.sold_at < $2
+            GROUP BY p.id, p.name, p.oem_code
+            HAVING COALESCE(SUM(s.cost_amount), 0) > 0
+        ),
+        prod_inv AS (
+            SELECT
+                product_id,
+                COALESCE(SUM(remaining_quantity * unit_cost), 0)  AS inv_value
+            FROM inventory_batches
+            WHERE remaining_quantity > 0
+            GROUP BY product_id
+        )
+        SELECT
+            ps.product_id,
+            ps.name,
+            ps.oem_code,
+            ps.revenue,
+            ps.cogs,
+            COALESCE(pi.inv_value, 0) AS inv_value
+        FROM prod_sales ps
+        LEFT JOIN prod_inv pi ON pi.product_id = ps.product_id
+        ORDER BY ps.revenue DESC
+        LIMIT $3
+    """
+
+    async def get_advanced_metrics(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        top_n: int = _DEFAULT_TOP_N,
+    ) -> AdvancedMetrics:
+        self._validate_period(period_start, period_end)
+        top_n = self._clamp_limit(top_n)
+        conn = await self._conn()
+        try:
+            global_row = await conn.fetchrow(
+                self._SQL_ADVANCED_GLOBAL, period_start, period_end
+            )
+            prod_rows = await conn.fetch(
+                self._SQL_PRODUCT_METRICS, period_start, period_end, top_n
+            )
+        finally:
+            await self._pool.release(conn)
+
+        revenue = float(global_row["revenue"])
+        cogs = float(global_row["cogs"])
+        sales_count = int(global_row["sales_count"])
+        expenses = float(global_row["expenses"])
+        returns_total = float(global_row["returns_total"])
+        inv_value = float(global_row["inv_value"])
+        total_rev = float(global_row["total_rev"])
+        total_exp = float(global_row["total_exp"])
+
+        gross_profit = revenue - cogs
+        net_profit = gross_profit - expenses - returns_total
+
+        turnover = round(cogs / inv_value, 4) if inv_value > 0 else 0.0
+        aov = round(revenue / sales_count, 2) if sales_count > 0 else 0.0
+        roi = round(net_profit / cogs * 100, 2) if cogs > 0 else 0.0
+        gmroi = round(gross_profit / inv_value, 4) if inv_value > 0 else 0.0
+        realtime_cf = round(total_rev - total_exp - inv_value, 2)
+
+        product_metrics: List[ProductMetrics] = []
+        for r in prod_rows:
+            p_rev = float(r["revenue"])
+            p_cogs = float(r["cogs"])
+            p_inv = float(r["inv_value"])
+            p_gross = p_rev - p_cogs
+            p_roi = round(p_gross / p_cogs * 100, 2) if p_cogs > 0 else 0.0
+            p_turn = round(p_cogs / p_inv, 4) if p_inv > 0 else 0.0
+            product_metrics.append(
+                ProductMetrics(
+                    product_id=int(r["product_id"]),
+                    name=str(r["name"]),
+                    oem_code=r["oem_code"],
+                    revenue_gel=round(p_rev, 2),
+                    cogs_gel=round(p_cogs, 2),
+                    roi_pct=p_roi,
+                    inventory_value_gel=round(p_inv, 2),
+                    turnover_ratio=p_turn,
+                )
+            )
+
+        top_by_turnover = sorted(
+            [p for p in product_metrics if p.turnover_ratio > 0],
+            key=lambda x: x.turnover_ratio,
+            reverse=True,
+        )[:5]
+        top_by_roi = sorted(
+            product_metrics, key=lambda x: x.roi_pct, reverse=True
+        )[:5]
+
+        return AdvancedMetrics(
+            inventory_turnover_ratio=turnover,
+            aov_gel=aov,
+            roi_pct=roi,
+            gmroi=gmroi,
+            realtime_cashflow_gel=realtime_cf,
+            total_inventory_value_gel=round(inv_value, 2),
+            top_by_turnover=top_by_turnover,
+            top_by_roi=top_by_roi,
+        )
+
     # ─── Composite: full snapshot for the AI ─────────────────────────────────
 
     async def get_financial_snapshot(
@@ -698,10 +890,12 @@ class FinancialDataReader:
         )
         wac = await self.get_wac_per_product(limit=top_n)
         orders = await self.get_orders_pipeline(limit=top_n)
+        advanced = await self.get_advanced_metrics(period_start, period_end, top_n=top_n)
 
         return FinancialSnapshot(
             overview=overview,
             cashflow=cashflow,
+            advanced_metrics=advanced,
             top_products_by_profit=top_profit,
             top_products_by_velocity=top_velocity,
             restock_alerts=alerts,

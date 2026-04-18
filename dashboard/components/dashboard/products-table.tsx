@@ -11,6 +11,7 @@ import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import type { ProductRow } from "@/lib/queries";
+import type { ProductMetricRow } from "@/lib/financial-queries";
 import { formatGEL, formatNumber, cn } from "@/lib/utils";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -128,6 +129,14 @@ type TxTab = "info" | "sales" | "orders";
 export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
+
+  useEffect(() => {
+    fetch("/api/products/metrics")
+      .then((r) => r.json())
+      .then((data: ProductMetricRow[]) => setProductMetrics(data))
+      .catch(() => {});
+  }, []);
 
   // Product-level state
   const [viewRow, setViewRow] = useState<ProductRow | null>(null);
@@ -439,17 +448,59 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
             </div>
 
             {/* Info tab */}
-            {txTab === "info" && (
-              <ViewFieldGrid>
-                <ViewField label="დასახელება" value={viewRow.name} className="sm:col-span-2" />
-                <ViewField label="OEM კოდი" value={viewRow.oemCode} />
-                <ViewField label="ერთეული" value={viewRow.unit} />
-                <ViewField label="მარაგი" value={formatNumber(viewRow.currentStock)} />
-                <ViewField label="მინ. მარაგი" value={formatNumber(viewRow.minStock)} />
-                <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
-                <ViewField label="დამატების თარიღი" value={formatDate(viewRow.createdAt)} />
-              </ViewFieldGrid>
-            )}
+            {txTab === "info" && (() => {
+              const pm = productMetrics.find((m) => m.productId === viewRow.id);
+              const roiColor =
+                !pm || pm.roiPct === 0 ? "text-muted-foreground" :
+                pm.roiPct >= 30 ? "text-[hsl(var(--success))] font-semibold" :
+                pm.roiPct >= 10 ? "text-primary font-medium" : "text-destructive font-semibold";
+              const turnColor =
+                !pm || pm.turnoverRatio === 0 ? "text-muted-foreground" :
+                pm.turnoverRatio >= 4 ? "text-[hsl(var(--success))] font-semibold" :
+                pm.turnoverRatio >= 1 ? "text-primary font-medium" : "text-destructive font-semibold";
+              return (
+                <div className="space-y-4">
+                  <ViewFieldGrid>
+                    <ViewField label="დასახელება" value={viewRow.name} className="sm:col-span-2" />
+                    <ViewField label="OEM კოდი" value={viewRow.oemCode} />
+                    <ViewField label="ერთეული" value={viewRow.unit} />
+                    <ViewField label="მარაგი" value={formatNumber(viewRow.currentStock)} />
+                    <ViewField label="მინ. მარაგი" value={formatNumber(viewRow.minStock)} />
+                    <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
+                    <ViewField label="დამატების თარიღი" value={formatDate(viewRow.createdAt)} />
+                  </ViewFieldGrid>
+                  {pm && (
+                    <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        ფინანსური მაჩვენებლები (ბოლო 90 დღე)
+                      </p>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">ROI</span>
+                          <span className={roiColor}>{pm.roiPct.toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">ბრუნვა (Turnover)</span>
+                          <span className={turnColor}>{pm.turnoverRatio.toFixed(2)}×</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">შემოსავ.</span>
+                          <span className="tabular-nums">{formatGEL(pm.revenueGel)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">თვითღირ.</span>
+                          <span className="tabular-nums">{formatGEL(pm.cogsGel)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-muted-foreground">მარაგის ღირ.</span>
+                          <span className="tabular-nums">{formatGEL(pm.inventoryValueGel)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Sales tab */}
             {txTab === "sales" && (

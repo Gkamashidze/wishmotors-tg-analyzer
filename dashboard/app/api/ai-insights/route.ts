@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
+import { getProductMetrics } from "@/lib/financial-queries";
 
 // ─── In-process cache (1-hour TTL) ───────────────────────────────────────────
 let _cache: { data: AiInsightsResponse; ts: number } | null = null;
@@ -17,6 +18,13 @@ export type AiMetrics = {
   accountsReceivable: number;
   driftAlerts: number;
   periodDays: number;
+  // 5 new advanced metrics
+  inventoryTurnoverRatio: number;
+  aovGel: number;
+  roiPct: number;
+  gmroi: number;
+  realtimeCashflowGel: number;
+  totalInventoryValueGel: number;
 };
 
 export type AiInsightsResponse = {
@@ -275,6 +283,103 @@ async function getOrdersPipeline() {
   };
 }
 
+async function getAdvancedMetrics(days = 7) {
+  const row = await queryOne<{
+    revenue: string;
+    cogs: string;
+    sales_count: string;
+    expenses: string;
+    returns_total: string;
+    inv_value: string;
+    total_rev: string;
+    total_exp: string;
+  }>(
+    `
+    WITH
+      sales_agg AS (
+        SELECT
+          COALESCE(SUM(unit_price * quantity), 0) AS revenue,
+          COALESCE(SUM(cost_amount), 0)            AS cogs,
+          COUNT(*)                                 AS sales_count
+        FROM sales
+        WHERE sold_at >= NOW() - ($1::int || ' days')::interval
+      ),
+      exp_agg AS (
+        SELECT COALESCE(SUM(amount), 0) AS expenses
+        FROM expenses
+        WHERE created_at >= NOW() - ($1::int || ' days')::interval
+      ),
+      returns_agg AS (
+        SELECT COALESCE(SUM(refund_amount), 0) AS returns_total
+        FROM returns
+        WHERE returned_at >= NOW() - ($1::int || ' days')::interval
+      ),
+      inv_val AS (
+        SELECT COALESCE(SUM(remaining_quantity * unit_cost), 0) AS inv_value
+        FROM inventory_batches
+        WHERE remaining_quantity > 0
+      ),
+      alltime_sales AS (
+        SELECT COALESCE(SUM(unit_price * quantity), 0) AS total_rev FROM sales
+      ),
+      alltime_exp AS (
+        SELECT COALESCE(SUM(amount), 0) AS total_exp FROM expenses
+      )
+    SELECT
+      s.revenue, s.cogs, s.sales_count,
+      e.expenses, r.returns_total,
+      i.inv_value,
+      at.total_rev, ae.total_exp
+    FROM sales_agg s, exp_agg e, returns_agg r, inv_val i,
+         alltime_sales at, alltime_exp ae
+    `,
+    [days],
+  );
+
+  const revenue = Number(row?.revenue ?? 0);
+  const cogs = Number(row?.cogs ?? 0);
+  const salesCount = Number(row?.sales_count ?? 0);
+  const expenses = Number(row?.expenses ?? 0);
+  const returnsTotal = Number(row?.returns_total ?? 0);
+  const invValue = Number(row?.inv_value ?? 0);
+  const totalRev = Number(row?.total_rev ?? 0);
+  const totalExp = Number(row?.total_exp ?? 0);
+
+  const grossProfit = revenue - cogs;
+  const netProfit = grossProfit - expenses - returnsTotal;
+
+  // Per-product metrics for top 5 by ROI and Turnover
+  const now = new Date();
+  const periodFrom = new Date(Date.now() - days * 86400000);
+  const topProducts = await getProductMetrics(periodFrom, now, 50);
+  const topByRoi = [...topProducts].sort((a, b) => b.roiPct - a.roiPct).slice(0, 5);
+  const topByTurnover = [...topProducts]
+    .filter((p) => p.turnoverRatio > 0)
+    .sort((a, b) => b.turnoverRatio - a.turnoverRatio)
+    .slice(0, 5);
+
+  return {
+    inventory_turnover_ratio: invValue > 0 ? +(cogs / invValue).toFixed(4) : 0,
+    aov_gel: salesCount > 0 ? +(revenue / salesCount).toFixed(2) : 0,
+    roi_pct: cogs > 0 ? +(netProfit / cogs * 100).toFixed(2) : 0,
+    gmroi: invValue > 0 ? +(grossProfit / invValue).toFixed(4) : 0,
+    realtime_cashflow_gel: +(totalRev - totalExp - invValue).toFixed(2),
+    total_inventory_value_gel: +invValue.toFixed(2),
+    top_by_roi: topByRoi.map((p) => ({
+      name: p.name,
+      oem_code: p.oemCode,
+      roi_pct: p.roiPct,
+      turnover_ratio: p.turnoverRatio,
+    })),
+    top_by_turnover: topByTurnover.map((p) => ({
+      name: p.name,
+      oem_code: p.oemCode,
+      roi_pct: p.roiPct,
+      turnover_ratio: p.turnoverRatio,
+    })),
+  };
+}
+
 async function getCashflow(days = 7) {
   const totals = await queryOne<{
     cash_sales_total: string;
@@ -345,6 +450,10 @@ const SYSTEM_PROMPT = `შენ ხარ "WishMotors"-ის ფინან�
 8. დააფოკუსირე ამ განზომილებებზე (პრიორიტეტი ზევიდან ქვემოთ):
    • WAC დრიფტი — თუ cost_drift_pct > +5%, მიმწოდებლის ფასი გაძვირდა: ურჩიე საცალო ფასის ზრდა.
    • მარჟის კომპრესია — margin_pct < 20% ცუდი მარჟაა; > 40% კარგია.
+   • ROI — roi_pct < 10% სუსტია; > 30% კარგია; OEM კოდები top_by_roi-დან ყველაზე მომგებიანია.
+   • Inventory Turnover — turnover_ratio < 1 ნიშნავს "გაყინულ" ფულს; > 4 სწრაფი ბრუნვაა; top_by_turnover მაღალლიკვიდური SKU-ებია.
+   • GMROI — gmroi < 1 ნიშნავს, რომ მარაგი ვერ ფარავს თავის ხარჯს; > 2 ჯანსაღია.
+   • Real-time Cash Flow — realtime_cashflow_gel < 0 ნიშნავს, რომ ინვენტარში ჩადებული ფული > ყველა შემოსავლის ნარჩენი.
    • შეკვეთების შეფერხება — oldest_pending_days > 7 ნიშნავს შეყოვნებას; urgent_pending > 3 სასწრაფოა.
    • მარაგის რისკი — days_of_cover < 7 სასწრაფო შეკვეთა.
    • ქეშფლოუ — accounts_receivable > cash_on_hand ლიკვიდურობის რისკია.
@@ -408,14 +517,16 @@ export async function GET() {
   let restock: Awaited<ReturnType<typeof getRestockAlerts>>;
   let orders: Awaited<ReturnType<typeof getOrdersPipeline>>;
   let cashflow: Awaited<ReturnType<typeof getCashflow>>;
+  let advanced: Awaited<ReturnType<typeof getAdvancedMetrics>>;
 
   try {
-    [overview, wac, restock, orders, cashflow] = await Promise.all([
+    [overview, wac, restock, orders, cashflow, advanced] = await Promise.all([
       getOverview(DAYS),
       getWACProducts(10),
       getRestockAlerts(30, 10),
       getOrdersPipeline(),
       getCashflow(DAYS),
+      getAdvancedMetrics(DAYS),
     ]);
   } catch (err) {
     console.error("[ai-insights] DB error:", err);
@@ -430,6 +541,12 @@ export async function GET() {
           accountsReceivable: 0,
           driftAlerts: 0,
           periodDays: DAYS,
+          inventoryTurnoverRatio: 0,
+          aovGel: 0,
+          roiPct: 0,
+          gmroi: 0,
+          realtimeCashflowGel: 0,
+          totalInventoryValueGel: 0,
         },
         generatedAt: new Date().toISOString(),
         error: "db_error",
@@ -446,6 +563,12 @@ export async function GET() {
     accountsReceivable: cashflow.accounts_receivable_gel,
     driftAlerts: wac.filter((w) => Math.abs(w.cost_drift_pct ?? 0) > 5).length,
     periodDays: DAYS,
+    inventoryTurnoverRatio: advanced.inventory_turnover_ratio,
+    aovGel: advanced.aov_gel,
+    roiPct: advanced.roi_pct,
+    gmroi: advanced.gmroi,
+    realtimeCashflowGel: advanced.realtime_cashflow_gel,
+    totalInventoryValueGel: advanced.total_inventory_value_gel,
   };
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -462,6 +585,7 @@ export async function GET() {
 
   const snapshot = {
     overview,
+    advanced_metrics: advanced,
     wac_top_products: wac,
     restock_alerts: restock,
     orders_pipeline: orders,
