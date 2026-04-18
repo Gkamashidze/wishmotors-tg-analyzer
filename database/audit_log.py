@@ -9,31 +9,17 @@ Design principles:
   • Uses a SEPARATE pool connection — never the transaction connection.
   • log_safe() swallows ALL exceptions and never re-raises.
   • SHA-256 checksum lets you verify nothing was tampered with.
-  • Optional Telegram channel forwarding (AUDIT_CHANNEL_ID env var).
+  • Audit events are logged locally only (no Telegram forwarding).
 """
 
 import hashlib
 import json
 import logging
-import os
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 import asyncpg
 
-if TYPE_CHECKING:
-    from aiogram import Bot
-
 logger = logging.getLogger(__name__)
-
-_AUDIT_CHANNEL_ID: Optional[int] = (
-    int(os.getenv("AUDIT_CHANNEL_ID"))
-    if os.getenv("AUDIT_CHANNEL_ID")
-    else None
-)
-
-# Max bytes forwarded to Telegram (messages > 4096 chars are truncated by TG anyway)
-_TG_MAX_LEN = 3800
 
 
 def _checksum(payload: Dict[str, Any]) -> str:
@@ -44,9 +30,8 @@ def _checksum(payload: Dict[str, Any]) -> str:
 class AuditLogger:
     """Attach one instance to the Database object; call _audit() helper there."""
 
-    def __init__(self, pool: asyncpg.Pool, bot: Optional["Bot"] = None) -> None:  # type: ignore[type-arg]
+    def __init__(self, pool: asyncpg.Pool, **_kwargs: Any) -> None:  # type: ignore[type-arg]
         self._pool = pool
-        self._bot = bot
 
     # ─── Public API ───────────────────────────────────────────────────────────
 
@@ -56,17 +41,13 @@ class AuditLogger:
         payload: Dict[str, Any],
         reference_id: Optional[str] = None,
     ) -> None:
-        """Write audit row + optionally forward to Telegram.  NEVER raises."""
+        """Write audit row to DB and log locally.  NEVER raises."""
         try:
             await self._write(event_type, payload, reference_id)
         except Exception as exc:
             logger.warning("audit_log._write failed (%s): %s", event_type, exc)
 
-        if _AUDIT_CHANNEL_ID and self._bot:
-            try:
-                await self._forward_to_telegram(event_type, payload, reference_id)
-            except Exception as exc:
-                logger.warning("audit_log._forward failed (%s): %s", event_type, exc)
+        logger.info("AUDIT | %s | ref=%s | %s", event_type, reference_id, json.dumps(payload, default=str))
 
     async def verify_integrity(self, since_hours: int = 24) -> Dict[str, Any]:
         """Compare stored checksums against freshly computed ones.
@@ -118,22 +99,3 @@ class AuditLogger:
                 cs,
             )
 
-    async def _forward_to_telegram(
-        self,
-        event_type: str,
-        payload: Dict[str, Any],
-        reference_id: Optional[str],
-    ) -> None:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-        ref_part = f"\n<b>ref:</b> <code>{reference_id}</code>" if reference_id else ""
-        text = (
-            f"🔐 <b>AUDIT</b> | <code>{event_type}</code>{ref_part}\n"
-            f"<i>{now}</i>\n\n"
-            f"<pre>{body[:_TG_MAX_LEN]}</pre>"
-        )
-        await self._bot.send_message(  # type: ignore[union-attr]
-            chat_id=_AUDIT_CHANNEL_ID,
-            text=text,
-            parse_mode="HTML",
-        )

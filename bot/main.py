@@ -157,14 +157,8 @@ async def main() -> None:
     )
 
     # Attach real-time audit logger — fire-and-forget, never blocks the bot
-    db.audit = AuditLogger(
-        pool=db.pool,
-        bot=bot if config.AUDIT_CHANNEL_ID else None,
-    )
-    logger.info(
-        "AuditLogger ready (Telegram forwarding: %s)",
-        "enabled" if config.AUDIT_CHANNEL_ID else "disabled — set AUDIT_CHANNEL_ID to enable",
-    )
+    db.audit = AuditLogger(pool=db.pool)
+    logger.info("AuditLogger ready (local logging only)")
 
     await bot.set_my_commands([
         # ── ✏️ შეყვანა ────────────────────────────────
