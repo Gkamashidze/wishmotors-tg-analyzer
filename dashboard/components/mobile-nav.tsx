@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -34,34 +35,47 @@ const BOTTOM_NAV = [
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
 
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg hover:bg-accent transition-colors cursor-pointer"
-        aria-label="მენიუ გახსნა"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-      {/* Backdrop */}
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  const drawer = (
+    <>
+      {/* Backdrop — portaled to body, escapes backdrop-blur stacking context */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/50 md:hidden transition-opacity duration-300",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+          "fixed inset-0 bg-black/50 md:hidden transition-opacity duration-300",
+          open
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
         )}
+        style={{ zIndex: 9998 }}
         onClick={() => setOpen(false)}
         aria-hidden="true"
       />
 
-      {/* Slide-in drawer */}
+      {/* Slide-in drawer — portaled to body */}
       <div
         className={cn(
-          "fixed top-0 left-0 z-50 h-full w-72 bg-card border-r border-border shadow-2xl flex flex-col md:hidden transition-transform duration-300 ease-in-out",
+          "fixed top-0 left-0 h-full w-72 bg-card border-r border-border shadow-2xl flex flex-col md:hidden transition-transform duration-300 ease-in-out",
           open ? "translate-x-0" : "-translate-x-full",
         )}
+        style={{ zIndex: 9999 }}
         role="dialog"
         aria-modal="true"
         aria-label="ნავიგაციის მენიუ"
@@ -73,13 +87,17 @@ export function MobileNav() {
               <Wrench className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="flex flex-col leading-tight">
-              <span className="font-semibold text-sm">WishMotors</span>
-              <span className="text-xs text-muted-foreground">Sales Console</span>
+              <span className="font-semibold text-sm text-foreground">
+                WishMotors
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Sales Console
+              </span>
             </div>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-accent transition-colors cursor-pointer"
+            className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-accent text-foreground transition-colors cursor-pointer"
             aria-label="მენიუ დახურვა"
           >
             <X className="h-5 w-5" />
@@ -103,10 +121,10 @@ export function MobileNav() {
                   "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors cursor-pointer",
                   active
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    : "text-foreground/70 hover:bg-accent hover:text-foreground",
                 )}
               >
-                <Icon className="h-4 w-4" aria-hidden="true" />
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{item.label}</span>
               </Link>
             );
@@ -122,15 +140,30 @@ export function MobileNav() {
                 key={item.label}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+                className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
               >
-                <Icon className="h-4 w-4" aria-hidden="true" />
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{item.label}</span>
               </Link>
             );
           })}
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="md:hidden flex items-center justify-center h-9 w-9 rounded-lg hover:bg-accent text-foreground transition-colors cursor-pointer"
+        aria-label="მენიუ გახსნა"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Portal drawer outside TopBar's backdrop-blur stacking context */}
+      {mounted && createPortal(drawer, document.body)}
     </>
   );
 }
