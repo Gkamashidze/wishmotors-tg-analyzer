@@ -210,7 +210,7 @@ ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 -- databases already carrying products_oem_code_key and re-runs of this migration).
 DO $$ BEGIN
   ALTER TABLE products ADD CONSTRAINT products_oem_code_unique UNIQUE (oem_code);
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
 END $$;
 
 -- Real-time immutable audit log: every write operation posts a JSON snapshot
