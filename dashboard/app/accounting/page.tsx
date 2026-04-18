@@ -24,11 +24,15 @@ import {
   Loader2,
   Check,
   X,
+  Users,
+  Building2,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChartOfAccount, AccountType } from "@/app/api/accounting/chart-of-accounts/route";
 import type { TrialBalanceRow } from "@/app/api/accounting/trial-balance/route";
 import type { ProfitLossResponse } from "@/app/api/accounting/profit-loss/route";
+import type { PartnerRow } from "@/app/api/accounting/partners/route";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -59,7 +63,7 @@ const TYPE_COLORS: Record<AccountType, string> = {
 };
 
 // ─── Tab type ─────────────────────────────────────────────────────────────────
-type Tab = "chart" | "trial" | "pl";
+type Tab = "chart" | "trial" | "pl" | "debtors" | "creditors";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function AccountingPage() {
@@ -103,12 +107,14 @@ export default function AccountingPage() {
             </div>
 
             {/* Tab buttons */}
-            <div className="flex gap-1 mt-4 p-1 bg-muted rounded-xl w-fit">
+            <div className="flex gap-1 mt-4 p-1 bg-muted rounded-xl w-fit flex-wrap">
               {(
                 [
-                  { id: "chart", label: "ანგარიშთა გეგმა",  icon: BookOpen  },
-                  { id: "trial", label: "ბრუნვითი უწყისი",  icon: Scale     },
-                  { id: "pl",    label: "მოგება-ზარალი",    icon: TrendingUp },
+                  { id: "chart",     label: "ანგარიშთა გეგმა",  icon: BookOpen   },
+                  { id: "trial",     label: "ბრუნვითი უწყისი",  icon: Scale      },
+                  { id: "pl",        label: "მოგება-ზარალი",    icon: TrendingUp },
+                  { id: "debtors",   label: "დებიტორები",        icon: Users      },
+                  { id: "creditors", label: "კრედიტორები",       icon: Building2  },
                 ] as { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[]
               ).map(({ id, label, icon: Icon }) => (
                 <button
@@ -130,9 +136,11 @@ export default function AccountingPage() {
         </Card>
 
         {/* ── Tab content ── */}
-        {tab === "chart" && <ChartOfAccountsTab />}
-        {tab === "trial" && <TrialBalanceTab from={from} to={to} />}
-        {tab === "pl"    && <ProfitLossTab    from={from} to={to} />}
+        {tab === "chart"     && <ChartOfAccountsTab />}
+        {tab === "trial"     && <TrialBalanceTab from={from} to={to} />}
+        {tab === "pl"        && <ProfitLossTab    from={from} to={to} />}
+        {tab === "debtors"   && <PartnerTab type="debtor" />}
+        {tab === "creditors" && <PartnerTab type="creditor" />}
       </main>
     </>
   );
@@ -809,6 +817,483 @@ function PLTotalRow({ label, value, positive }: { label: string; value: number; 
       )}>
         {value < 0 ? "− " : ""}₾ {fmt(Math.abs(value))}
       </span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tab 4/5 — Debtors / Creditors
+// ═══════════════════════════════════════════════════════════════════════════════
+function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
+  const [partners, setPartners]         = useState<PartnerRow[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [payTarget, setPayTarget]       = useState<PartnerRow | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/accounting/partners?type=${type}`);
+      if (!res.ok) throw new Error("ჩატვირთვა ვერ მოხდა");
+      setPartners(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "შეცდომა");
+    } finally {
+      setLoading(false);
+    }
+  }, [type]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const totalOpening   = partners.reduce((s, p) => s + p.opening_balance, 0);
+  const totalPaid      = partners.reduce((s, p) => s + p.paid_amount, 0);
+  const totalRemaining = partners.reduce((s, p) => s + p.remaining, 0);
+  const label          = type === "debtor" ? "დებიტორი" : "კრედიტორი";
+
+  return (
+    <div className="space-y-4">
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl p-4 bg-blue-50 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">საწყისი დავალიანება</p>
+          <p className="text-xl font-bold tabular-nums text-blue-700">₾ {fmt(totalOpening)}</p>
+        </div>
+        <div className="rounded-xl p-4 bg-green-50 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">დაფარული თანხა</p>
+          <p className="text-xl font-bold tabular-nums text-green-700">₾ {fmt(totalPaid)}</p>
+        </div>
+        <div className={cn("rounded-xl p-4 space-y-1", totalRemaining > 0 ? "bg-red-50" : "bg-green-50")}>
+          <p className="text-xs font-medium text-muted-foreground">მიმდინარე ნაშთი</p>
+          <p className={cn("text-xl font-bold tabular-nums", totalRemaining > 0 ? "text-red-600" : "text-green-700")}>
+            ₾ {fmt(totalRemaining)}
+          </p>
+        </div>
+      </div>
+
+      {/* Add button */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowAddModal(true)}>
+          <Plus className="h-4 w-4" />
+          ახალი {label}ის ჩანაწერი
+        </Button>
+      </div>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              იტვირთება...
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">კონტრაგენტი</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">საწყისი დავალიანება</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">დაფარული თანხა</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">დარჩენილი ნაშთი</th>
+                    <th className="px-4 py-3 w-32"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partners.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
+                        {label}ები არ არის. დაამატეთ პირველი ჩანაწერი.
+                      </td>
+                    </tr>
+                  )}
+                  {partners.map((p) => (
+                    <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{p.name}</div>
+                        {p.phone && (
+                          <div className="text-xs text-muted-foreground">{p.phone}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmt(p.opening_balance)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-green-700">{fmt(p.paid_amount)}</td>
+                      <td className={cn(
+                        "px-4 py-3 text-right tabular-nums font-semibold",
+                        p.remaining > 0 ? "text-red-600" : "text-green-700",
+                      )}>
+                        {fmt(p.remaining)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setPayTarget(p)}
+                          className="h-7 text-xs gap-1"
+                          disabled={p.remaining <= 0}
+                        >
+                          <CreditCard className="h-3 w-3" />
+                          გადახდა
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {partners.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/60 font-semibold">
+                      <td className="px-4 py-2.5 text-sm">სულ</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-sm">{fmt(totalOpening)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-green-700">{fmt(totalPaid)}</td>
+                      <td className={cn(
+                        "px-4 py-2.5 text-right tabular-nums text-sm font-bold",
+                        totalRemaining > 0 ? "text-red-600" : "text-green-700",
+                      )}>
+                        {fmt(totalRemaining)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {showAddModal && (
+        <AddEntryModal
+          partnerType={type}
+          existingPartners={partners}
+          onClose={() => setShowAddModal(false)}
+          onSaved={() => { setShowAddModal(false); void load(); }}
+        />
+      )}
+      {payTarget && (
+        <PaymentModal
+          partner={payTarget}
+          onClose={() => setPayTarget(null)}
+          onSaved={() => { setPayTarget(null); void load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Add Entry Modal ──────────────────────────────────────────────────────────
+function AddEntryModal({
+  partnerType,
+  existingPartners,
+  onClose,
+  onSaved,
+}: {
+  partnerType: "debtor" | "creditor";
+  existingPartners: PartnerRow[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [mode, setMode]             = useState<"new" | "existing">("new");
+  const [partnerId, setPartnerId]   = useState<number | null>(null);
+  const [name, setName]             = useState("");
+  const [phone, setPhone]           = useState("");
+  const [amount, setAmount]         = useState("");
+  const [description, setDesc]      = useState("");
+  const [date, setDate]             = useState(today());
+  const [saving, setSaving]         = useState(false);
+  const [err, setErr]               = useState<string | null>(null);
+
+  const label = partnerType === "debtor" ? "დებიტორი" : "კრედიტორი";
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+    setSaving(true);
+    try {
+      if (mode === "new") {
+        if (!name.trim()) { setErr("სახელი სავალდებულოა"); setSaving(false); return; }
+        const res = await fetch("/api/accounting/partners", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            type: partnerType,
+            phone: phone || undefined,
+            initial_amount: amountNum,
+            initial_description: description || undefined,
+            initial_date: date,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setErr(data.error ?? "შეცდომა"); return; }
+      } else {
+        if (!partnerId) { setErr("კონტრაგენტი აირჩიეთ"); setSaving(false); return; }
+        const res = await fetch(`/api/accounting/partners/${partnerId}/transaction`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tx_type: "debit",
+            amount: amountNum,
+            description: description || undefined,
+            tx_date: date,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setErr(data.error ?? "შეცდომა"); return; }
+      }
+      onSaved();
+    } catch {
+      setErr("შეცდომა");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-background rounded-2xl shadow-2xl w-full max-w-md border border-border"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="text-base font-semibold">ახალი {label}ის ჩანაწერი</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Mode toggle */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg">
+            {(["new", "existing"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={cn(
+                  "flex-1 py-1.5 rounded-md text-sm font-medium transition-all",
+                  mode === m
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m === "new" ? "ახალი კონტრაგენტი" : "არსებული"}
+              </button>
+            ))}
+          </div>
+
+          {mode === "new" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">სახელი / კომპანია *</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">ტელეფონი</label>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="სურვილისამებრ"
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">კონტრაგენტი *</label>
+              <select
+                value={partnerId ?? ""}
+                onChange={(e) => setPartnerId(Number(e.target.value) || null)}
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— აირჩიეთ კონტრაგენტი —</option>
+                {existingPartners.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">თანხა (₾) *</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">თარიღი</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">აღწერა</label>
+            <input
+              value={description}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="სურვილისამებრ"
+              className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 text-destructive text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {err}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" disabled={saving} className="flex-1">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              შენახვა
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>გაუქმება</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Payment Modal ────────────────────────────────────────────────────────────
+function PaymentModal({
+  partner,
+  onClose,
+  onSaved,
+}: {
+  partner: PartnerRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote]     = useState("");
+  const [date, setDate]     = useState(today());
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/accounting/partners/${partner.id}/transaction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tx_type: "credit",
+          amount: amountNum,
+          description: note || "გადახდა",
+          tx_date: date,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.error ?? "შეცდომა"); return; }
+      onSaved();
+    } catch {
+      setErr("შეცდომა");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-background rounded-2xl shadow-2xl w-full max-w-sm border border-border"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <div>
+            <h2 className="text-base font-semibold">თანხის დაფარვა</h2>
+            <p className="text-sm text-muted-foreground">
+              {partner.name} · ნაშთი ₾ {fmt(partner.remaining)}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">თანხა (₾) *</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder={`მაქს. ${fmt(partner.remaining)}`}
+                required
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">თარიღი</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">შენიშვნა</label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="სურვილისამებრ"
+              className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 text-destructive text-sm">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {err}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" disabled={saving} className="flex-1">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              გადახდის ჩაწერა
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>გაუქმება</Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
