@@ -18,6 +18,7 @@ from bot.parsers.message_parser import (
     parse_batch_sales,
     parse_dual_sale_message,
     parse_sale_message,
+    sanitize_oem,
 )
 from bot.reports.formatter import (
     format_batch_confirmation,
@@ -581,7 +582,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
 
         try:
             name = str(row[0]).strip()
-            oem = str(row[1]).strip() if len(row) > 1 and row[1] is not None else None
+            oem = sanitize_oem(row[1]) if len(row) > 1 else None
             quantity = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
             unit_cost = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
             backdate = _parse_backdate(row[4] if len(row) > 4 else None)

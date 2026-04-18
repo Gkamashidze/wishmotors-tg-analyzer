@@ -19,6 +19,7 @@ from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKe
 import config
 from bot.financial_ai import generate_weekly_advice
 from bot.handlers import IsAdmin, is_rate_limited
+from bot.parsers.message_parser import sanitize_oem
 from bot.handlers.topic_messages import mark_cancelled, restore_original
 from bot.reports.formatter import (
     format_cash_on_hand,
@@ -1603,7 +1604,7 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
             except (ValueError, TypeError):
                 qty = 0
             rows_data.append({
-                "oem_code": str(oem_raw).strip() if oem_raw else None,
+                "oem_code": sanitize_oem(oem_raw),
                 "name": name,
                 "current_stock": qty,
                 "unit": str(unit_raw).strip() if unit_raw else "ც",

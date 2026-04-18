@@ -687,3 +687,24 @@ def parse_order_message(text: str) -> Optional[ParsedOrder]:
         return ParsedOrder(raw_product=text, quantity=0, priority=priority, notes=text)
 
     return None
+
+
+# ─── OEM code sanitization ───────────────────────────────────────────────────
+
+def sanitize_oem(raw: object) -> Optional[str]:
+    """Normalise an OEM code read from an Excel cell.
+
+    Excel serialises integer OEM codes as floats, so openpyxl returns them as
+    '2073035100.0'.  Strip the trailing '.0' when the integer part is purely
+    numeric so the DB always stores '2073035100', not the float string.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() in ("none", "nan"):
+        return None
+    if s.endswith(".0"):
+        integer_part = s[:-2]
+        if integer_part.lstrip("-").isdigit():
+            return integer_part
+    return s
