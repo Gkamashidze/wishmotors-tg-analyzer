@@ -144,6 +144,7 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ProductRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // Transactions tab state
@@ -216,12 +217,13 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   }, []);
 
   const closeEdit = useCallback(() => {
-    setEditRow(null); setEditState(null);
+    setEditRow(null); setEditState(null); setSaveError(null);
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!editRow || !editState) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch(`/api/inventory/${editRow.id}`, {
         method: "PATCH",
@@ -235,7 +237,11 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
           unit: editRow.unit,
         }),
       });
-      if (!res.ok) throw new Error("server error");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setSaveError(body.error ?? "შენახვა ვერ მოხერხდა. სცადეთ თავიდან.");
+        return;
+      }
       closeEdit();
       router.refresh();
     } finally {
@@ -633,6 +639,11 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
           <div className="space-y-3">
             <Input id="prod-name" label="დასახელება" type="text" value={editState.name} onChange={set("name")} />
             <Input id="prod-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
+            {saveError && (
+              <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+                {saveError}
+              </p>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
               <Button onClick={handleSave} disabled={saving} className="cursor-pointer">

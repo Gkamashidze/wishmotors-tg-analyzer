@@ -22,17 +22,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
     [rowId],
   );
 
-  await query(
-    `UPDATE products SET
-      name          = $2,
-      oem_code      = $3,
-      current_stock = $4,
-      min_stock     = $5,
-      unit_price    = $6,
-      unit          = $7
-    WHERE id = $1`,
-    [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit],
-  );
+  try {
+    await query(
+      `UPDATE products SET
+        name          = $2,
+        oem_code      = $3,
+        current_stock = $4,
+        min_stock     = $5,
+        unit_price    = $6,
+        unit          = $7
+      WHERE id = $1`,
+      [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit],
+    );
+  } catch (err: unknown) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code: string }).code === "23505"
+    ) {
+      return NextResponse.json(
+        { error: "ეს OEM კოდი უკვე დაკავებულია სხვა პროდუქტის მიერ" },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   const newName = name as string;
   const newOem = (oem_code as string | null | undefined) ?? null;
