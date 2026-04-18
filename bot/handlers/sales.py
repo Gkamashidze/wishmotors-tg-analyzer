@@ -493,7 +493,7 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
 # balanced pair of entries (DR Inventory / CR Accounts payable) so WAC can be
 # derived on demand from the inventory_batches table.
 
-@sales_router.message(InTopic(config.CAPITAL_TOPIC_ID), IsAdmin(), F.document)
+@sales_router.message(InTopic(config.STOCK_TOPIC_ID), IsAdmin(), F.document)
 async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> None:
     doc = message.document
     if not doc or not doc.file_name:

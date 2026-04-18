@@ -70,7 +70,7 @@ _HELP_TEXT = """
 🧾 <b>ხარჯი (Expenses topic):</b>
 <code>50₾ ბენზინი</code>  |  <code>ბენზინი 50₾</code>  |  <code>-20ლ საბაჟო</code>
 
-📂 <b>Excel ატვირთვა (Capital topic):</b>
+📂 <b>Excel ატვირთვა (Stock topic):</b>
 სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>
 
 ━━━━━━━━━━━━━━━━━━━━━

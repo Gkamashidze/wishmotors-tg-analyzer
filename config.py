@@ -18,7 +18,7 @@ GROUP_ID: int = int(_require("GROUP_ID"))
 SALES_TOPIC_ID: int = int(_require("SALES_TOPIC_ID"))
 ORDERS_TOPIC_ID: int = int(_require("ORDERS_TOPIC_ID"))
 EXPENSES_TOPIC_ID: int = int(_require("EXPENSES_TOPIC_ID"))
-CAPITAL_TOPIC_ID: int = int(_require("CAPITAL_TOPIC_ID"))
+STOCK_TOPIC_ID: int = int(_require("STOCK_TOPIC_ID"))
 NISIAS_TOPIC_ID: int = int(_require("NISIAS_TOPIC_ID"))
 
 # Optional: topic where inventory batch receipts / WAC events are posted.

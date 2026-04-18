@@ -44,7 +44,7 @@ cp .env.example .env
 | `SALES_TOPIC_ID` | Sales topic-ის thread ID |
 | `ORDERS_TOPIC_ID` | Orders topic-ის thread ID |
 | `EXPENSES_TOPIC_ID` | Expenses topic-ის thread ID |
-| `CAPITAL_TOPIC_ID` | Capital topic-ის thread ID |
+| `STOCK_TOPIC_ID` | Stock topic-ის thread ID |
 
 **Topic ID-ის პოვნა:** Topic-ში შეტყობინებაზე დააჭირეთ Copy Link. ბმულის ბოლო ნომერია topic ID.
 
@@ -78,7 +78,7 @@ python -m bot.main
 ბენზინი 50₾
 ```
 
-**Capital topic-ში:** Excel (.xlsx) ფაილი სვეტებით: `სახელი | OEM | მარაგი | ფასი`
+**Stock topic-ში:** Excel (.xlsx) ფაილი სვეტებით: `სახელი | OEM | მარაგი | ფასი`
 
 **ბრძანებები:**
 - `/report` — კვირის ანგარიში
@@ -128,7 +128,7 @@ Open `.env` and fill in all values:
 | `SALES_TOPIC_ID` | Thread ID of the Sales topic |
 | `ORDERS_TOPIC_ID` | Thread ID of the Orders topic |
 | `EXPENSES_TOPIC_ID` | Thread ID of the Expenses topic |
-| `CAPITAL_TOPIC_ID` | Thread ID of the Capital/Inventory topic |
+| `STOCK_TOPIC_ID` | Thread ID of the Stock/Inventory topic |
 
 **Finding a Topic ID:** Right-click any message inside the topic → Copy Link. The last number in the URL is the topic ID.
 
@@ -180,7 +180,7 @@ wishmotors-tg-analyzer/
 ├── bot/
 │   ├── handlers/
 │   │   ├── __init__.py       # InTopic filter
-│   │   ├── sales.py          # Sales + capital topic handlers
+│   │   ├── sales.py          # Sales + stock topic handlers
 │   │   ├── orders.py         # Orders + expenses topic handlers
 │   │   └── commands.py       # /report /stock /addproduct /help
 │   ├── parsers/
