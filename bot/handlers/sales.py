@@ -1,7 +1,8 @@
 import html
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
+from typing import Optional
 
 import openpyxl
 import pytz
@@ -32,6 +33,27 @@ sales_router = Router(name="sales")
 
 _PARSE = ParseMode.HTML
 _MAX_IMPORT_ROWS = 2_000  # Safety limit per Excel import
+
+_DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d")
+
+
+def _parse_backdate(raw: object) -> Optional[datetime]:
+    """Return a UTC-aware datetime from an Excel cell value, or None if absent/unparseable."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw.replace(tzinfo=timezone.utc) if raw.tzinfo is None else raw.astimezone(timezone.utc)
+    if isinstance(raw, date):
+        return datetime(raw.year, raw.month, raw.day, tzinfo=timezone.utc)
+    s = str(raw).strip()
+    if not s:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
 
 
 def _delete_keyboard(sale_id: int) -> InlineKeyboardMarkup:
@@ -562,6 +584,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             oem = str(row[1]).strip() if len(row) > 1 and row[1] is not None else None
             quantity = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
             unit_cost = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
+            backdate = _parse_backdate(row[4] if len(row) > 4 else None)
 
             if not name:
                 continue
@@ -580,6 +603,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
                 min_stock=config.MIN_STOCK_THRESHOLD,
                 reference=reference,
                 notes=f"Inventory receipt via Excel upload (row {row_idx})",
+                received_at=backdate,
             )
             received += 1
             total_value += result["total_cost"]

@@ -592,6 +592,7 @@ class Database:
         supplier: Optional[str] = None,
         reference: Optional[str] = None,
         notes: Optional[str] = None,
+        received_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Post one inventory receipt (one Excel row).
 
@@ -638,13 +639,22 @@ class Database:
                         name, unit_cost, product_id,
                     )
                 else:
-                    row = await conn.fetchrow(
-                        """INSERT INTO products
-                               (name, oem_code, current_stock, min_stock, unit_price)
-                           VALUES ($1, $2, 0, $3, $4)
-                           RETURNING id""",
-                        name, clean_oem, min_stock, unit_cost,
-                    )
+                    if received_at is not None:
+                        row = await conn.fetchrow(
+                            """INSERT INTO products
+                                   (name, oem_code, current_stock, min_stock, unit_price, created_at)
+                               VALUES ($1, $2, 0, $3, $4, $5)
+                               RETURNING id""",
+                            name, clean_oem, min_stock, unit_cost, received_at,
+                        )
+                    else:
+                        row = await conn.fetchrow(
+                            """INSERT INTO products
+                                   (name, oem_code, current_stock, min_stock, unit_price)
+                               VALUES ($1, $2, 0, $3, $4)
+                               RETURNING id""",
+                            name, clean_oem, min_stock, unit_cost,
+                        )
                     product_id = row["id"]
                     was_created = True
 
@@ -657,15 +667,26 @@ class Database:
                 )
                 new_stock = int(stock_row["current_stock"]) if stock_row else 0
 
-                batch_row = await conn.fetchrow(
-                    """INSERT INTO inventory_batches
-                           (product_id, quantity, remaining_quantity,
-                            unit_cost, supplier, reference, notes)
-                       VALUES ($1, $2, $2, $3, $4, $5, $6)
-                       RETURNING id""",
-                    product_id, quantity, unit_cost,
-                    supplier, reference, notes,
-                )
+                if received_at is not None:
+                    batch_row = await conn.fetchrow(
+                        """INSERT INTO inventory_batches
+                               (product_id, quantity, remaining_quantity,
+                                unit_cost, received_at, supplier, reference, notes)
+                           VALUES ($1, $2, $2, $3, $4, $5, $6, $7)
+                           RETURNING id""",
+                        product_id, quantity, unit_cost, received_at,
+                        supplier, reference, notes,
+                    )
+                else:
+                    batch_row = await conn.fetchrow(
+                        """INSERT INTO inventory_batches
+                               (product_id, quantity, remaining_quantity,
+                                unit_cost, supplier, reference, notes)
+                           VALUES ($1, $2, $2, $3, $4, $5, $6)
+                           RETURNING id""",
+                        product_id, quantity, unit_cost,
+                        supplier, reference, notes,
+                    )
                 batch_id = batch_row["id"]
 
                 # Double-entry ledger posting: inventory ↑ (debit), AP ↑ (credit).
@@ -674,19 +695,20 @@ class Database:
                     f"Inventory receipt — {name}"
                     + (f" (OEM {clean_oem})" if clean_oem else "")
                 )
+                ledger_date = received_at or datetime.utcnow()
                 await conn.execute(
                     """INSERT INTO ledger
-                           (account_code, debit_amount, credit_amount,
+                           (transaction_date, account_code, debit_amount, credit_amount,
                             description, reference_id)
-                       VALUES ($1, $2, 0, $3, $4)""",
-                    self.ACCOUNT_INVENTORY, total_cost, ledger_desc, ledger_ref,
+                       VALUES ($1, $2, $3, 0, $4, $5)""",
+                    ledger_date, self.ACCOUNT_INVENTORY, total_cost, ledger_desc, ledger_ref,
                 )
                 await conn.execute(
                     """INSERT INTO ledger
-                           (account_code, debit_amount, credit_amount,
+                           (transaction_date, account_code, debit_amount, credit_amount,
                             description, reference_id)
-                       VALUES ($1, 0, $2, $3, $4)""",
-                    self.ACCOUNT_ACCOUNTS_PAYABLE, total_cost, ledger_desc, ledger_ref,
+                       VALUES ($1, $2, 0, $3, $4, $5)""",
+                    ledger_date, self.ACCOUNT_ACCOUNTS_PAYABLE, total_cost, ledger_desc, ledger_ref,
                 )
 
                 # WAC is computed inside the same transaction so the caller sees
