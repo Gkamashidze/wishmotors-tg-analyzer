@@ -39,16 +39,20 @@ export function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-border bg-card">
-      <div className="flex items-center justify-center py-3 border-b border-border">
+      <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
         <Image
           src="/logo.jpg"
           alt="WishMotors"
-          width={180}
-          height={180}
+          width={36}
+          height={36}
           priority
           quality={90}
-          className="w-[180px] h-auto object-contain"
+          className="h-9 w-9 rounded-lg object-contain"
         />
+        <div className="flex flex-col leading-tight">
+          <span className="font-semibold">WishMotors</span>
+          <span className="text-xs text-muted-foreground">Sales Console</span>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">

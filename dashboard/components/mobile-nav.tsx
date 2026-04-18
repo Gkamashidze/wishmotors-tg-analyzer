@@ -82,15 +82,15 @@ export function MobileNav() {
       >
         {/* Drawer header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border shrink-0">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <Image
               src="/logo.jpg"
               alt="WishMotors"
-              width={160}
-              height={160}
+              width={36}
+              height={36}
               priority
               quality={90}
-              className="w-[160px] h-auto object-contain"
+              className="h-9 w-9 rounded-lg object-contain"
             />
           </div>
           <button
