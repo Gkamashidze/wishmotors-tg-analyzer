@@ -181,8 +181,9 @@ CREATE TABLE IF NOT EXISTS cash_deposits (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Unit of measure for products (ც, კგ, მ, კომპლ. etc.)
-ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ც';
+-- Unit of measure for products (ცალი, ლიტრი, კომპლექტი, კგ, მ, etc.)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS unit TEXT NOT NULL DEFAULT 'ცალი';
+ALTER TABLE products ALTER COLUMN unit SET DEFAULT 'ცალი';
 
 -- Track whether a company (შპს) sale has been receipted at the cash register
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS receipt_printed BOOLEAN NOT NULL DEFAULT FALSE;

@@ -510,7 +510,7 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
 
 
 # ─── Inventory topic: Excel batch receipts (WAC + ledger posting) ─────────────
-# Expected columns (header row skipped): სახელი | OEM | მარაგი | ფასი
+# Expected columns (header row skipped): სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული
 # Each data row is posted as an inventory receipt: products.current_stock is
 # incremented, one inventory_batches row is created, and the ledger gets a
 # balanced pair of entries (DR Inventory / CR Accounts payable) so WAC can be
@@ -525,7 +525,10 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
     if not doc.file_name.lower().endswith((".xlsx", ".xls")):
         await message.bot.send_message(
             chat_id=message.from_user.id,
-            text="❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.",
+            text=(
+                "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.\n"
+                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული</b>"
+            ),
             parse_mode=_PARSE,
         )
         return
@@ -559,7 +562,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             chat_id=message.from_user.id,
             text=(
                 "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
-                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი</b>"
+                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული</b>"
             ),
             parse_mode=_PARSE,
         )
@@ -586,6 +589,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             quantity = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
             unit_cost = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
             backdate = _parse_backdate(row[4] if len(row) > 4 else None)
+            unit = str(row[5]).strip() if len(row) > 5 and row[5] is not None else 'ცალი'
 
             if not name:
                 continue
@@ -605,6 +609,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
                 reference=reference,
                 notes=f"Inventory receipt via Excel upload (row {row_idx})",
                 received_at=backdate,
+                unit=unit,
             )
             received += 1
             total_value += result["total_cost"]

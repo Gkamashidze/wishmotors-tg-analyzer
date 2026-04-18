@@ -593,6 +593,7 @@ class Database:
         reference: Optional[str] = None,
         notes: Optional[str] = None,
         received_at: Optional[datetime] = None,
+        unit: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Post one inventory receipt (one Excel row).
 
@@ -632,28 +633,30 @@ class Database:
                     "SELECT id FROM products WHERE oem_code = $1",
                     clean_oem,
                 )
+                clean_unit = unit.strip() if unit else 'ცალი'
+
                 if existing:
                     product_id = existing["id"]
                     await conn.execute(
-                        "UPDATE products SET name = $1, unit_price = $2 WHERE id = $3",
-                        name, unit_cost, product_id,
+                        "UPDATE products SET name = $1, unit_price = $2, unit = $3 WHERE id = $4",
+                        name, unit_cost, clean_unit, product_id,
                     )
                 else:
                     if received_at is not None:
                         row = await conn.fetchrow(
                             """INSERT INTO products
-                                   (name, oem_code, current_stock, min_stock, unit_price, created_at)
-                               VALUES ($1, $2, 0, $3, $4, $5)
+                                   (name, oem_code, current_stock, min_stock, unit_price, unit, created_at)
+                               VALUES ($1, $2, 0, $3, $4, $5, $6)
                                RETURNING id""",
-                            name, clean_oem, min_stock, unit_cost, received_at,
+                            name, clean_oem, min_stock, unit_cost, clean_unit, received_at,
                         )
                     else:
                         row = await conn.fetchrow(
                             """INSERT INTO products
-                                   (name, oem_code, current_stock, min_stock, unit_price)
-                               VALUES ($1, $2, 0, $3, $4)
+                                   (name, oem_code, current_stock, min_stock, unit_price, unit)
+                               VALUES ($1, $2, 0, $3, $4, $5)
                                RETURNING id""",
-                            name, clean_oem, min_stock, unit_cost,
+                            name, clean_oem, min_stock, unit_cost, clean_unit,
                         )
                     product_id = row["id"]
                     was_created = True
