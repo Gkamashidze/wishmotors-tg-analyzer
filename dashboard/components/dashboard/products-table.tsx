@@ -129,6 +129,7 @@ type TxTab = "info" | "sales" | "orders";
 export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [showNegative, setShowNegative] = useState(false);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
 
   useEffect(() => {
@@ -209,11 +210,12 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sorted;
-    return sorted.filter((r) =>
-      [r.name, r.oemCode ?? ""].join(" ").toLowerCase().includes(q),
-    );
-  }, [sorted, search]);
+    return sorted.filter((r) => {
+      if (showNegative && r.currentStock >= 0) return false;
+      if (!q) return true;
+      return [r.name, r.oemCode ?? ""].join(" ").toLowerCase().includes(q);
+    });
+  }, [sorted, search, showNegative]);
 
   // ── Product edit/delete ─────────────────────────────────────────────────────
 
@@ -371,14 +373,28 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ძიება (დასახელება, OEM...)"
-          aria-label="ძიება პროდუქციაში"
-          className="h-9 w-72 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ძიება (დასახელება, OEM...)"
+            aria-label="ძიება პროდუქციაში"
+            className="h-9 w-72 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button
+            onClick={() => setShowNegative((v) => !v)}
+            aria-pressed={showNegative}
+            className={cn(
+              "h-9 px-3 rounded-lg border text-sm font-medium transition-colors cursor-pointer",
+              showNegative
+                ? "border-destructive bg-destructive/10 text-destructive"
+                : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-destructive/50",
+            )}
+          >
+            ⚠️ უარყოფითი მარაგები
+          </button>
+        </div>
         <p className="text-xs text-muted-foreground">
           {formatNumber(filtered.length)} / {formatNumber(rows.length)} პროდუქტი
         </p>
@@ -391,13 +407,14 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
               <TableHead className="w-14">#</TableHead>
               <TableHead>OEM კოდი</TableHead>
               <TableHead>დასახელება</TableHead>
+              <TableHead className="w-24 text-right">მარაგი</TableHead>
               <TableHead className="w-24 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -409,6 +426,12 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
                     {r.oemCode ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className={cn(
+                    "text-right tabular-nums text-sm font-medium",
+                    r.currentStock < 0 ? "text-destructive" : "text-foreground",
+                  )}>
+                    {formatNumber(r.currentStock)}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">

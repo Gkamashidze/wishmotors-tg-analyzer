@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const negativeOnly = searchParams.get("negativeStock") === "true";
+
   const rows = await query<{
     id: number;
     name: string;
@@ -14,6 +17,7 @@ export async function GET() {
   }>(
     `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
      FROM products
+     ${negativeOnly ? "WHERE current_stock < 0" : ""}
      ORDER BY name ASC, created_at DESC`,
   );
 
