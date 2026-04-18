@@ -1,0 +1,79 @@
+import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
+import { query } from "@/lib/db";
+
+interface OrderExportRow {
+  id: number;
+  oem_code: string | null;
+  product_name: string | null;
+  quantity_needed: number;
+  priority: string;
+  status: string;
+  notes: string | null;
+  created_at: string;
+}
+
+const PRIORITY_MAP: Record<string, string> = {
+  urgent: "სასწრაფო",
+  normal: "ჩვეულებრივი",
+  low: "დაბალი",
+};
+
+const STATUS_MAP: Record<string, string> = {
+  pending: "მოლოდინში",
+  ordered: "შეკვეთილი",
+  received: "მიღებული",
+  cancelled: "გაუქმებული",
+};
+
+export async function GET() {
+  const rows = await query<OrderExportRow>(
+    `SELECT o.id, p.oem_code, p.name AS product_name,
+            o.quantity_needed, o.priority, o.status, o.notes, o.created_at
+     FROM orders o
+     LEFT JOIN products p ON p.id = o.product_id
+     ORDER BY CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+              CASE o.priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+              o.created_at DESC`,
+  );
+
+  const sheetData = [
+    ["#", "OEM კოდი", "დასახელება", "რაოდენობა", "პრიორიტეტი", "სტატუსი", "შენიშვნა", "შექმნის თარიღი"],
+    ...rows.map((r, i) => [
+      i + 1,
+      r.oem_code ?? "",
+      r.product_name ?? "",
+      r.quantity_needed,
+      PRIORITY_MAP[r.priority] ?? r.priority,
+      STATUS_MAP[r.status] ?? r.status,
+      r.notes ?? "",
+      new Date(r.created_at).toLocaleDateString("ka-GE"),
+    ]),
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+  ws["!cols"] = [
+    { wch: 5 },
+    { wch: 18 },
+    { wch: 30 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 30 },
+    { wch: 18 },
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "შეკვეთები");
+
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  const date = new Date().toISOString().slice(0, 10);
+  return new NextResponse(buf, {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="orders-${date}.xlsx"`,
+    },
+  });
+}

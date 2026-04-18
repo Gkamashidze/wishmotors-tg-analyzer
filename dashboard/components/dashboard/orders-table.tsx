@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Download, Eye, Pencil, Trash2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -231,6 +231,12 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
             {STATUS_TABS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <input value={queryText} onChange={(e) => setQueryText(e.target.value)} placeholder="ძიება..." aria-label="ძიება შეკვეთებში" className="h-9 w-56 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+          <a href="/api/orders/export" download aria-label="ექსელში ჩამოტვირთვა">
+            <Button size="sm" variant="outline" className="gap-1.5 cursor-pointer">
+              <Download className="h-4 w-4" />
+              📥 ექსელში ჩამოტვირთვა
+            </Button>
+          </a>
         </div>
       </div>
 
