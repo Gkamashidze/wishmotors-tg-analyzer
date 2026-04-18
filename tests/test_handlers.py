@@ -41,6 +41,7 @@ def _msg(text: str, user_id: int = _USER_ID) -> MagicMock:
     msg.from_user = MagicMock()
     msg.from_user.id = user_id
     msg.bot = AsyncMock()
+    msg.answer = AsyncMock()
     return msg
 
 
@@ -257,3 +258,120 @@ class TestCmdEditProduct:
         msg.bot.send_message.assert_called_once()
         kwargs = msg.bot.send_message.call_args[1]
         assert kwargs["chat_id"] == _USER_ID
+
+
+# ─── AddOrder wizard ──────────────────────────────────────────────────────────
+
+from bot.handlers.addorder import (  # noqa: E402
+    AddOrderWizard,
+    cmd_addorder,
+    on_oem_input,
+    on_name_qty_input,
+    _parse_name_qty,
+)
+
+
+def _state_mock(data=None) -> AsyncMock:
+    state = AsyncMock()
+    state.get_data = AsyncMock(return_value=data or {})
+    state.update_data = AsyncMock()
+    state.set_state = AsyncMock()
+    state.clear = AsyncMock()
+    state.set_data = AsyncMock()
+    return state
+
+
+class TestParseNameQty:
+    def test_name_and_qty_trailing_int(self):
+        name, qty = _parse_name_qty("უკანა სუხო 3")
+        assert name == "უკანა სუხო"
+        assert qty == 3
+
+    def test_name_only_returns_none_qty(self):
+        name, qty = _parse_name_qty("უკანა სუხო")
+        assert name == "უკანა სუხო"
+        assert qty is None
+
+    def test_zero_qty_treated_as_name_only(self):
+        _, qty = _parse_name_qty("სარკე 0")
+        assert qty is None
+
+    def test_negative_qty_treated_as_name_only(self):
+        _, qty = _parse_name_qty("სარკე -1")
+        assert qty is None
+
+    def test_single_word_name_with_qty(self):
+        name, qty = _parse_name_qty("სარკე 10")
+        assert name == "სარკე"
+        assert qty == 10
+
+
+class TestCmdAddorder:
+    async def test_clears_state_and_asks_for_oem(self):
+        msg = _msg("/addorder")
+        state = _state_mock({"items": []})
+        await cmd_addorder(msg, state)
+        state.clear.assert_called_once()
+        text = msg.answer.call_args[0][0]
+        assert "OEM" in text
+
+    async def test_prompt_contains_step_label(self):
+        msg = _msg("/addorder")
+        state = _state_mock({"items": []})
+        await cmd_addorder(msg, state)
+        text = msg.answer.call_args[0][0]
+        assert "ნივთი #1" in text
+
+
+class TestOnOemInput:
+    async def test_valid_oem_advances_to_name_step(self):
+        msg = _msg("4571234000")
+        state = _state_mock({"items": []})
+        await on_oem_input(msg, state)
+        state.set_state.assert_called_once_with(AddOrderWizard.name)
+
+    async def test_invalid_oem_with_letters_sends_warning(self):
+        msg = _msg("ABC123")
+        state = _state_mock({"items": []})
+        await on_oem_input(msg, state)
+        state.set_state.assert_not_called()
+        text = msg.answer.call_args[0][0]
+        assert "ციფრებს" in text
+
+    async def test_short_oem_under_four_digits_rejected(self):
+        msg = _msg("123")
+        state = _state_mock({"items": []})
+        await on_oem_input(msg, state)
+        state.set_state.assert_not_called()
+
+    async def test_oem_stored_in_state(self):
+        msg = _msg("8390132500")
+        state = _state_mock({"items": []})
+        await on_oem_input(msg, state)
+        state.update_data.assert_called_once_with(current_oem_code="8390132500")
+
+
+class TestOnNameQtyInput:
+    async def test_name_and_qty_combined_resolves_db_and_asks_priority(self):
+        msg = _msg("უკანა სუხო 3")
+        db = _db(get_product_by_oem=AsyncMock(return_value={"id": 7, "name": "სუხო", "oem_code": "1234"}))
+        state = _state_mock({"items": [], "current_oem_code": "1234"})
+        await on_name_qty_input(msg, state, db)
+        # state should advance to priority
+        state.set_state.assert_called_once_with(AddOrderWizard.priority)
+
+    async def test_name_only_goes_to_quantity_step(self):
+        msg = _msg("უკანა სუხო")
+        db = _db()
+        state = _state_mock({"items": [], "current_oem_code": "1234"})
+        await on_name_qty_input(msg, state, db)
+        state.set_state.assert_called_once_with(AddOrderWizard.quantity)
+
+    async def test_unknown_oem_stores_null_product_id(self):
+        msg = _msg("სარკე 2")
+        db = _db(get_product_by_oem=AsyncMock(return_value=None))
+        state = _state_mock({"items": [], "current_oem_code": "9999"})
+        await on_name_qty_input(msg, state, db)
+        call_kwargs = state.update_data.call_args[1]
+        assert call_kwargs["current_product_id"] is None
+        assert call_kwargs["current_is_freeform"] is True

@@ -2,14 +2,17 @@
 /addorder — manual multi-item order entry wizard.
 
 Flow (DM only, admin only):
-  1. /addorder              → product prompt (OEM / name)
-  2. product input          → search → either auto-pick / user picks / freeform
-  3. quantity prompt        → integer > 0
-  4. priority prompt        → 🚨 urgent  /  🟢 low
+  1. /addorder              → OEM code prompt (strict digits-only)
+  2. OEM input              → product name prompt
+  3. name input             → quantity prompt
+  4. quantity input         → priority prompt  → 🚨 urgent  /  🟢 low
   5. "add another?" loop    → ➕ კიდევ ერთი  /  ✅ დასრულება
   6. on finish              → atomic bulk INSERT into `orders` (single tx),
                               then a single grouped summary is posted to
                               ORDERS_TOPIC_ID (urgent first, then low).
+
+OEM code is collected first (strict digits-only) so every order is always
+linked by a machine-readable identifier before a human label is entered.
 
 State is stored in the project FSM (Redis when REDIS_URL is set —
 see bot/main.py), so a Railway restart mid-session does not corrupt
@@ -24,7 +27,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -45,20 +48,8 @@ from database.db import Database
 logger = logging.getLogger(__name__)
 addorder_router = Router(name="addorder")
 
-# Matches "4571234000 უკანა სუხოის რეზინა" → OEM digits + product name
-_OEM_NAME_RE = re.compile(r'^(\d{4,})\s+(.{2,})$', re.UNICODE)
-
-
-def _split_oem_name(query: str) -> Tuple[Optional[str], str]:
-    """Extract leading OEM digits from a combined 'CODE NAME' query.
-
-    Returns (oem_code, product_name). oem_code is None when the input
-    is name-only or digits-only without a trailing description.
-    """
-    m = _OEM_NAME_RE.match(query.strip())
-    if m:
-        return m.group(1), m.group(2).strip()
-    return None, query.strip()
+# Strict OEM code: digits only, minimum 4 characters.
+_OEM_RE = re.compile(r'^\d{4,}$')
 
 _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
@@ -121,14 +112,59 @@ def _continue_kb() -> InlineKeyboardMarkup:
 # ─── FSM states ──────────────────────────────────────────────────────────────
 
 class AddOrderWizard(StatesGroup):
-    product   = State()   # OEM / name input
-    select    = State()   # disambiguation when several products match
+    oem       = State()   # strict OEM code (digits only)
+    name      = State()   # product name
     quantity  = State()   # how many units
     priority  = State()   # urgent / low
     next_step = State()   # add another or finish
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
+
+def _parse_name_qty(text: str) -> tuple[str, Optional[int]]:
+    """Split "product name 3" into ("product name", 3).
+
+    Returns (text, None) when no trailing integer is found.
+    """
+    parts = text.rsplit(None, 1)
+    if len(parts) == 2:
+        try:
+            qty = int(parts[1])
+            if qty > 0:
+                return parts[0].strip(), qty
+        except ValueError:
+            pass
+    return text.strip(), None
+
+
+async def _resolve_and_store(
+    msg: Message,
+    state: FSMContext,
+    db: Database,
+    product_name: str,
+    quantity: int,
+) -> None:
+    """Look up DB by OEM code, store all current-item fields, ask for priority."""
+    data = await state.get_data()
+    oem_code: str = data.get("current_oem_code") or ""
+
+    resolved_product_id: Optional[int] = None
+    try:
+        existing = await db.get_product_by_oem(oem_code)
+        if existing:
+            resolved_product_id = existing["id"]
+    except Exception:
+        logger.exception("DB lookup by OEM %r failed during order entry", oem_code)
+
+    await state.update_data(
+        current_product_id=resolved_product_id,
+        current_product_name=product_name,
+        current_quantity=quantity,
+        current_is_freeform=resolved_product_id is None,
+    )
+    await state.set_state(AddOrderWizard.priority)
+    await _ask_for_priority(msg, send=True)
+
 
 async def _items(state: FSMContext) -> List[Dict[str, Any]]:
     data = await state.get_data()
@@ -140,19 +176,30 @@ async def _set_items(state: FSMContext, items: List[Dict[str, Any]]) -> None:
     await state.update_data(items=items)
 
 
-async def _ask_for_product(msg: Message, state: FSMContext, edit: bool) -> None:
+async def _ask_for_oem(msg: Message, state: FSMContext, edit: bool) -> None:
     items = await _items(state)
     step_no = len(items) + 1
     text = (
         f"📋 <b>შეკვეთა — ნივთი #{step_no}</b>\n\n"
-        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:"
+        "1️⃣ ჩაწერე პროდუქტის <b>OEM კოდი</b> (მხოლოდ ციფრები):\n"
+        "<i>მაგ: 4571234000</i>"
     )
-    await state.set_state(AddOrderWizard.product)
+    await state.set_state(AddOrderWizard.oem)
     kb = _kb(_CANCEL_ROW)
     if edit:
         await msg.edit_text(text, parse_mode=_PARSE, reply_markup=kb)
     else:
         await msg.answer(text, parse_mode=_PARSE, reply_markup=kb)
+
+
+async def _ask_for_name(msg: Message, state: FSMContext, oem_code: str) -> None:
+    await state.set_state(AddOrderWizard.name)
+    text = (
+        f"✅ OEM კოდი: <code>{_e(oem_code)}</code>\n\n"
+        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b> და <b>რაოდენობა</b>:\n"
+        "<i>მაგ: <code>უკანა სუხო 3</code></i>"
+    )
+    await msg.answer(text, parse_mode=_PARSE, reply_markup=_kb(_CANCEL_ROW))
 
 
 async def _goto_quantity(msg: Message, state: FSMContext, product_name: str, edit: bool) -> None:
@@ -261,11 +308,9 @@ def _format_topic_summary(
 
 @addorder_router.message(Command("addorder"), IsAdmin(), _PRIVATE)
 async def cmd_addorder(message: Message, state: FSMContext) -> None:
-    # Always start from a clean slate — never inherit half-filled state
-    # from an earlier aborted session.
     await state.clear()
     await state.set_data({"items": []})
-    await _ask_for_product(message, state, edit=False)
+    await _ask_for_oem(message, state, edit=False)
 
 
 # ─── Cancel ──────────────────────────────────────────────────────────────────
@@ -283,145 +328,52 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Step 1: product input ───────────────────────────────────────────────────
+# ─── Step 1: OEM code input ──────────────────────────────────────────────────
 
-@addorder_router.message(AddOrderWizard.product, IsAdmin(), _PRIVATE)
-async def on_product_input(message: Message, state: FSMContext, db: Database) -> None:
-    query = (message.text or "").strip()
-    if not query:
+@addorder_router.message(AddOrderWizard.oem, IsAdmin(), _PRIVATE)
+async def on_oem_input(message: Message, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    if not _OEM_RE.match(raw):
         await message.answer(
-            "⚠️ ჩაწერე პროდუქტის OEM კოდი ან დასახელება.",
+            "⚠️ OEM კოდი უნდა შეიცავდეს <b>მხოლოდ ციფრებს</b> (მინ. 4).\n"
+            "<i>მაგ: 4571234000</i>",
             parse_mode=_PARSE,
         )
         return
 
-    products = await db.search_products(query, limit=6)
+    await state.update_data(current_oem_code=raw)
+    await _ask_for_name(message, state, raw)
 
-    # Fallback: if full query found nothing and it looks like "OEM_CODE NAME",
-    # try searching by the OEM part alone, then by the name part alone.
-    if not products:
-        oem_part, name_part = _split_oem_name(query)
-        if oem_part:
-            products = await db.search_products(oem_part, limit=6)
-        if not products and oem_part:
-            products = await db.search_products(name_part, limit=6)
 
-    if len(products) == 1:
-        p = products[0]
-        await state.update_data(
-            current_product_id=p["id"],
-            current_product_name=p["name"],
-            current_oem_code=p.get("oem_code"),
-            current_is_freeform=False,
-        )
-        await _goto_quantity(message, state, p["name"], edit=False)
-        return
+# ─── Step 2: product name + quantity in one message ──────────────────────────
 
-    if len(products) > 1:
-        await state.set_state(AddOrderWizard.select)
-        rows: List[List[InlineKeyboardButton]] = []
-        for p in products:
-            label = p["name"]
-            if p.get("oem_code"):
-                label += f" [{p['oem_code']}]"
-            rows.append([_btn(label[:64], f"ao:prod:{p['id']}")])
-        rows.append([_btn(f"❓ ბაზაში არ არის — ჩავიწეროთ '{query[:32]}'", "ao:prod:free")])
-        rows.append(_CANCEL_ROW)
-        await state.update_data(current_freeform_query=query)
+@addorder_router.message(AddOrderWizard.name, IsAdmin(), _PRIVATE)
+async def on_name_qty_input(message: Message, state: FSMContext, db: Database) -> None:
+    """Accept "product name QTY" or "product name" (qty defaults to prompt)."""
+    raw = (message.text or "").strip()
+    if not raw:
         await message.answer(
-            f"🔍 <b>ვიპოვე {len(products)} პროდუქტი.</b> აირჩიე:",
+            "⚠️ ჩაწერე პროდუქტის დასახელება და რაოდენობა.",
             parse_mode=_PARSE,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         )
         return
 
-    # No matches — let the user record it as a freeform request.
-    await state.set_state(AddOrderWizard.select)
-    await state.update_data(current_freeform_query=query)
-    await message.answer(
-        f"⚠️ <b>'{_e(query)}'</b> ბაზაში ვერ ვიპოვე.\n"
-        "მაინც ჩავიწეროთ შეკვეთად?",
-        parse_mode=_PARSE,
-        reply_markup=_kb(
-            [_btn(f"✅ ჩავიწეროთ: {query[:40]}", "ao:prod:free")],
-            _CANCEL_ROW,
-        ),
-    )
+    # Try to split trailing integer as quantity: "უკანა სუხო 3" → name="უკანა სუხო", qty=3
+    name_part, qty = _parse_name_qty(raw)
+
+    if qty is not None:
+        # Name + quantity provided in one message → go straight to priority.
+        await _resolve_and_store(message, state, db, name_part, qty)
+    else:
+        # Name only — store name, ask for quantity separately.
+        await state.update_data(current_product_name=name_part)
+        await _goto_quantity(message, state, name_part, edit=False)
 
 
-# ─── Step 1b: pick from search results ───────────────────────────────────────
-
-@addorder_router.callback_query(F.data.startswith("ao:prod:"), IsAdmin(), StateFilter(AddOrderWizard.select))
-async def on_product_selected(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
-    assert isinstance(callback.message, Message)
-    choice = callback.data.split(":", 2)[2]
-
-    if choice == "free":
-        data = await state.get_data()
-        raw = (data.get("current_freeform_query") or "").strip() or "უცნობი"
-
-        oem_part, name_part = _split_oem_name(raw)
-
-        resolved_product_id: Optional[int] = None
-        resolved_oem: Optional[str] = oem_part
-        resolved_name: str = name_part
-
-        if oem_part:
-            # Product not in DB yet — create a placeholder so the order
-            # gets a real product_id and OEM code instead of a freeform note.
-            try:
-                existing = await db.get_product_by_oem(oem_part)
-                if existing:
-                    resolved_product_id = existing["id"]
-                    resolved_name = existing["name"]
-                    resolved_oem = existing.get("oem_code")
-                else:
-                    resolved_product_id = await db.create_product(
-                        name=name_part,
-                        oem_code=oem_part,
-                        stock=0,
-                        min_stock=0,
-                        price=0.0,
-                    )
-            except Exception:
-                logger.exception("Failed to auto-create product for freeform OEM %r", oem_part)
-                # Fall through with NULL product_id — order still saved
-
-        await state.update_data(
-            current_product_id=resolved_product_id,
-            current_product_name=resolved_name,
-            current_oem_code=resolved_oem,
-            current_is_freeform=True,
-        )
-        await _goto_quantity(callback.message, state, resolved_name, edit=True)
-        await callback.answer()
-        return
-
-    try:
-        product_id = int(choice)
-    except ValueError:
-        await callback.answer("❌ შეცდომა", show_alert=True)
-        return
-
-    product = await db.get_product_by_id(product_id)
-    if not product:
-        await callback.answer("პროდუქტი ვერ მოიძებნა", show_alert=True)
-        return
-
-    await state.update_data(
-        current_product_id=product_id,
-        current_product_name=product["name"],
-        current_oem_code=product.get("oem_code"),
-        current_is_freeform=False,
-    )
-    await _goto_quantity(callback.message, state, product["name"], edit=True)
-    await callback.answer()
-
-
-# ─── Step 2: quantity ────────────────────────────────────────────────────────
+# ─── Step 3: quantity (only reached when name was entered without qty) ────────
 
 @addorder_router.message(AddOrderWizard.quantity, IsAdmin(), _PRIVATE)
-async def on_quantity_input(message: Message, state: FSMContext) -> None:
+async def on_quantity_input(message: Message, state: FSMContext, db: Database) -> None:
     raw = (message.text or "").strip()
     try:
         qty = int(raw)
@@ -436,9 +388,9 @@ async def on_quantity_input(message: Message, state: FSMContext) -> None:
         await message.answer("⚠️ რაოდენობა უნდა იყოს 1-ზე მეტი ან მისი ტოლი.", parse_mode=_PARSE)
         return
 
-    await state.update_data(current_quantity=qty)
-    await state.set_state(AddOrderWizard.priority)
-    await _ask_for_priority(message, send=True)
+    data = await state.get_data()
+    product_name: str = data.get("current_product_name") or "უცნობი"
+    await _resolve_and_store(message, state, db, product_name, qty)
 
 
 # ─── Step 3: priority + commit-to-session ────────────────────────────────────
@@ -446,7 +398,7 @@ async def on_quantity_input(message: Message, state: FSMContext) -> None:
 @addorder_router.callback_query(F.data.startswith("ao:prio:"), IsAdmin(), StateFilter(AddOrderWizard.priority))
 async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
-    chosen = callback.data.split(":", 2)[2]
+    chosen = (callback.data or "").split(":", 2)[2]
     if chosen not in (_PRIORITY_URGENT, _PRIORITY_LOW):
         await callback.answer("❌ უცნობი პრიორიტეტი", show_alert=True)
         return
@@ -463,7 +415,7 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
     if item["quantity"] <= 0:
         # Defensive: quantity slot was unexpectedly empty — restart this row.
         await callback.answer("⚠️ რაოდენობა დაიკარგა, თავიდან", show_alert=True)
-        await _ask_for_product(callback.message, state, edit=True)
+        await _ask_for_oem(callback.message, state, edit=True)
         return
 
     items = await _items(state)
@@ -495,7 +447,7 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
 async def on_more(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await _ask_for_product(callback.message, state, edit=False)
+    await _ask_for_oem(callback.message, state, edit=False)
     await callback.answer()
 
 
@@ -578,8 +530,10 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
     # every order in the batch so the callback can resolve "which orders
     # does this button complete?" purely from chat/message identifiers.
     summary_text = _format_topic_summary(items_with_ids, requester_name)
+    bot = callback.bot
+    assert bot is not None
     try:
-        posted = await callback.bot.send_message(
+        posted = await bot.send_message(
             chat_id=config.GROUP_ID,
             message_thread_id=config.ORDERS_TOPIC_ID,
             text=summary_text,
