@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { ProductRow } from "@/lib/queries";
-import { formatGEL, formatNumber } from "@/lib/utils";
+import { formatGEL, formatNumber, cn } from "@/lib/utils";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ka-GE", { year: "numeric", month: "short", day: "numeric" });
@@ -41,6 +41,7 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [showLow, setShowLow] = useState(false);
+  const [showNegative, setShowNegative] = useState(false);
   const [editRow, setEditRow] = useState<ProductRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ProductRow | null>(null);
@@ -50,13 +51,15 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      if (showNegative && r.currentStock >= 0) return false;
       if (showLow && r.currentStock >= r.minStock) return false;
       if (!q) return true;
       return [r.name, r.oemCode ?? "", r.unit].join(" ").toLowerCase().includes(q);
     });
-  }, [rows, search, showLow]);
+  }, [rows, search, showLow, showNegative]);
 
   const lowCount = useMemo(() => rows.filter((r) => r.currentStock < r.minStock).length, [rows]);
+  const negativeCount = useMemo(() => rows.filter((r) => r.currentStock < 0).length, [rows]);
 
   const openEdit = useCallback((r: ProductRow) => {
     setEditRow(r);
@@ -129,6 +132,26 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
               </span>
             )}
           </Button>
+          <button
+            onClick={() => setShowNegative((v) => !v)}
+            aria-pressed={showNegative}
+            className={cn(
+              "h-9 px-3 rounded-lg border text-sm font-medium transition-colors cursor-pointer",
+              showNegative
+                ? "border-destructive bg-destructive/10 text-destructive"
+                : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-destructive/50",
+            )}
+          >
+            ⚠️ უარყოფითი მარაგები
+            {negativeCount > 0 && (
+              <span className={cn(
+                "ml-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                showNegative ? "bg-destructive/20 text-destructive" : "bg-muted text-muted-foreground",
+              )}>
+                {negativeCount}
+              </span>
+            )}
+          </button>
         </div>
         <p className="text-xs text-muted-foreground">{formatNumber(filtered.length)} / {formatNumber(rows.length)} პროდუქტი</p>
       </div>
