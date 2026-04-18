@@ -13,6 +13,7 @@ import {
 import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { AiFinancialManager } from "@/components/dashboard/ai-financial-manager";
+import { AccountBalancesSection } from "@/components/dashboard/account-balances-section";
 import { formatNumber } from "@/lib/utils";
 import { getDailySeries, getDashboardSummaryRange } from "@/lib/queries";
 
@@ -33,6 +34,8 @@ export default async function DashboardPage() {
       <TopBar title="მთავარი დაფა" />
       <main className="p-6 space-y-6 animate-fade-in">
         <DashboardStats initial={summary} />
+
+        <AccountBalancesSection />
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
