@@ -30,9 +30,9 @@ const VALID_KEYS = new Set(["cash_gel", "cash_usd", "bank_gel", "bank_usd"]);
 // ---------------------------------------------------------------------------
 export async function GET(
   _req: Request,
-  { params }: { params: { accountKey: string } },
+  { params }: { params: Promise<{ accountKey: string }> },
 ) {
-  const { accountKey } = params;
+  const { accountKey } = await params;
 
   if (!VALID_KEYS.has(accountKey)) {
     return NextResponse.json({ error: "invalid account key" }, { status: 400 });

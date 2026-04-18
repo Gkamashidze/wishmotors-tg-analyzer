@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Settings2, Banknote, Building2, RefreshCw } from "lucide-react";
+import { Settings2, Banknote, Building2, RefreshCw, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import type { AccountBalance } from "@/app/api/account-balances/route";
+import type { AccountStatement, StatementEntry } from "@/app/api/account-balances/[accountKey]/statement/route";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,6 +27,16 @@ function formatAmount(amount: number, currency: string) {
   );
 }
 
+function formatDate(isoDate: string | null): string {
+  if (!isoDate) return "—";
+  const d = new Date(isoDate);
+  return [
+    d.getDate().toString().padStart(2, "0"),
+    (d.getMonth() + 1).toString().padStart(2, "0"),
+    d.getFullYear(),
+  ].join(".");
+}
+
 function balanceTone(amount: number): string {
   if (amount > 0) return "text-success";
   if (amount < 0) return "text-destructive";
@@ -33,9 +44,15 @@ function balanceTone(amount: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Balance card (single account)
+// Balance card (single account) — clickable
 // ---------------------------------------------------------------------------
-function BalanceCard({ item }: { item: AccountBalance }) {
+function BalanceCard({
+  item,
+  onClick,
+}: {
+  item: AccountBalance;
+  onClick: () => void;
+}) {
   const isBank = item.account_key.startsWith("bank");
   const Icon = isBank ? Building2 : Banknote;
   const iconBg = isBank
@@ -43,7 +60,21 @@ function BalanceCard({ item }: { item: AccountBalance }) {
     : "bg-emerald-500/10 text-emerald-500 ring-emerald-500/10";
 
   return (
-    <Card className="transition-shadow hover:shadow-md">
+    <Card
+      role="button"
+      tabIndex={0}
+      aria-label={`${item.account_name} ${item.currency} — ამონაწერის ნახვა`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onClick();
+      }}
+      className={[
+        "transition-all duration-150 cursor-pointer select-none",
+        "hover:shadow-md hover:ring-2 hover:ring-primary/30",
+        "active:scale-[0.98]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+      ].join(" ")}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -53,19 +84,256 @@ function BalanceCard({ item }: { item: AccountBalance }) {
             <p className="mt-0.5 text-[11px] text-muted-foreground/60">
               {item.currency}
             </p>
-            <p className={`mt-2 text-xl font-bold tabular-nums ${balanceTone(item.current_balance)}`}>
+            <p
+              className={`mt-2 text-xl font-bold tabular-nums ${balanceTone(item.current_balance)}`}
+            >
               {formatAmount(item.current_balance, item.currency)}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               საწყისი: {formatAmount(item.initial_balance, item.currency)}
             </p>
           </div>
-          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ring-1 shrink-0 ${iconBg}`}>
+          <div
+            className={`h-9 w-9 rounded-lg flex items-center justify-center ring-1 shrink-0 ${iconBg}`}
+          >
             <Icon className="h-4 w-4" aria-hidden="true" />
           </div>
         </div>
+        <div className="mt-3 flex items-center gap-1 text-[10px] text-muted-foreground/50">
+          <FileText className="h-3 w-3" />
+          <span>ამონაწერის სანახავად დააჭირეთ</span>
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Statement Modal
+// ---------------------------------------------------------------------------
+function StatementModal({
+  accountKey,
+  onClose,
+}: {
+  accountKey: string | null;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<AccountStatement | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accountKey) return;
+    setData(null);
+    setError(null);
+    setLoading(true);
+    fetch(`/api/account-balances/${accountKey}/statement`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text());
+        return res.json() as Promise<AccountStatement>;
+      })
+      .then(setData)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "შეცდომა"),
+      )
+      .finally(() => setLoading(false));
+  }, [accountKey]);
+
+  const lastEntry = data?.entries.at(-1);
+  const currency = data?.currency ?? "GEL";
+
+  return (
+    <Dialog
+      open={!!accountKey}
+      onClose={onClose}
+      title={
+        data
+          ? `ანგარიშის ამონაწერი — ${data.account_name} (${data.currency})`
+          : "ანგარიშის ამონაწერი"
+      }
+      className="max-w-4xl"
+    >
+      {/* Summary strip */}
+      {data && lastEntry && (
+        <div className="flex flex-wrap gap-4 mb-5 p-3 rounded-lg bg-muted/40 border border-border">
+          <SummaryStat
+            label="მიმდინარე ნაშთი"
+            value={formatAmount(lastEntry.balance, currency)}
+            tone={balanceTone(lastEntry.balance)}
+          />
+          <SummaryStat
+            label="სულ შემოსავალი"
+            value={formatAmount(
+              data.entries.slice(1).reduce((s, e) => s + e.credit, 0),
+              currency,
+            )}
+            tone="text-success"
+          />
+          <SummaryStat
+            label="სულ გასავალი"
+            value={formatAmount(
+              data.entries.slice(1).reduce((s, e) => s + e.debit, 0),
+              currency,
+            )}
+            tone="text-destructive"
+          />
+          <SummaryStat
+            label="ტრანზაქციები"
+            value={String(data.entries.length - 1)}
+            tone="text-foreground"
+          />
+        </div>
+      )}
+
+      {/* Loading / error states */}
+      {loading && (
+        <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground text-sm">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>იტვირთება...</span>
+        </div>
+      )}
+
+      {error && (
+        <p className="py-8 text-center text-sm text-destructive">{error}</p>
+      )}
+
+      {/* Table */}
+      {data && !loading && (
+        <div className="overflow-auto max-h-[55vh] rounded-lg border border-border">
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
+              <tr>
+                <Th>თარიღი</Th>
+                <Th grow>ოპერაცია / დანიშნულება</Th>
+                <Th right>შემოსავალი (+)</Th>
+                <Th right>გასავალი (−)</Th>
+                <Th right>ნაშთი</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.entries.map((entry, idx) => (
+                <StatementRow
+                  key={idx}
+                  entry={entry}
+                  currency={currency}
+                  isInitial={idx === 0}
+                />
+              ))}
+            </tbody>
+          </table>
+
+          {data.entries.length === 1 && (
+            <p className="text-center text-xs text-muted-foreground py-8">
+              ამ ანგარიშზე ჯერ არ არის ტრანზაქციები.
+            </p>
+          )}
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+        {label}
+      </span>
+      <span className={`text-sm font-bold tabular-nums ${tone}`}>{value}</span>
+    </div>
+  );
+}
+
+function Th({
+  children,
+  grow,
+  right,
+}: {
+  children: React.ReactNode;
+  grow?: boolean;
+  right?: boolean;
+}) {
+  return (
+    <th
+      className={[
+        "px-3 py-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border whitespace-nowrap",
+        grow ? "w-full text-left" : right ? "text-right" : "text-left",
+      ].join(" ")}
+    >
+      {children}
+    </th>
+  );
+}
+
+function StatementRow({
+  entry,
+  currency,
+  isInitial,
+}: {
+  entry: StatementEntry;
+  currency: string;
+  isInitial: boolean;
+}) {
+  const balanceColor = balanceTone(entry.balance);
+
+  return (
+    <tr
+      className={[
+        "border-b border-border/50 transition-colors",
+        isInitial
+          ? "bg-muted/30 font-medium"
+          : "hover:bg-muted/20",
+      ].join(" ")}
+    >
+      <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+        {formatDate(entry.date)}
+      </td>
+      <td className="px-3 py-2.5 text-xs max-w-[280px]">
+        <div className="flex items-center gap-1.5">
+          {isInitial ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground font-medium">
+              საწყისი
+            </span>
+          ) : entry.credit > 0 ? (
+            <TrendingUp className="h-3 w-3 text-success shrink-0" />
+          ) : (
+            <TrendingDown className="h-3 w-3 text-destructive shrink-0" />
+          )}
+          <span className="truncate">{entry.description}</span>
+        </div>
+      </td>
+      <td className="px-3 py-2.5 text-xs text-right tabular-nums whitespace-nowrap">
+        {entry.credit > 0 ? (
+          <span className="text-success font-medium">
+            +{formatAmount(entry.credit, currency)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2.5 text-xs text-right tabular-nums whitespace-nowrap">
+        {entry.debit > 0 ? (
+          <span className="text-destructive font-medium">
+            −{formatAmount(entry.debit, currency)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
+      </td>
+      <td
+        className={`px-3 py-2.5 text-xs text-right tabular-nums font-semibold whitespace-nowrap ${balanceColor}`}
+      >
+        {formatAmount(entry.balance, currency)}
+      </td>
+    </tr>
   );
 }
 
@@ -99,7 +367,6 @@ function SettingsModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Populate from current data when modal opens
   useEffect(() => {
     if (!open) return;
     const map: Partial<InitialValues> = {};
@@ -116,11 +383,13 @@ function SettingsModal({
 
   const handleSave = async () => {
     setError(null);
-    const payload = (Object.keys(values) as (keyof InitialValues)[]).map((key) => {
-      const num = parseFloat(values[key].replace(",", "."));
-      if (isNaN(num)) throw new Error(`${key}: არასწორი მნიშვნელობა`);
-      return { account_key: key, initial_balance: num };
-    });
+    const payload = (Object.keys(values) as (keyof InitialValues)[]).map(
+      (key) => {
+        const num = parseFloat(values[key].replace(",", "."));
+        if (isNaN(num)) throw new Error(`${key}: არასწორი მნიშვნელობა`);
+        return { account_key: key, initial_balance: num };
+      },
+    );
 
     setSaving(true);
     try {
@@ -139,18 +408,24 @@ function SettingsModal({
     }
   };
 
-  const fields: { key: keyof InitialValues; label: string; currency: string }[] = [
-    { key: "cash_gel", label: "სალარო", currency: "GEL (₾)" },
-    { key: "cash_usd", label: "სალარო", currency: "USD ($)" },
-    { key: "bank_gel", label: "საქართველოს ბანკი", currency: "GEL (₾)" },
-    { key: "bank_usd", label: "საქართველოს ბანკი", currency: "USD ($)" },
-  ];
+  const fields: { key: keyof InitialValues; label: string; currency: string }[] =
+    [
+      { key: "cash_gel", label: "სალარო", currency: "GEL (₾)" },
+      { key: "cash_usd", label: "სალარო", currency: "USD ($)" },
+      { key: "bank_gel", label: "საქართველოს ბანკი", currency: "GEL (₾)" },
+      { key: "bank_usd", label: "საქართველოს ბანკი", currency: "USD ($)" },
+    ];
 
   return (
     <Dialog open={open} onClose={onClose} title="საწყისი ნაშთების რედაქტირება">
       <p className="text-sm text-muted-foreground mb-5">
-        მიუთითეთ ოთხივე ანგარიშის საწყისი ნაშთი. მიმდინარე ბალანსი გამოითვლება ავტომატურად:
-        <span className="font-medium"> საწყისი ნაშთი + შემოსავლები − გასავლები</span>.
+        მიუთითეთ ოთხივე ანგარიშის საწყისი ნაშთი. მიმდინარე ბალანსი
+        გამოითვლება ავტომატურად:
+        <span className="font-medium">
+          {" "}
+          საწყისი ნაშთი + შემოსავლები − გასავლები
+        </span>
+        .
       </p>
 
       <div className="space-y-4">
@@ -176,9 +451,7 @@ function SettingsModal({
         ))}
       </div>
 
-      {error && (
-        <p className="mt-3 text-sm text-destructive">{error}</p>
-      )}
+      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
       <div className="flex justify-end gap-2 mt-6">
         <button
@@ -208,7 +481,8 @@ function SettingsModal({
 export function AccountBalancesSection() {
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statementKey, setStatementKey] = useState<string | null>(null);
 
   const fetchBalances = useCallback(async () => {
     setLoading(true);
@@ -232,7 +506,7 @@ export function AccountBalancesSection() {
             <div>
               <CardTitle className="text-base">მიმდინარე ნაშთები</CardTitle>
               <CardDescription className="text-xs mt-0.5">
-                ოთხი ანგარიშის რეალური ბალანსი
+                ოთხი ანგარიშის რეალური ბალანსი — დააჭირეთ ამონაწერის სანახავად
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -240,7 +514,7 @@ export function AccountBalancesSection() {
                 <RefreshCw className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
               )}
               <button
-                onClick={() => setModalOpen(true)}
+                onClick={() => setSettingsOpen(true)}
                 title="საწყისი ნაშთების შეცვლა"
                 aria-label="საწყისი ნაშთების შეცვლა"
                 className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border
@@ -262,7 +536,13 @@ export function AccountBalancesSection() {
             ].join(" ")}
           >
             {balances.length > 0
-              ? balances.map((b) => <BalanceCard key={b.account_key} item={b} />)
+              ? balances.map((b) => (
+                  <BalanceCard
+                    key={b.account_key}
+                    item={b}
+                    onClick={() => setStatementKey(b.account_key)}
+                  />
+                ))
               : Array.from({ length: 4 }).map((_, i) => (
                   <Card key={i} className="animate-pulse">
                     <CardContent className="p-5 h-24" />
@@ -273,10 +553,15 @@ export function AccountBalancesSection() {
       </Card>
 
       <SettingsModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
         balances={balances}
         onSaved={fetchBalances}
+      />
+
+      <StatementModal
+        accountKey={statementKey}
+        onClose={() => setStatementKey(null)}
       />
     </>
   );
