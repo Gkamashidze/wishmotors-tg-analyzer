@@ -10,6 +10,7 @@ import {
   Receipt,
   Package,
   ShoppingBag,
+  BookOpen,
   Settings,
   LifeBuoy,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { href: "/expenses", label: "ხარჯები", icon: Receipt },
   { href: "/inventory", label: "მარაგი", icon: Package },
   { href: "/products", label: "პროდუქცია", icon: ShoppingBag },
+  { href: "/accounting", label: "ბუღალტერია", icon: BookOpen },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
