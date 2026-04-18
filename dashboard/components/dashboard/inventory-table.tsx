@@ -157,11 +157,11 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => {
+              filtered.map((r, idx) => {
                 const isLow = r.currentStock < r.minStock;
                 return (
                   <TableRow key={r.id}>
-                    <TableCell className="tabular-nums text-muted-foreground text-xs">{r.id}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{r.oemCode ?? "—"}</TableCell>
                     <TableCell className={`text-right tabular-nums font-semibold ${isLow ? "text-destructive" : ""}`}>

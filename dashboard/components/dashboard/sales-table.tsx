@@ -244,12 +244,12 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => {
+              filtered.map((r, idx) => {
                 const total = r.quantity * r.unitPrice;
                 const profit = total - r.costAmount;
                 return (
                   <TableRow key={r.id}>
-                    <TableCell className="tabular-nums text-muted-foreground text-xs">{r.id}</TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                     <TableCell className="font-medium">
                       {r.productName ?? <span className="text-muted-foreground italic">—</span>}
                     </TableCell>

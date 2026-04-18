@@ -157,9 +157,9 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => (
+              filtered.map((r, idx) => (
                 <TableRow key={r.id}>
-                  <TableCell className="tabular-nums text-muted-foreground text-xs">{r.id}</TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-destructive">
                     {formatGEL(r.amount)}
                   </TableCell>

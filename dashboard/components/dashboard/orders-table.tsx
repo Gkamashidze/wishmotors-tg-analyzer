@@ -257,9 +257,9 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r) => (
+              filtered.map((r, idx) => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-medium tabular-nums text-muted-foreground">{r.id}</TableCell>
+                  <TableCell className="font-medium tabular-nums text-muted-foreground">{idx + 1}</TableCell>
                   <TableCell className="font-medium">{r.productName ?? <span className="text-muted-foreground italic">—</span>}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{r.oemCode ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(r.quantityNeeded)}</TableCell>
