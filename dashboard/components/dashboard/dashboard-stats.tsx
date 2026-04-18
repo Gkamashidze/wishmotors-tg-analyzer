@@ -116,6 +116,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint="გაყიდვები − ხარჯი − თვითღირ."
           icon={TrendingUp}
           tone={netTone}
+          tooltip="სუფთა მოგება — მთლიან მოგებას მინუს ხარჯები."
         />
       </section>
 
@@ -132,6 +133,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint="COGS ÷ საშ. მარაგის ღირ."
           icon={RotateCcw}
           tone={metrics.inventoryTurnoverRatio >= 4 ? "success" : metrics.inventoryTurnoverRatio >= 1 ? "default" : "destructive"}
+          tooltip="აჩვენებს, რამდენად სწრაფად იყიდება მარაგები. რაც მაღალია, მით უკეთესი."
         />
         <StatCard
           label="საშ. ჩეკი (AOV)"
@@ -139,6 +141,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint="შემოსავ. ÷ ტრანზაქციები"
           icon={ShoppingCart}
           tone="default"
+          tooltip="საშუალოდ რამდენ ლარს ხარჯავს ერთი კლიენტი ერთ ყიდვაზე."
         />
         <StatCard
           label="ROI"
@@ -146,6 +149,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint="წმ. მოგება ÷ თვითღირ. × 100"
           icon={BarChart3}
           tone={roiTone}
+          tooltip="პროდუქტში ჩადებულმა თანხამ რა პროცენტული მოგება მოგიტანათ."
         />
         <StatCard
           label="GMROI"
@@ -153,6 +157,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint="მთლ. მოგება ÷ მარაგის ღირ."
           icon={Layers}
           tone={gmroiTone}
+          tooltip="საწყობში ჩადებულ 1 ლარზე, რამდენი ლარის მოგებას იღებთ."
         />
         <StatCard
           label="ნეტო ნაკადი"
@@ -160,6 +165,7 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           hint={`კაპ.: ${formatGEL(metrics.totalInventoryValueGel)}`}
           icon={Banknote}
           tone={cfTone}
+          tooltip="რეალურად ხელზე არსებული ფული — შემოსულობებს მინუს ხარჯები და მარაგებში გადახდილი თანხა."
         />
       </section>
     </div>

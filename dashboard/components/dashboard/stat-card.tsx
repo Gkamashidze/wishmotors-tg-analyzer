@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
+import { InfoTooltip } from "@/components/dashboard/info-tooltip";
 
 type Tone = "default" | "success" | "destructive" | "warning";
 
@@ -23,12 +24,14 @@ export function StatCard({
   hint,
   icon: Icon,
   tone = "default",
+  tooltip,
 }: {
   label: string;
   value: string;
   hint?: string;
   icon: LucideIcon;
   tone?: Tone;
+  tooltip?: string;
 }) {
   const t = toneStyles[tone];
   return (
@@ -36,7 +39,10 @@ export function StatCard({
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
+            <p className="text-sm font-medium text-muted-foreground flex items-center">
+              {label}
+              {tooltip && <InfoTooltip text={tooltip} />}
+            </p>
             <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">
               {value}
             </p>
