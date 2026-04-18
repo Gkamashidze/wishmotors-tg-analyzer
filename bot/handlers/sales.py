@@ -510,7 +510,7 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
 
 
 # ─── Inventory topic: Excel batch receipts (WAC + ledger posting) ─────────────
-# Expected columns (header row skipped): სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული
+# Expected columns (header row skipped): თარიღი | OEM | სახელი | მარაგი | ერთეული | ფასი
 # Each data row is posted as an inventory receipt: products.current_stock is
 # incremented, one inventory_batches row is created, and the ledger gets a
 # balanced pair of entries (DR Inventory / CR Accounts payable) so WAC can be
@@ -527,7 +527,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             chat_id=message.from_user.id,
             text=(
                 "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.\n"
-                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული</b>"
+                "სვეტები: <b>თარიღი | OEM | სახელი | მარაგი | ერთეული | ფასი</b>"
             ),
             parse_mode=_PARSE,
         )
@@ -562,7 +562,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             chat_id=message.from_user.id,
             text=(
                 "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
-                "სვეტები: <b>სახელი | OEM | მარაგი | ფასი | თარიღი | ერთეული</b>"
+                "სვეტები: <b>თარიღი | OEM | სახელი | მარაგი | ერთეული | ფასი</b>"
             ),
             parse_mode=_PARSE,
         )
@@ -584,12 +584,12 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             break
 
         try:
-            name = str(row[0]).strip()
+            backdate = _parse_backdate(row[0])
             oem = sanitize_oem(row[1]) if len(row) > 1 else None
-            quantity = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
-            unit_cost = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
-            backdate = _parse_backdate(row[4] if len(row) > 4 else None)
-            unit = str(row[5]).strip() if len(row) > 5 and row[5] is not None else 'ცალი'
+            name = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+            quantity = float(row[3]) if len(row) > 3 and row[3] is not None else 0.0
+            unit = str(row[4]).strip() if len(row) > 4 and row[4] is not None else 'ცალი'
+            unit_cost = float(row[5]) if len(row) > 5 and row[5] is not None else 0.0
 
             if not name:
                 continue
