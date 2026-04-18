@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2, Tag } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -19,6 +19,8 @@ const PAYMENT_OPTIONS = [
   { value: "card", label: "ბარათი" },
   { value: "transfer", label: "გადარიცხვა" },
 ];
+
+const ALL = "__all__";
 
 function paymentLabel(m: string) {
   return PAYMENT_OPTIONS.find((o) => o.value === m)?.label ?? m;
@@ -53,21 +55,52 @@ function rowToEdit(r: ExpenseRow): EditState {
 export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(ALL);
   const [viewRow, setViewRow] = useState<ExpenseRow | null>(null);
   const [editRow, setEditRow] = useState<ExpenseRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ExpenseRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [apiCategories, setApiCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/expenses/categories")
+      .then((r) => r.json())
+      .then((data: string[]) => setApiCategories(data))
+      .catch(() => {});
+  }, []);
+
+  // Merge API categories with categories present in loaded rows (handles fresh entries)
+  const categories = useMemo(() => {
+    const fromRows = rows
+      .map((r) => r.category)
+      .filter((c): c is string => !!c && c.trim() !== "");
+    const merged = Array.from(new Set([...apiCategories, ...fromRows])).sort();
+    return merged;
+  }, [rows, apiCategories]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.description ?? "", r.category ?? "", String(r.id)]
-        .join(" ").toLowerCase().includes(q),
-    );
-  }, [rows, search]);
+    return rows.filter((r) => {
+      const matchesCategory =
+        selectedCategory === ALL || r.category === selectedCategory;
+      const matchesSearch =
+        !q ||
+        [r.description ?? "", r.category ?? "", String(r.id)]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [rows, search, selectedCategory]);
+
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s, r) => s + r.amount, 0),
+    [filtered],
+  );
+
+  const total = useMemo(() => rows.reduce((s, r) => s + r.amount, 0), [rows]);
 
   const openEdit = useCallback((r: ExpenseRow) => {
     setEditRow(r);
@@ -112,14 +145,14 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
     }
   }, [deleteRow, router]);
 
-  const set = (key: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
-
-  const total = useMemo(() => rows.reduce((s, r) => s + r.amount, 0), [rows]);
+  const set = (key: keyof EditState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      {/* Search + totals row */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -131,10 +164,49 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
           <span className="text-muted-foreground">{formatNumber(filtered.length)} ჩანაწერი</span>
           <span className="font-semibold">
             ჯამი:{" "}
-            <span className="text-destructive tabular-nums">{formatGEL(total)}</span>
+            <span className="text-destructive tabular-nums">
+              {selectedCategory === ALL && !search.trim()
+                ? formatGEL(total)
+                : formatGEL(filteredTotal)}
+            </span>
           </span>
         </div>
       </div>
+
+      {/* Category filter pills */}
+      {categories.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium shrink-0">
+            <Tag className="h-3.5 w-3.5" />
+            კატეგორია:
+          </span>
+          <button
+            onClick={() => setSelectedCategory(ALL)}
+            className={[
+              "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer",
+              selectedCategory === ALL
+                ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+            ].join(" ")}
+          >
+            ყველა
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat === selectedCategory ? ALL : cat)}
+              className={[
+                "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer",
+                selectedCategory === cat
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground",
+              ].join(" ")}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="rounded-xl border border-border bg-card overflow-auto">
         <Table>
@@ -165,7 +237,13 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   </TableCell>
                   <TableCell>
                     {r.category ? (
-                      <Badge variant="secondary">{r.category}</Badge>
+                      <Badge
+                        variant={selectedCategory === r.category ? "default" : "secondary"}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedCategory(r.category === selectedCategory ? ALL : r.category!)}
+                      >
+                        {r.category}
+                      </Badge>
                     ) : (
                       <span className="text-muted-foreground italic text-sm">—</span>
                     )}
