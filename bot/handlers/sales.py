@@ -587,23 +587,30 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
                 created += 1
         except Exception as exc:
             logger.warning("Inventory row %d error: %s", row_idx, exc)
-            errors.append(f"სტრიქონი {row_idx}: {exc}")
+            error_msg = f"რიგი {row_idx}: {exc}"
+            errors.append(error_msg)
+            await db.log_parse_failure(
+                topic_id=config.STOCK_TOPIC_ID,
+                message_text=error_msg,
+            )
 
     summary_lines = [
         "✅ <b>საწყობი განახლდა!</b>",
-        f"📦 მიღებები: <b>{received}</b>",
+        f"📊 დამუშავდა: <b>{received}/{data_rows}</b> წარმატებით",
     ]
     if created:
         summary_lines.append(f"🆕 ახალი პროდუქტი: <b>{created}</b>")
     summary_lines.append(f"💰 ჯამური ღირებულება: <b>{total_value:.2f}₾</b>")
     summary_lines.append("📘 ledger: DR 1300 Inventory / CR 2100 Accounts payable")
+
     if errors:
-        preview = "\n".join(errors[:5])
+        summary_lines.append(f"\n❌ <b>ხარვეზები ({len(errors)} რიგი):</b>")
+        for err in errors[:5]:
+            summary_lines.append(f"  • <code>{html.escape(err)}</code>")
         if len(errors) > 5:
-            preview += f"\n... და კიდევ {len(errors) - 5}"
-        summary_lines.append(
-            f"⚠️ გამოტოვებული ({len(errors)}):\n<code>{html.escape(preview)}</code>"
-        )
+            summary_lines.append(f"  • ... და კიდევ {len(errors) - 5}")
+    else:
+        summary_lines.append("\n✅ ყველა პროდუქტი წარმატებით აიტვირთულია (ხარვეზების გარეშე)")
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
