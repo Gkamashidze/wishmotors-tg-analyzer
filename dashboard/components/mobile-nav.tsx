@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -13,7 +14,6 @@ import {
   ShoppingBag,
   Settings,
   LifeBuoy,
-  Wrench,
   Menu,
   X,
 } from "lucide-react";
@@ -83,9 +83,13 @@ export function MobileNav() {
         {/* Drawer header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <Wrench className="h-5 w-5" aria-hidden="true" />
-            </div>
+            <Image
+              src="/logo.jpg"
+              alt="WishMotors logo"
+              width={36}
+              height={36}
+              className="rounded-lg object-contain"
+            />
             <div className="flex flex-col leading-tight">
               <span className="font-semibold text-sm text-foreground">
                 WishMotors
