@@ -17,17 +17,29 @@ export async function PUT(req: NextRequest, { params }: Params) {
     }
 
     const body = await req.json();
-    const { code, name, type, description, is_active } = body as {
+    const hasParentId = 'parent_id' in body;
+    const { code, name, type, description, is_active, parent_id } = body as {
       code?: string;
       name?: string;
       type?: string;
       description?: string;
       is_active?: boolean;
+      parent_id?: number | null;
     };
 
     const VALID_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
     if (type && !VALID_TYPES.includes(type as AccountType)) {
       return NextResponse.json({ error: "invalid type" }, { status: 400 });
+    }
+
+    if (hasParentId && parent_id != null) {
+      if (parent_id === numId) {
+        return NextResponse.json({ error: "ანგარიში ვერ იქნება საკუთარი მშობელი" }, { status: 400 });
+      }
+      const parent = await queryOne(`SELECT id FROM chart_of_accounts WHERE id = $1`, [parent_id]);
+      if (!parent) {
+        return NextResponse.json({ error: "მშობელი ანგარიში ვერ მოიძებნა" }, { status: 400 });
+      }
     }
 
     const row = await queryOne<ChartOfAccount>(
@@ -37,15 +49,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
          name        = COALESCE($2, name),
          type        = COALESCE($3, type),
          description = COALESCE($4, description),
-         is_active   = COALESCE($5, is_active)
-       WHERE id = $6
-       RETURNING id, code, name, type, description, is_active, created_at`,
+         is_active   = COALESCE($5, is_active),
+         parent_id   = CASE WHEN $6::boolean THEN $7::integer ELSE parent_id END
+       WHERE id = $8
+       RETURNING id, code, name, type, description, parent_id, is_active, created_at`,
       [
         code?.trim() ?? null,
         name?.trim() ?? null,
         type ?? null,
         description?.trim() ?? null,
         is_active ?? null,
+        hasParentId,
+        parent_id ?? null,
         numId,
       ],
     );

@@ -19,6 +19,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   AlertCircle,
   Loader2,
   Check,
@@ -137,6 +138,35 @@ export default function AccountingPage() {
   );
 }
 
+// ─── Tree helpers ─────────────────────────────────────────────────────────────
+function flattenGroupTree(
+  group: ChartOfAccount[],
+): Array<{ acc: ChartOfAccount; depth: number }> {
+  const groupIds = new Set(group.map((a) => a.id));
+  const childrenOf = new Map<number, ChartOfAccount[]>();
+
+  for (const acc of group) {
+    if (acc.parent_id != null && groupIds.has(acc.parent_id)) {
+      if (!childrenOf.has(acc.parent_id)) childrenOf.set(acc.parent_id, []);
+      childrenOf.get(acc.parent_id)!.push(acc);
+    }
+  }
+  for (const [, ch] of childrenOf) ch.sort((a, b) => a.code.localeCompare(b.code));
+
+  const roots = group
+    .filter((a) => a.parent_id == null || !groupIds.has(a.parent_id))
+    .sort((a, b) => a.code.localeCompare(b.code));
+
+  const result: Array<{ acc: ChartOfAccount; depth: number }> = [];
+
+  function visit(acc: ChartOfAccount, depth: number) {
+    result.push({ acc, depth });
+    for (const child of childrenOf.get(acc.id) ?? []) visit(child, depth + 1);
+  }
+  for (const root of roots) visit(root, 0);
+  return result;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tab 1 — Chart of Accounts
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -195,6 +225,7 @@ function ChartOfAccountsTab() {
       {showForm && (
         <AccountForm
           editAccount={editId ? accounts.find((a) => a.id === editId) : undefined}
+          allAccounts={accounts}
           onSave={() => { setShowForm(false); setEditId(null); void load(); }}
           onCancel={() => { setShowForm(false); setEditId(null); }}
         />
@@ -217,6 +248,7 @@ function ChartOfAccountsTab() {
       {!loading && !error && ORDER.map((type) => {
         const group = grouped[type] ?? [];
         if (group.length === 0) return null;
+        const tree = flattenGroupTree(group);
         return (
           <Card key={type}>
             <CardHeader className="py-3 px-4">
@@ -239,16 +271,31 @@ function ChartOfAccountsTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {group.map((acc) => (
+                  {tree.map(({ acc, depth }) => (
                     <tr
                       key={acc.id}
                       className={cn(
                         "border-t border-border hover:bg-muted/30 transition-colors",
                         !acc.is_active && "opacity-50",
+                        depth > 0 && "bg-muted/10",
                       )}
                     >
-                      <td className="px-4 py-2.5 font-mono font-semibold text-primary">{acc.code}</td>
-                      <td className="px-4 py-2.5 font-medium">{acc.name}</td>
+                      <td className="px-4 py-2.5 font-mono font-semibold text-primary">
+                        <span style={{ paddingLeft: `${depth * 16}px` }} className="block">
+                          {acc.code}
+                        </span>
+                      </td>
+                      <td className="py-2.5 font-medium">
+                        <span
+                          className="flex items-center gap-1"
+                          style={{ paddingLeft: `${16 + depth * 16}px`, paddingRight: "16px" }}
+                        >
+                          {depth > 0 && (
+                            <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                          )}
+                          {acc.name}
+                        </span>
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground hidden md:table-cell">
                         {acc.description ?? "—"}
                       </td>
@@ -294,10 +341,12 @@ function ChartOfAccountsTab() {
 // ─── Account form ─────────────────────────────────────────────────────────────
 function AccountForm({
   editAccount,
+  allAccounts,
   onSave,
   onCancel,
 }: {
   editAccount?: ChartOfAccount;
+  allAccounts: ChartOfAccount[];
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -305,10 +354,13 @@ function AccountForm({
   const [name, setName]           = useState(editAccount?.name ?? "");
   const [type, setType]           = useState<AccountType>(editAccount?.type ?? "asset");
   const [description, setDesc]    = useState(editAccount?.description ?? "");
+  const [parentId, setParentId]   = useState<number | null>(editAccount?.parent_id ?? null);
   const [saving, setSaving]       = useState(false);
   const [err, setErr]             = useState<string | null>(null);
 
-  const ORDER: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
+  const TYPE_ORDER: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
+
+  const parentOptions = allAccounts.filter((a) => a.id !== editAccount?.id && a.is_active);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,7 +374,7 @@ function AccountForm({
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, name, type, description }),
+        body: JSON.stringify({ code, name, type, description, parent_id: parentId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -345,7 +397,7 @@ function AccountForm({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">კოდი *</label>
             <input
@@ -373,8 +425,23 @@ function AccountForm({
               onChange={(e) => setType(e.target.value as AccountType)}
               className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              {ORDER.map((t) => (
+              {TYPE_ORDER.map((t) => (
                 <option key={t} value={t}>{TYPE_LABELS[t]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">მშობელი ანგარიში</label>
+            <select
+              value={parentId ?? ""}
+              onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">— მთავარი ანგარიში —</option>
+              {parentOptions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} – {a.name}
+                </option>
               ))}
             </select>
           </div>
@@ -389,13 +456,13 @@ function AccountForm({
           </div>
 
           {err && (
-            <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2 text-destructive text-sm">
+            <div className="sm:col-span-2 lg:col-span-5 flex items-center gap-2 text-destructive text-sm">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {err}
             </div>
           )}
 
-          <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
+          <div className="sm:col-span-2 lg:col-span-5 flex gap-2">
             <Button type="submit" disabled={saving} size="sm">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {editAccount ? "შენახვა" : "დამატება"}

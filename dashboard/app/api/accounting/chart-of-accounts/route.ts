@@ -12,6 +12,7 @@ export type ChartOfAccount = {
   name: string;
   type: AccountType;
   description: string | null;
+  parent_id: number | null;
   is_active: boolean;
   created_at: string;
 };
@@ -38,9 +39,15 @@ async function ensureTable() {
       name        TEXT NOT NULL,
       type        TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
       description TEXT,
+      parent_id   INTEGER REFERENCES chart_of_accounts(id) ON DELETE SET NULL,
       is_active   BOOLEAN NOT NULL DEFAULT TRUE,
       created_at  TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+
+  await query(`
+    ALTER TABLE chart_of_accounts
+    ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES chart_of_accounts(id) ON DELETE SET NULL
   `);
 
   for (const acc of SEED_ACCOUNTS) {
@@ -59,7 +66,7 @@ export async function GET() {
     await ensureTable();
 
     const rows = await query<ChartOfAccount>(
-      `SELECT id, code, name, type, description, is_active, created_at
+      `SELECT id, code, name, type, description, parent_id, is_active, created_at
        FROM chart_of_accounts
        ORDER BY code`,
     );
@@ -72,17 +79,18 @@ export async function GET() {
 }
 
 // POST /api/accounting/chart-of-accounts
-// Body: { code, name, type, description? }
+// Body: { code, name, type, description?, parent_id? }
 export async function POST(req: NextRequest) {
   try {
     await ensureTable();
 
     const body = await req.json();
-    const { code, name, type, description } = body as {
+    const { code, name, type, description, parent_id } = body as {
       code: string;
       name: string;
       type: string;
       description?: string;
+      parent_id?: number | null;
     };
 
     if (!code || !name || !type) {
@@ -97,6 +105,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "invalid type" }, { status: 400 });
     }
 
+    if (parent_id != null) {
+      const parent = await queryOne(`SELECT id FROM chart_of_accounts WHERE id = $1`, [parent_id]);
+      if (!parent) {
+        return NextResponse.json({ error: "მშობელი ანგარიში ვერ მოიძებნა" }, { status: 400 });
+      }
+    }
+
     const existing = await queryOne(
       `SELECT id FROM chart_of_accounts WHERE code = $1`,
       [code.trim()],
@@ -109,10 +124,10 @@ export async function POST(req: NextRequest) {
     }
 
     const row = await queryOne<ChartOfAccount>(
-      `INSERT INTO chart_of_accounts (code, name, type, description)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, code, name, type, description, is_active, created_at`,
-      [code.trim(), name.trim(), type, description?.trim() ?? null],
+      `INSERT INTO chart_of_accounts (code, name, type, description, parent_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, code, name, type, description, parent_id, is_active, created_at`,
+      [code.trim(), name.trim(), type, description?.trim() ?? null, parent_id ?? null],
     );
 
     return NextResponse.json(row, { status: 201 });
