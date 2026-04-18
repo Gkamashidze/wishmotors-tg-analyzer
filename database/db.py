@@ -17,6 +17,7 @@ from database.models import (
     ProductRow,
     ReturnRow,
     SaleRow,
+    TransferRow,
 )
 
 logger = logging.getLogger(__name__)
@@ -1507,7 +1508,7 @@ class Database:
             return row["id"]
 
     async def get_cash_on_hand(self) -> Dict[str, float]:
-        """Return a breakdown: cash_sales, cash_expenses, deposits, and net balance."""
+        """Return a breakdown: cash_sales, cash_expenses, deposits, transfers, and net balance."""
         async with self.pool.acquire() as conn:
             sales_row = await conn.fetchrow(
                 """SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
@@ -1520,15 +1521,62 @@ class Database:
             dep_row = await conn.fetchrow(
                 "SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits"
             )
+            tr_out_row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM transfers WHERE from_account = 'cash_gel'"
+            )
+            tr_in_row = await conn.fetchrow(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM transfers WHERE to_account = 'cash_gel'"
+            )
         cash_sales = float(sales_row["total"])
         cash_expenses = float(exp_row["total"])
         deposits = float(dep_row["total"])
+        transfers_out = float(tr_out_row["total"])
+        transfers_in = float(tr_in_row["total"])
         return {
             "cash_sales": cash_sales,
             "cash_expenses": cash_expenses,
             "deposits": deposits,
-            "balance": cash_sales - cash_expenses - deposits,
+            "transfers_out": transfers_out,
+            "transfers_in": transfers_in,
+            "balance": cash_sales - cash_expenses - deposits - transfers_out + transfers_in,
         }
+
+    # ─── Internal transfers ───────────────────────────────────────────────────
+
+    async def create_transfer(
+        self,
+        from_account: str,
+        to_account: str,
+        amount: float,
+        currency: str = "GEL",
+        note: Optional[str] = None,
+    ) -> int:
+        """Record an internal transfer between two accounts."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO transfers (from_account, to_account, amount, currency, note)
+                   VALUES ($1, $2, $3, $4, $5) RETURNING id""",
+                from_account, to_account, amount, currency, note,
+            )
+            return row["id"]
+
+    async def get_transfers(self) -> List[TransferRow]:
+        """Return all transfers ordered newest-first."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM transfers ORDER BY created_at DESC")
+            return self._rows(rows)  # type: ignore[return-value]
+
+    async def get_transfers_by_period(
+        self, start: datetime, end: datetime
+    ) -> List[TransferRow]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM transfers
+                   WHERE created_at >= $1 AND created_at < $2
+                   ORDER BY created_at DESC""",
+                start, end,
+            )
+            return self._rows(rows)  # type: ignore[return-value]
 
     async def get_cash_deposits_by_period(
         self, start: datetime, end: datetime

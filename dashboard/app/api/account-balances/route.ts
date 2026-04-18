@@ -61,23 +61,35 @@ export async function GET() {
       WITH
         cash_sales AS (
           SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
-          FROM sales
-          WHERE payment_method = 'cash'
+          FROM sales WHERE payment_method = 'cash'
         ),
         cash_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
-          FROM expenses
-          WHERE payment_method = 'cash'
+          FROM expenses WHERE payment_method = 'cash'
         ),
         transfer_sales AS (
           SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
-          FROM sales
-          WHERE payment_method = 'transfer'
+          FROM sales WHERE payment_method = 'transfer'
         ),
         transfer_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
-          FROM expenses
-          WHERE payment_method = 'transfer'
+          FROM expenses WHERE payment_method = 'transfer'
+        ),
+        tr_cash_out AS (
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM transfers WHERE from_account = 'cash_gel'
+        ),
+        tr_cash_in AS (
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM transfers WHERE to_account = 'cash_gel'
+        ),
+        tr_bank_out AS (
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM transfers WHERE from_account = 'bank_gel'
+        ),
+        tr_bank_in AS (
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM transfers WHERE to_account = 'bank_gel'
         )
       SELECT
         ab.account_key,
@@ -87,9 +99,9 @@ export async function GET() {
         ab.updated_at,
         CASE
           WHEN ab.account_key = 'cash_gel'
-            THEN ab.initial_balance + cs.total - ce.total
+            THEN ab.initial_balance + cs.total - ce.total - tco.total + tci.total
           WHEN ab.account_key = 'bank_gel'
-            THEN ab.initial_balance + ts.total - te.total
+            THEN ab.initial_balance + ts.total - te.total - tbo.total + tbi.total
           ELSE ab.initial_balance
         END AS current_balance
       FROM account_balances ab
@@ -97,6 +109,10 @@ export async function GET() {
       CROSS JOIN cash_expenses ce
       CROSS JOIN transfer_sales ts
       CROSS JOIN transfer_expenses te
+      CROSS JOIN tr_cash_out tco
+      CROSS JOIN tr_cash_in tci
+      CROSS JOIN tr_bank_out tbo
+      CROSS JOIN tr_bank_in tbi
       ORDER BY ab.id
     `);
 

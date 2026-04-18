@@ -99,6 +99,10 @@ _HELP_TEXT = """
 • <b>❌ წაშლა</b> — ჩანაწერის გაუქმება + მარაგის/ბალანსის აღდგენა
 • <b>✅ შესრულდა</b> — შეკვეთის დახურვა (მხოლოდ Orders topic)
 
+💱 <b>ანგარიშებს შორის გადარიცხვა:</b>
+/transfer — სალარო ↔ ბანკი (wizard)
+/transfer 500 cash bank — სწრაფი გადარიცხვა
+
 🔧 <b>სისტემა:</b>
 /diagnostics — ვერ ამოცნობილი შეტყობინებები
 /help — ეს სახელმძღვანელო
@@ -204,6 +208,181 @@ async def deposit_amount_input(message: Message, state: FSMContext, db: Database
             f"✅ <b>ბანკში შეტანა #{deposit_id} დაფიქსირდა</b>\n"
             f"💰 <b>{amount:.2f}₾</b>\n\n"
             f"💼 დარჩენილი ხელზე: <b>{cash['balance']:.2f}₾</b>"
+        ),
+        parse_mode=_PARSE,
+    )
+
+
+_TRANSFER_ACCOUNTS = {
+    "cash": "cash_gel",
+    "bank": "bank_gel",
+    "სალარო": "cash_gel",
+    "ბანკი": "bank_gel",
+}
+
+_TRANSFER_LABELS = {
+    "cash_gel": "💵 სალარო (GEL)",
+    "bank_gel": "🏦 ბანკი (GEL)",
+}
+
+
+def _transfer_from_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="💵 სალარო (GEL)", callback_data="tf_from:cash_gel"),
+        InlineKeyboardButton(text="🏦 ბანკი (GEL)", callback_data="tf_from:bank_gel"),
+    ]])
+
+
+def _transfer_to_keyboard(exclude: str) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(text=label, callback_data=f"tf_to:{key}")
+        for key, label in _TRANSFER_LABELS.items()
+        if key != exclude
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+
+class TransferState(StatesGroup):
+    waiting_from = State()
+    waiting_to = State()
+    waiting_amount = State()
+
+
+@commands_router.message(Command("transfer"), IsAdmin())
+async def cmd_transfer(message: Message, state: FSMContext) -> None:
+    """
+    /transfer — ანგარიშებს შორის გადარიცხვა.
+    ფორმატი: /transfer 500 cash bank  ან  /transfer (wizard).
+    """
+    args = (message.text or "").split()[1:]
+
+    if len(args) >= 3:
+        raw_amount, raw_from, raw_to = args[0], args[1].lower(), args[2].lower()
+        from_key = _TRANSFER_ACCOUNTS.get(raw_from)
+        to_key = _TRANSFER_ACCOUNTS.get(raw_to)
+        try:
+            amount = float(raw_amount.replace(",", ".").replace("₾", ""))
+            if amount <= 0:
+                raise ValueError
+        except ValueError:
+            from_key = None
+
+        if not from_key or not to_key or from_key == to_key:
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text=(
+                    "⚠️ <b>გამოყენება:</b>\n"
+                    "<code>/transfer 500 cash bank</code>\n"
+                    "<code>/transfer 200 bank cash</code>\n"
+                    "ან უბრალოდ <code>/transfer</code> — wizard-ი გაიხსნება"
+                ),
+                parse_mode=_PARSE,
+            )
+            return
+
+        transfer_id = await _do_transfer(message, state, from_key, to_key, amount, None)
+        await state.clear()
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                f"✅ <b>გადარიცხვა #{transfer_id} დაფიქსირდა</b>\n"
+                f"{_TRANSFER_LABELS[from_key]} → {_TRANSFER_LABELS[to_key]}\n"
+                f"💰 <b>{amount:.2f}₾</b>"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    await state.set_state(TransferState.waiting_from)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="🔄 <b>ანგარიშებს შორის გადარიცხვა</b>\n\n<b>საიდან</b> გადაიტანოთ თანხა?",
+        parse_mode=_PARSE,
+        reply_markup=_transfer_from_keyboard(),
+    )
+
+
+async def _do_transfer(
+    message: Message,
+    state: FSMContext,
+    from_key: str,
+    to_key: str,
+    amount: float,
+    db: Optional[Database],
+) -> int:
+    if db is None:
+        data = await state.get_data()
+        db = data.get("db")
+    return await db.create_transfer(from_key, to_key, amount)  # type: ignore[union-attr]
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("tf_from:"), IsAdmin())
+async def transfer_from_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    from_key = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    if from_key not in _TRANSFER_LABELS:
+        await callback.answer("უცნობი ანგარიში")
+        return
+    await state.update_data(transfer_from=from_key)
+    await state.set_state(TransferState.waiting_to)
+    await callback.answer()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"🔄 <b>გადარიცხვა</b>\n"
+        f"საიდან: {_TRANSFER_LABELS[from_key]}\n\n"
+        f"<b>სად</b> გადაიტანოთ თანხა?",
+        parse_mode=_PARSE,
+        reply_markup=_transfer_to_keyboard(exclude=from_key),
+    )
+
+
+@commands_router.callback_query(lambda c: c.data and c.data.startswith("tf_to:"), IsAdmin())
+async def transfer_to_selected(callback: CallbackQuery, state: FSMContext) -> None:
+    to_key = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    if to_key not in _TRANSFER_LABELS:
+        await callback.answer("უცნობი ანგარიში")
+        return
+    data = await state.get_data()
+    from_key = data.get("transfer_from", "")
+    if to_key == from_key:
+        await callback.answer("ერთი და იგივე ანგარიში!")
+        return
+    await state.update_data(transfer_to=to_key)
+    await state.set_state(TransferState.waiting_amount)
+    await callback.answer()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"🔄 <b>გადარიცხვა</b>\n"
+        f"{_TRANSFER_LABELS[from_key]} → {_TRANSFER_LABELS[to_key]}\n\n"
+        f"რამდენი გადაიტანოს? (მაგ: <code>500</code>)",
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(StateFilter(TransferState.waiting_amount), IsAdmin())
+async def transfer_amount_input(message: Message, state: FSMContext, db: Database) -> None:
+    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    try:
+        amount = float(raw)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="⚠️ სწორი თანხა ჩაწერე, მაგ: <code>500</code>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    data = await state.get_data()
+    from_key = data.get("transfer_from", "cash_gel")
+    to_key = data.get("transfer_to", "bank_gel")
+    await state.clear()
+
+    transfer_id = await db.create_transfer(from_key, to_key, amount)
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=(
+            f"✅ <b>გადარიცხვა #{transfer_id} დაფიქსირდა</b>\n"
+            f"{_TRANSFER_LABELS.get(from_key, from_key)} → {_TRANSFER_LABELS.get(to_key, to_key)}\n"
+            f"💰 <b>{amount:.2f}₾</b>"
         ),
         parse_mode=_PARSE,
     )

@@ -229,6 +229,23 @@ CREATE TABLE IF NOT EXISTS transaction_audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_event_type  ON transaction_audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON transaction_audit_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_log_reference   ON transaction_audit_log(reference_id);
+
+-- Internal transfers between accounts (e.g. cash_gel → bank_gel).
+-- Affects balance of both the source and destination account.
+CREATE TABLE IF NOT EXISTS transfers (
+    id           SERIAL PRIMARY KEY,
+    amount       NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+    currency     TEXT           NOT NULL DEFAULT 'GEL',
+    from_account TEXT           NOT NULL,
+    to_account   TEXT           NOT NULL,
+    note         TEXT,
+    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT transfers_different_accounts CHECK (from_account <> to_account)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transfers_created_at ON transfers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transfers_from       ON transfers(from_account);
+CREATE INDEX IF NOT EXISTS idx_transfers_to         ON transfers(to_account);
 """
 
 
@@ -306,6 +323,16 @@ class ParseFailureRow(TypedDict):
 class CashDepositRow(TypedDict):
     id: int
     amount: float
+    note: Optional[str]
+    created_at: object  # datetime
+
+
+class TransferRow(TypedDict):
+    id: int
+    amount: float
+    currency: str
+    from_account: str
+    to_account: str
     note: Optional[str]
     created_at: object  # datetime
 

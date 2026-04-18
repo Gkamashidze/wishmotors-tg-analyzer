@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Settings2, Banknote, Building2, RefreshCw, FileText, TrendingUp, TrendingDown } from "lucide-react";
+import { Settings2, Banknote, Building2, RefreshCw, FileText, TrendingUp, TrendingDown, ArrowLeftRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import type { AccountBalance } from "@/app/api/account-balances/route";
@@ -338,6 +338,173 @@ function StatementRow({
 }
 
 // ---------------------------------------------------------------------------
+// Transfer modal
+// ---------------------------------------------------------------------------
+const ACCOUNT_OPTIONS = [
+  { key: "cash_gel", label: "💵 სალარო (GEL)" },
+  { key: "bank_gel", label: "🏦 ბანკი (GEL)" },
+  { key: "cash_usd", label: "💵 სალარო (USD)" },
+  { key: "bank_usd", label: "🏦 ბანკი (USD)" },
+];
+
+function TransferModal({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [fromAccount, setFromAccount] = useState("cash_gel");
+  const [toAccount, setToAccount] = useState("bank_gel");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setAmount("");
+    setNote("");
+    setError(null);
+    setFromAccount("cash_gel");
+    setToAccount("bank_gel");
+  }, [open]);
+
+  const handleSubmit = async () => {
+    setError(null);
+    const parsed = parseFloat(amount.replace(",", "."));
+    if (!isFinite(parsed) || parsed <= 0) {
+      setError("სწორი თანხა შეიყვანეთ (დადებითი რიცხვი)");
+      return;
+    }
+    if (fromAccount === toAccount) {
+      setError("გამგზავნი და მიმღები ანგარიშები სხვადასხვა უნდა იყოს");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/transfers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from_account: fromAccount,
+          to_account: toAccount,
+          amount: parsed,
+          note: note.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "შეცდომა შენახვისას");
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "შეცდომა შენახვისას");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectClass =
+    "w-full h-9 rounded-lg border border-border bg-background px-3 text-sm " +
+    "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors";
+
+  return (
+    <Dialog open={open} onClose={onClose} title="🔄 ანგარიშებს შორის გადარიცხვა">
+      <p className="text-sm text-muted-foreground mb-5">
+        თანხა გადაიტანება ერთი ანგარიშიდან მეორეზე. ნაშთები ავტომატურად განახლდება.
+      </p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium mb-1.5">საიდან</label>
+          <select
+            value={fromAccount}
+            onChange={(e) => setFromAccount(e.target.value)}
+            className={selectClass}
+          >
+            {ACCOUNT_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">სად</label>
+          <select
+            value={toAccount}
+            onChange={(e) => setToAccount(e.target.value)}
+            className={selectClass}
+          >
+            {ACCOUNT_OPTIONS.filter((o) => o.key !== fromAccount).map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">თანხა</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            className={selectClass + " tabular-nums"}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5">
+            შენიშვნა
+            <span className="ml-1.5 text-xs text-muted-foreground font-normal">(სურვილისამებრ)</span>
+          </label>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="მაგ: ხელფასი, კომუნალური..."
+            className={selectClass}
+          />
+        </div>
+      </div>
+
+      {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+
+      <div className="flex justify-end gap-2 mt-6">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="h-9 px-4 rounded-lg border border-border text-sm font-medium
+                     hover:bg-accent transition-colors cursor-pointer disabled:opacity-50"
+        >
+          გაუქმება
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving || !amount}
+          className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium
+                     hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50
+                     inline-flex items-center gap-2"
+        >
+          <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
+          {saving ? "ინახება..." : "გადარიცხვა"}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Settings modal
 // ---------------------------------------------------------------------------
 interface InitialValues {
@@ -482,6 +649,7 @@ export function AccountBalancesSection() {
   const [balances, setBalances] = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [statementKey, setStatementKey] = useState<string | null>(null);
 
   const fetchBalances = useCallback(async () => {
@@ -513,6 +681,17 @@ export function AccountBalancesSection() {
               {loading && (
                 <RefreshCw className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
               )}
+              <button
+                onClick={() => setTransferOpen(true)}
+                title="ანგარიშებს შორის გადარიცხვა"
+                aria-label="ანგარიშებს შორის გადარიცხვა"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-primary/40
+                           text-xs font-medium text-primary hover:bg-primary/10
+                           transition-colors cursor-pointer"
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
+                გადარიცხვა
+              </button>
               <button
                 onClick={() => setSettingsOpen(true)}
                 title="საწყისი ნაშთების შეცვლა"
@@ -551,6 +730,12 @@ export function AccountBalancesSection() {
           </div>
         </CardContent>
       </Card>
+
+      <TransferModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        onSaved={fetchBalances}
+      />
 
       <SettingsModal
         open={settingsOpen}

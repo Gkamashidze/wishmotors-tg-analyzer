@@ -82,14 +82,34 @@ export async function GET(
 
          SELECT
            created_at AS txn_date,
-           'ხარჯი: ' || description AS description,
+           'ხარჯი: ' || COALESCE(description, '') AS description,
            0::numeric AS credit,
            amount::numeric AS debit
          FROM expenses
          WHERE payment_method = $1
 
+         UNION ALL
+
+         SELECT
+           created_at AS txn_date,
+           '🔄 გადარიცხვა → ' || to_account AS description,
+           0::numeric AS credit,
+           amount::numeric AS debit
+         FROM transfers
+         WHERE from_account = $2
+
+         UNION ALL
+
+         SELECT
+           created_at AS txn_date,
+           '🔄 გადარიცხვა ← ' || from_account AS description,
+           amount::numeric AS credit,
+           0::numeric AS debit
+         FROM transfers
+         WHERE to_account = $2
+
          ORDER BY txn_date ASC`,
-        [pmMethod],
+        [pmMethod, accountKey],
       );
     }
 
