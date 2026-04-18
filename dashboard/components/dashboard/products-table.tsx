@@ -202,13 +202,18 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
 
   // ── Filtered rows ───────────────────────────────────────────────────────────
 
+  const sorted = useMemo(
+    () => [...rows].sort((a, b) => a.name.localeCompare(b.name, "ka")),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
+    if (!q) return sorted;
+    return sorted.filter((r) =>
       [r.name, r.oemCode ?? ""].join(" ").toLowerCase().includes(q),
     );
-  }, [rows, search]);
+  }, [sorted, search]);
 
   // ── Product edit/delete ─────────────────────────────────────────────────────
 

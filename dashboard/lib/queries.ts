@@ -405,8 +405,8 @@ export async function getProducts(): Promise<ProductRow[]> {
     `
     SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
     FROM products
-    ORDER BY name ASC
-    `,
+    ORDER BY name ASC, created_at DESC
+`,
   );
 
   return rows.map((r) => ({
