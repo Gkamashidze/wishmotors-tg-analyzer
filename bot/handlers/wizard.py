@@ -72,6 +72,30 @@ def _btn(text: str, data: str) -> InlineKeyboardButton:
 _CANCEL = _btn("❌ გაუქმება", "wiz:cancel")
 _CANCEL_ROW = [_CANCEL]
 
+_VAT_KB = _kb(
+    [_btn("✅ კი", "wiz:vat:yes"), _btn("❌ არა", "wiz:vat:no")],
+    _CANCEL_ROW,
+)
+
+VAT_RATE = 0.18
+
+
+def _calc_vat(amount: float) -> float:
+    """Extract VAT from a VAT-inclusive amount: vat = amount - amount/1.18."""
+    return round(amount - amount / (1 + VAT_RATE), 2)
+
+
+async def _ask_vat(message: Message, amount: float, edit: bool = True) -> None:
+    text = (
+        f"🧾 <b>შედის თუ არა ამ თანხაში დღგ?</b>\n"
+        f"💰 თანხა: <b>{amount:.2f}₾</b>\n"
+        f"<i>18%-იანი დღგ ჩართვის შემთხვევაში: {_calc_vat(amount):.2f}₾</i>"
+    )
+    if edit:
+        await message.edit_text(text, parse_mode=_PARSE, reply_markup=_VAT_KB)
+    else:
+        await message.answer(text, parse_mode=_PARSE, reply_markup=_VAT_KB)
+
 
 def _e(v: object) -> str:
     return html.escape(str(v))
@@ -116,6 +140,7 @@ class SaleWizard(StatesGroup):
     price       = State()   # numeric input
     payment     = State()   # ხელზე / დარიცხა / ნისია
     seller_type = State()   # შპს / ფზ პირი
+    vat         = State()   # is VAT (18%) included?
     confirm     = State()   # final review
 
 
@@ -127,6 +152,7 @@ class NisiaWizard(StatesGroup):
     price_type  = State()
     price       = State()
     seller_type = State()   # შპს / ფზ პირი
+    vat         = State()   # is VAT (18%) included?
     confirm     = State()
 
 
@@ -136,6 +162,7 @@ class ExpenseWizard(StatesGroup):
     amount          = State()
     payment_method  = State()   # ნაღდი / გადარიცხვა
     description     = State()
+    vat             = State()   # is VAT (18%) included?
     confirm         = State()
 
 
@@ -318,6 +345,22 @@ async def sale_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     seller = callback.data.split(":", 2)[2]  # company / individual
     await state.update_data(seller_type=seller)
+    await state.set_state(SaleWizard.vat)
+    d = await state.get_data()
+    total = float(d["unit_price"]) * int(d["quantity"])
+    await _ask_vat(callback.message, total, edit=True)
+
+
+@wizard_router.callback_query(
+    F.data.in_({"wiz:vat:yes", "wiz:vat:no"}), IsAdmin(), StateFilter(SaleWizard.vat)
+)
+async def sale_vat(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    d = await state.get_data()
+    total = float(d["unit_price"]) * int(d["quantity"])
+    is_included = callback.data == "wiz:vat:yes"
+    vat_amt = _calc_vat(total) if is_included else 0.0
+    await state.update_data(is_vat_included=is_included, vat_amount=vat_amt)
     await state.set_state(SaleWizard.confirm)
     await _show_sale_confirm(callback.message, state, edit=True)
 
@@ -336,12 +379,17 @@ async def sale_confirm(callback: CallbackQuery, state: FSMContext, db: Database)
     seller: str               = d.get("seller_type", "individual")
     is_freeform: bool         = d.get("is_freeform", False)
 
+    vat_amount: float     = d.get("vat_amount", 0.0)
+    is_vat_included: bool = d.get("is_vat_included", False)
+
     sale_id, new_stock = await db.create_sale(
         product_id=product_id,
         quantity=qty,
         unit_price=price,
         payment_method=payment,
         seller_type=seller,
+        vat_amount=vat_amount,
+        is_vat_included=is_vat_included,
     )
 
     # Auto-order at zero stock
@@ -488,6 +536,22 @@ async def nisia_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     seller = callback.data.split(":", 2)[2]  # company / individual
     await state.update_data(seller_type=seller)
+    await state.set_state(NisiaWizard.vat)
+    d = await state.get_data()
+    total = float(d["unit_price"]) * int(d["quantity"])
+    await _ask_vat(callback.message, total, edit=True)
+
+
+@wizard_router.callback_query(
+    F.data.in_({"wiz:vat:yes", "wiz:vat:no"}), IsAdmin(), StateFilter(NisiaWizard.vat)
+)
+async def nisia_vat(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    d = await state.get_data()
+    total = float(d["unit_price"]) * int(d["quantity"])
+    is_included = callback.data == "wiz:vat:yes"
+    vat_amt = _calc_vat(total) if is_included else 0.0
+    await state.update_data(is_vat_included=is_included, vat_amount=vat_amt)
     await state.set_state(NisiaWizard.confirm)
     await _show_nisia_confirm(callback.message, state, send=False)
 
@@ -506,6 +570,9 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
     seller: str               = d.get("seller_type", "individual")
     is_freeform: bool         = d.get("is_freeform", False)
 
+    vat_amount_n: float     = d.get("vat_amount", 0.0)
+    is_vat_included_n: bool = d.get("is_vat_included", False)
+
     sale_id, new_stock = await db.create_sale(
         product_id=product_id,
         quantity=qty,
@@ -514,6 +581,8 @@ async def nisia_confirm(callback: CallbackQuery, state: FSMContext, db: Database
         seller_type=seller,
         customer_name=customer,
         notes=product_name if is_freeform else None,
+        vat_amount=vat_amount_n,
+        is_vat_included=is_vat_included_n,
     )
 
     # Keep customer in state for "add more" button
@@ -696,16 +765,32 @@ async def expense_payment_method(callback: CallbackQuery, state: FSMContext) -> 
 async def expense_desc_skip(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     await state.update_data(description=None)
-    await state.set_state(ExpenseWizard.confirm)
-    await _show_expense_confirm(callback.message, state, edit=True)
+    await state.set_state(ExpenseWizard.vat)
+    d = await state.get_data()
+    await _ask_vat(callback.message, float(d["amount"]), edit=True)
 
 
 @wizard_router.message(ExpenseWizard.description, IsAdmin(), _PRIVATE)
 async def expense_description(message: Message, state: FSMContext) -> None:
     desc = (message.text or "").strip() or None
     await state.update_data(description=desc)
+    await state.set_state(ExpenseWizard.vat)
+    d = await state.get_data()
+    await _ask_vat(message, float(d["amount"]), edit=False)
+
+
+@wizard_router.callback_query(
+    F.data.in_({"wiz:vat:yes", "wiz:vat:no"}), IsAdmin(), StateFilter(ExpenseWizard.vat)
+)
+async def expense_vat(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    d = await state.get_data()
+    amount = float(d["amount"])
+    is_included = callback.data == "wiz:vat:yes"
+    vat_amt = _calc_vat(amount) if is_included else 0.0
+    await state.update_data(is_vat_included=is_included, vat_amount=vat_amt)
     await state.set_state(ExpenseWizard.confirm)
-    await _show_expense_confirm(message, state, edit=False)
+    await _show_expense_confirm(callback.message, state, edit=True)
 
 
 @wizard_router.callback_query(F.data == "wiz:confirm:yes", IsAdmin(), StateFilter(ExpenseWizard.confirm))
@@ -718,6 +803,8 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
     category_label: str         = d.get("category_label", "")
     description: Optional[str]  = d.get("description")
     payment_method: str         = d.get("payment_method") or "cash"
+    vat_amount_e: float         = d.get("vat_amount", 0.0)
+    is_vat_included_e: bool     = d.get("is_vat_included", False)
 
     db_category = None if category == "other" else category
     expense_id = await db.create_expense(
@@ -725,6 +812,8 @@ async def expense_confirm(callback: CallbackQuery, state: FSMContext, db: Databa
         description=description or category_label,
         category=db_category,
         payment_method=payment_method,
+        vat_amount=vat_amount_e,
+        is_vat_included=is_vat_included_e,
     )
 
     # Ready for another expense in the same session

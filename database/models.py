@@ -234,6 +234,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_event_type  ON transaction_audit_log(ev
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON transaction_audit_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_log_reference   ON transaction_audit_log(reference_id);
 
+-- VAT (18%) tracking on sales and expenses
+ALTER TABLE sales    ADD COLUMN IF NOT EXISTS vat_amount       NUMERIC(12, 2) NOT NULL DEFAULT 0;
+ALTER TABLE sales    ADD COLUMN IF NOT EXISTS is_vat_included  BOOLEAN        NOT NULL DEFAULT FALSE;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS vat_amount       NUMERIC(12, 2) NOT NULL DEFAULT 0;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_vat_included  BOOLEAN        NOT NULL DEFAULT FALSE;
+
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS vat_amount      NUMERIC(12, 2) NOT NULL DEFAULT 0;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS is_vat_included BOOLEAN        NOT NULL DEFAULT FALSE;
+
 -- Internal transfers between accounts (e.g. cash_gel → bank_gel).
 -- Affects balance of both the source and destination account.
 CREATE TABLE IF NOT EXISTS transfers (
@@ -281,6 +290,8 @@ class SaleRow(TypedDict):
     receipt_printed: bool
     topic_id: Optional[int]
     topic_message_id: Optional[int]
+    vat_amount: float
+    is_vat_included: bool
     # Joined fields (present in report queries)
     product_name: Optional[str]
     oem_code: Optional[str]
@@ -316,6 +327,8 @@ class ExpenseRow(TypedDict):
     description: Optional[str]
     category: Optional[str]
     created_at: object  # datetime
+    vat_amount: float
+    is_vat_included: bool
 
 
 class ParseFailureRow(TypedDict):

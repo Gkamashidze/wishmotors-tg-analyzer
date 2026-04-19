@@ -214,6 +214,8 @@ export type SaleRow = {
   soldAt: string;
   notes: string | null;
   receiptPrinted: boolean;
+  vatAmount: number;
+  isVatIncluded: boolean;
 };
 
 export async function getSales(limit: number = 500): Promise<SaleRow[]> {
@@ -230,6 +232,8 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
     sold_at: Date;
     notes: string | null;
     receipt_printed: boolean;
+    vat_amount: string;
+    is_vat_included: boolean;
   }>(
     `
     SELECT
@@ -244,7 +248,9 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
       s.customer_name,
       s.sold_at,
       s.notes,
-      s.receipt_printed
+      s.receipt_printed,
+      s.vat_amount,
+      s.is_vat_included
     FROM sales s
     LEFT JOIN products p ON p.id = s.product_id
     ORDER BY s.sold_at DESC
@@ -269,6 +275,8 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
         : String(r.sold_at),
     notes: r.notes,
     receiptPrinted: r.receipt_printed,
+    vatAmount: Number(r.vat_amount),
+    isVatIncluded: r.is_vat_included,
   }));
 }
 
@@ -281,6 +289,8 @@ export type ExpenseRow = {
   category: string | null;
   paymentMethod: string;
   createdAt: string;
+  vatAmount: number;
+  isVatIncluded: boolean;
 };
 
 export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
@@ -291,9 +301,12 @@ export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
     category: string | null;
     payment_method: string;
     created_at: Date;
+    vat_amount: string;
+    is_vat_included: boolean;
   }>(
     `
-    SELECT id, amount, description, category, payment_method, created_at
+    SELECT id, amount, description, category, payment_method, created_at,
+           vat_amount, is_vat_included
     FROM expenses
     ORDER BY created_at DESC
     LIMIT $1
@@ -311,6 +324,8 @@ export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
       r.created_at instanceof Date
         ? r.created_at.toISOString()
         : String(r.created_at),
+    vatAmount: Number(r.vat_amount),
+    isVatIncluded: r.is_vat_included,
   }));
 }
 

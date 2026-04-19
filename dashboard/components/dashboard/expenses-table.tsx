@@ -214,6 +214,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
             <TableRow>
               <TableHead className="w-14">#</TableHead>
               <TableHead className="text-right">თანხა</TableHead>
+              <TableHead className="text-right">დღგ</TableHead>
               <TableHead>კატეგორია</TableHead>
               <TableHead>აღწერა</TableHead>
               <TableHead>გადახდა</TableHead>
@@ -224,7 +225,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -234,6 +235,13 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-destructive">
                     {formatGEL(r.amount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.isVatIncluded ? (
+                      <span className="text-purple-600 font-medium">{formatGEL(r.vatAmount)}</span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {r.category ? (

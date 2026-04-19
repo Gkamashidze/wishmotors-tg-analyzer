@@ -751,6 +751,8 @@ class Database:
         seller_type: str = "individual",
         customer_name: Optional[str] = None,
         notes: Optional[str] = None,
+        vat_amount: float = 0.0,
+        is_vat_included: bool = False,
     ) -> Tuple[int, int]:
         """Insert sale + decrement stock + post double-entry ledger, atomically.
 
@@ -776,11 +778,13 @@ class Database:
                 row = await conn.fetchrow(
                     """INSERT INTO sales
                            (product_id, quantity, unit_price, payment_method,
-                            seller_type, customer_name, notes)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            seller_type, customer_name, notes,
+                            vat_amount, is_vat_included)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                        RETURNING id""",
                     product_id, quantity, unit_price, payment_method,
                     seller_type, customer_name or None, notes,
+                    round(vat_amount, 2), is_vat_included,
                 )
                 sale_id = row["id"]
 
@@ -829,6 +833,8 @@ class Database:
             "customer_name": customer_name,
             "notes": notes,
             "new_stock": new_stock,
+            "vat_amount": round(vat_amount, 2),
+            "is_vat_included": is_vat_included,
         }, reference_id=f"sale:{sale_id}")
         return sale_id, new_stock
 
@@ -1465,6 +1471,8 @@ class Database:
         description: Optional[str] = None,
         category: Optional[str] = None,
         payment_method: str = "cash",
+        vat_amount: float = 0.0,
+        is_vat_included: bool = False,
     ) -> int:
         """Insert an expense + post its ledger entry atomically.
 
@@ -1478,9 +1486,12 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    """INSERT INTO expenses (amount, description, category, payment_method)
-                       VALUES ($1, $2, $3, $4) RETURNING id""",
+                    """INSERT INTO expenses
+                           (amount, description, category, payment_method,
+                            vat_amount, is_vat_included)
+                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
                     amount, description, category, payment_method,
+                    round(vat_amount, 2), is_vat_included,
                 )
                 expense_id = row["id"]
                 label = description or category or f"Expense #{expense_id}"
@@ -1497,6 +1508,8 @@ class Database:
             "description": description,
             "category": category,
             "payment_method": payment_method,
+            "vat_amount": round(vat_amount, 2),
+            "is_vat_included": is_vat_included,
         }, reference_id=f"expense:{expense_id}")
         return expense_id
 

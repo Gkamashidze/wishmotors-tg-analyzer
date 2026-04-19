@@ -35,6 +35,7 @@ import type { ChartOfAccount, AccountType } from "@/app/api/accounting/chart-of-
 import type { TrialBalanceRow } from "@/app/api/accounting/trial-balance/route";
 import type { ProfitLossResponse } from "@/app/api/accounting/profit-loss/route";
 import type { PartnerRow } from "@/app/api/accounting/partners/route";
+import type { VatSummaryResponse } from "@/app/api/accounting/vat/route";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -631,6 +632,7 @@ function TrialBalanceTab({ from, to }: { from: string; to: string }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function ProfitLossTab({ from, to }: { from: string; to: string }) {
   const [data, setData]       = useState<ProfitLossResponse | null>(null);
+  const [vatData, setVatData] = useState<VatSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [expOpen, setExpOpen] = useState(true);
@@ -639,9 +641,13 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/accounting/profit-loss?from=${from}&to=${to}`);
-      if (!res.ok) throw new Error("ჩატვირთვა ვერ მოხდა");
-      setData(await res.json());
+      const [plRes, vatRes] = await Promise.all([
+        fetch(`/api/accounting/profit-loss?from=${from}&to=${to}`),
+        fetch(`/api/accounting/vat?from=${from}&to=${to}`),
+      ]);
+      if (!plRes.ok) throw new Error("ჩატვირთვა ვერ მოხდა");
+      setData(await plRes.json());
+      if (vatRes.ok) setVatData(await vatRes.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : "შეცდომა");
     } finally {
@@ -655,14 +661,43 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
   const kpiCards = useMemo(() => {
     if (!data) return null;
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard label="შემოსავალი" value={`₾ ${fmt(data.revenue.total)}`} color="text-green-700" bgColor="bg-green-50" />
-        <KpiCard label="მთლიანი მოგება" value={`₾ ${fmt(data.gross_profit)}`} sub={`მარჟა ${data.gross_margin_pct.toFixed(1)}%`} color={data.gross_profit >= 0 ? "text-blue-700" : "text-red-600"} bgColor={data.gross_profit >= 0 ? "bg-blue-50" : "bg-red-50"} />
-        <KpiCard label="ჯამური ხარჯი" value={`₾ ${fmt(data.total_expenses)}`} color="text-orange-700" bgColor="bg-orange-50" />
-        <KpiCard label="წმინდა მოგება" value={`₾ ${fmt(data.net_profit)}`} sub={`მარჟა ${data.net_margin_pct.toFixed(1)}%`} color={data.net_profit >= 0 ? "text-green-700" : "text-red-600"} bgColor={data.net_profit >= 0 ? "bg-green-50" : "bg-red-50"} />
-      </div>
+      <>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <KpiCard label="შემოსავალი" value={`₾ ${fmt(data.revenue.total)}`} color="text-green-700" bgColor="bg-green-50" />
+          <KpiCard label="მთლიანი მოგება" value={`₾ ${fmt(data.gross_profit)}`} sub={`მარჟა ${data.gross_margin_pct.toFixed(1)}%`} color={data.gross_profit >= 0 ? "text-blue-700" : "text-red-600"} bgColor={data.gross_profit >= 0 ? "bg-blue-50" : "bg-red-50"} />
+          <KpiCard label="ჯამური ხარჯი" value={`₾ ${fmt(data.total_expenses)}`} color="text-orange-700" bgColor="bg-orange-50" />
+          <KpiCard label="წმინდა მოგება" value={`₾ ${fmt(data.net_profit)}`} sub={`მარჟა ${data.net_margin_pct.toFixed(1)}%`} color={data.net_profit >= 0 ? "text-green-700" : "text-red-600"} bgColor={data.net_profit >= 0 ? "bg-green-50" : "bg-red-50"} />
+        </div>
+        {vatData && (
+          <Card className="border-purple-200 bg-purple-50/40">
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 mb-3">
+                <CreditCard className="h-4 w-4 text-purple-600" />
+                <span className="text-sm font-semibold text-purple-900">მიმდინარე თვის დღგ (18%)</span>
+                <span className="text-xs text-muted-foreground">{from} — {to}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-0.5">
+                  <p className="text-xs text-muted-foreground">შემოსული დღგ (გაყიდვებიდან)</p>
+                  <p className="text-lg font-bold tabular-nums text-green-700">₾ {fmt(vatData.vat_collected)}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-muted-foreground">გადახდილი დღგ (ხარჯებიდან)</p>
+                  <p className="text-lg font-bold tabular-nums text-orange-700">₾ {fmt(vatData.vat_paid)}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-muted-foreground">ბიუჯეტში გადასახდელი</p>
+                  <p className={cn("text-lg font-bold tabular-nums", vatData.vat_payable >= 0 ? "text-purple-700" : "text-green-600")}>
+                    {vatData.vat_payable < 0 ? "− " : ""}₾ {fmt(Math.abs(vatData.vat_payable))}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </>
     );
-  }, [data]);
+  }, [data, vatData, from, to]);
 
   const exportUrl = (format: "xlsx" | "pdf") =>
     `/api/accounting/profit-loss/export?from=${from}&to=${to}&format=${format}`;

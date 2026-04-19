@@ -230,6 +230,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
               <TableHead className="text-right">ჯამი</TableHead>
               <TableHead className="text-right">ღირ.</TableHead>
               <TableHead className="text-right">მოგება</TableHead>
+              <TableHead className="text-right">დღგ</TableHead>
               <TableHead>გადახდა</TableHead>
               <TableHead>მყიდველი</TableHead>
               <TableHead>თარიღი</TableHead>
@@ -239,7 +240,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -261,6 +262,13 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
                       <span className={profit >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}>
                         {formatGEL(profit)}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.isVatIncluded ? (
+                        <span className="text-purple-600 font-medium">{formatGEL(r.vatAmount)}</span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{paymentLabel(r.paymentMethod)}</Badge>
