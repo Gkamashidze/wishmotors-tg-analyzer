@@ -219,7 +219,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
         </span>
       </div>
 
-      <div className="rounded-xl border border-border bg-card overflow-auto">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

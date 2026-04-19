@@ -400,7 +400,7 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card overflow-auto">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

@@ -208,7 +208,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-border bg-card overflow-auto">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

@@ -111,13 +111,13 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ძიება (სახელი, OEM...)"
             aria-label="ძიება მარაგში"
-            className="h-9 w-64 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-9 w-full sm:w-64 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <Button
             size="sm"
@@ -156,7 +156,7 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
         <p className="text-xs text-muted-foreground">{formatNumber(filtered.length)} / {formatNumber(rows.length)} პროდუქტი</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card overflow-auto">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

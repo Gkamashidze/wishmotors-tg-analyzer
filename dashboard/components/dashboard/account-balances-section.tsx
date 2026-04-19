@@ -75,31 +75,31 @@ function BalanceCard({
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
       ].join(" ")}
     >
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground truncate">
               {item.account_name}
             </p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground/60">
+            <p className="mt-0.5 text-[10px] sm:text-[11px] text-muted-foreground/60">
               {item.currency}
             </p>
             <p
-              className={`mt-2 text-xl font-bold tabular-nums ${balanceTone(item.current_balance)}`}
+              className={`mt-1.5 text-base sm:text-xl font-bold tabular-nums ${balanceTone(item.current_balance)}`}
             >
               {formatAmount(item.current_balance, item.currency)}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-[10px] sm:text-[11px] text-muted-foreground">
               საწყისი: {formatAmount(item.initial_balance, item.currency)}
             </p>
           </div>
           <div
-            className={`h-9 w-9 rounded-lg flex items-center justify-center ring-1 shrink-0 ${iconBg}`}
+            className={`h-8 w-8 sm:h-9 sm:w-9 rounded-lg flex items-center justify-center ring-1 shrink-0 ${iconBg}`}
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />
+            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-1 text-[10px] text-muted-foreground/50">
+        <div className="mt-2 sm:mt-3 hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground/50">
           <FileText className="h-3 w-3" />
           <span>ამონაწერის სანახავად დააჭირეთ</span>
         </div>
@@ -677,7 +677,7 @@ export function AccountBalancesSection() {
                 ოთხი ანგარიშის რეალური ბალანსი — დააჭირეთ ამონაწერის სანახავად
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {loading && (
                 <RefreshCw className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
               )}

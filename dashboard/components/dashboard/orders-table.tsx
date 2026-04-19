@@ -250,17 +250,18 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
             );
           })}
         </div>
-        <div className="flex items-center gap-2">
-          <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} aria-label="სტატუსის ფილტრი" className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} aria-label="სტატუსის ფილტრი" className="h-9 w-full sm:w-auto rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
             {STATUS_TABS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
-          <input value={queryText} onChange={(e) => setQueryText(e.target.value)} placeholder="ძიება..." aria-label="ძიება შეკვეთებში" className="h-9 w-56 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+          <input value={queryText} onChange={(e) => setQueryText(e.target.value)} placeholder="ძიება..." aria-label="ძიება შეკვეთებში" className="h-9 w-full sm:w-56 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
           <a
             href={`/api/orders/export?priority=${priority}&status=${status}&q=${encodeURIComponent(queryText)}`}
             download
             aria-label="ექსელში ჩამოტვირთვა"
+            className="w-full sm:w-auto"
           >
-            <Button size="sm" variant="outline" className="gap-1.5 cursor-pointer">
+            <Button size="sm" variant="outline" className="gap-1.5 cursor-pointer w-full sm:w-auto">
               <Download className="h-4 w-4" />
               📥 ექსელში ჩამოტვირთვა
             </Button>
@@ -268,7 +269,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
