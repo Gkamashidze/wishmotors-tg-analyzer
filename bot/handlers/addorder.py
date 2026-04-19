@@ -485,6 +485,7 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         rows_to_insert = [
             {
                 "product_id": item.get("product_id"),
+                "oem_code": item.get("oem_code"),
                 "quantity_needed": item["quantity"],
                 "priority": item["priority"],
                 "notes": (

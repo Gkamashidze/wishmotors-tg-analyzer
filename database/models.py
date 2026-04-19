@@ -207,6 +207,10 @@ ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_id         INTEGER;
 ALTER TABLE orders        ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS topic_message_id INTEGER;
 
+-- OEM code stored directly on the order so freeform orders (product_id IS NULL)
+-- still carry a machine-readable identifier visible in the dashboard.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS oem_code TEXT;
+
 -- Ensure oem_code has a UNIQUE constraint (idempotent: catches both fresh
 -- databases already carrying products_oem_code_key and re-runs of this migration).
 DO $$ BEGIN

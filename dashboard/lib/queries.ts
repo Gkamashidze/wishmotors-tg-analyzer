@@ -166,7 +166,7 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
       o.id,
       o.product_id,
       p.name      AS product_name,
-      p.oem_code  AS oem_code,
+      COALESCE(o.oem_code, p.oem_code) AS oem_code,
       o.quantity_needed,
       o.status,
       o.priority,
