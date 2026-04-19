@@ -204,8 +204,8 @@ async def _ask_for_name(msg: Message, state: FSMContext, oem_code: str) -> None:
     await state.set_state(AddOrderWizard.name)
     text = (
         f"✅ OEM კოდი: <code>{_e(oem_code)}</code>\n\n"
-        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b> და <b>რაოდენობა</b>:\n"
-        "<i>მაგ: <code>უკანა სუხო 3</code></i>"
+        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b>:\n"
+        "<i>მაგ: <code>უკანა სუხო</code></i>"
     )
     await msg.answer(text, parse_mode=_PARSE, reply_markup=_kb(_CANCEL_ROW))
 
@@ -353,29 +353,21 @@ async def on_oem_input(message: Message, state: FSMContext) -> None:
     await _ask_for_name(message, state, raw)
 
 
-# ─── Step 2: product name + quantity in one message ──────────────────────────
+# ─── Step 2: product name only ───────────────────────────────────────────────
 
 @addorder_router.message(AddOrderWizard.name, IsAdmin(), _PRIVATE)
 async def on_name_qty_input(message: Message, state: FSMContext, db: Database) -> None:
-    """Accept "product name QTY" or "product name" (qty defaults to prompt)."""
+    """Accept product name, then ask for quantity in the next step."""
     raw = (message.text or "").strip()
     if not raw:
         await message.answer(
-            "⚠️ ჩაწერე პროდუქტის დასახელება და რაოდენობა.",
+            "⚠️ ჩაწერე პროდუქტის დასახელება.",
             parse_mode=_PARSE,
         )
         return
 
-    # Try to split trailing integer as quantity: "უკანა სუხო 3" → name="უკანა სუხო", qty=3
-    name_part, qty = _parse_name_qty(raw)
-
-    if qty is not None:
-        # Name + quantity provided in one message → go straight to priority.
-        await _resolve_and_store(message, state, db, name_part, qty)
-    else:
-        # Name only — store name, ask for quantity separately.
-        await state.update_data(current_product_name=name_part)
-        await _goto_quantity(message, state, name_part, edit=False)
+    await state.update_data(current_product_name=raw)
+    await _goto_quantity(message, state, raw, edit=False)
 
 
 # ─── Step 3: quantity (only reached when name was entered without qty) ────────

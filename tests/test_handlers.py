@@ -352,26 +352,28 @@ class TestOnOemInput:
 
 
 class TestOnNameQtyInput:
-    async def test_name_and_qty_combined_resolves_db_and_asks_priority(self):
-        msg = _msg("უკანა სუხო 3")
-        db = _db(get_product_by_oem=AsyncMock(return_value={"id": 7, "name": "სუხო", "oem_code": "1234"}))
-        state = _state_mock({"items": [], "current_oem_code": "1234"})
-        await on_name_qty_input(msg, state, db)
-        # state should advance to priority
-        state.set_state.assert_called_once_with(AddOrderWizard.priority)
-
-    async def test_name_only_goes_to_quantity_step(self):
+    async def test_name_stored_and_advances_to_quantity(self):
         msg = _msg("უკანა სუხო")
         db = _db()
         state = _state_mock({"items": [], "current_oem_code": "1234"})
         await on_name_qty_input(msg, state, db)
         state.set_state.assert_called_once_with(AddOrderWizard.quantity)
 
-    async def test_unknown_oem_stores_null_product_id(self):
-        msg = _msg("სარკე 2")
-        db = _db(get_product_by_oem=AsyncMock(return_value=None))
-        state = _state_mock({"items": [], "current_oem_code": "9999"})
+    async def test_name_with_trailing_number_stored_as_full_name(self):
+        # Previously "სარკე 3" was parsed as name="სარკე" qty=3.
+        # Now the whole string is stored as the name; quantity is asked separately.
+        msg = _msg("სარკე 3")
+        db = _db()
+        state = _state_mock({"items": [], "current_oem_code": "1234"})
         await on_name_qty_input(msg, state, db)
-        call_kwargs = state.update_data.call_args[1]
-        assert call_kwargs["current_product_id"] is None
-        assert call_kwargs["current_is_freeform"] is True
+        state.update_data.assert_called_once_with(current_product_name="სარკე 3")
+        state.set_state.assert_called_once_with(AddOrderWizard.quantity)
+
+    async def test_empty_input_sends_warning_and_stays(self):
+        msg = _msg("")
+        db = _db()
+        state = _state_mock({"items": [], "current_oem_code": "1234"})
+        await on_name_qty_input(msg, state, db)
+        state.set_state.assert_not_called()
+        text = msg.answer.call_args[0][0]
+        assert "დასახელება" in text
