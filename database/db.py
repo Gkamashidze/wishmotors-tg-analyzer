@@ -1313,6 +1313,15 @@ class Database:
             )
             return result == "UPDATE 1"
 
+    async def revert_order_to_pending(self, order_id: int) -> bool:
+        """Revert a completed order back to pending. Returns True if successful."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE orders SET status = 'pending' WHERE id = $1 AND status = 'completed'",
+                order_id,
+            )
+            return result == "UPDATE 1"
+
     async def update_orders_topic_message(
         self,
         order_ids: List[int],

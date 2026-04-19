@@ -24,10 +24,11 @@ const STATUS_MAP: Record<string, string> = {
   ordered: "შეკვეთილი",
   received: "მიღებული",
   cancelled: "გაუქმებული",
+  completed: "შესრულდა",
 };
 
 const VALID_PRIORITIES = new Set(["all", "urgent", "normal", "low"]);
-const VALID_STATUSES = new Set(["all", "pending", "ordered", "received", "cancelled"]);
+const VALID_STATUSES = new Set(["all", "pending", "ordered", "received", "cancelled", "completed"]);
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;

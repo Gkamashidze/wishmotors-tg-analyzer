@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Eye, Pencil, Trash2 } from "lucide-react";
+import { Download, Eye, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -18,7 +18,7 @@ import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import { cn } from "@/lib/utils";
 
 type PriorityFilter = "all" | "urgent" | "normal" | "low";
-type StatusFilter = "all" | "pending" | "ordered" | "received" | "cancelled";
+type StatusFilter = "all" | "pending" | "ordered" | "received" | "cancelled" | "completed";
 
 const PRIORITY_TABS: { key: PriorityFilter; label: string; icon?: string }[] = [
   { key: "all", label: "ყველა" },
@@ -33,6 +33,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "ordered", label: "შეკვეთილი" },
   { key: "received", label: "მიღებული" },
   { key: "cancelled", label: "გაუქმებული" },
+  { key: "completed", label: "შესრულდა" },
 ];
 
 const STATUS_OPTIONS = STATUS_TABS.slice(1).map((s) => ({ value: s.key, label: s.label }));
@@ -54,6 +55,7 @@ function statusBadge(s: string) {
     case "ordered": return <Badge variant="default">შეკვეთილი</Badge>;
     case "received": return <Badge variant="success">მიღებული</Badge>;
     case "cancelled": return <Badge variant="muted">გაუქმებული</Badge>;
+    case "completed": return <Badge variant="success"><span aria-hidden="true">✅</span> შესრულდა</Badge>;
     default: return <Badge variant="outline">{s}</Badge>;
   }
 }
@@ -93,6 +95,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
   const [deleteRow, setDeleteRow] = useState<OrderRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [undoingId, setUndoingId] = useState<number | null>(null);
   const [localProducts, setLocalProducts] = useState<ProductRow[]>(products);
 
   const productOptions = useMemo<ComboOption[]>(() => [
@@ -192,6 +195,27 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
     }
   }, [editRow, editState, localProducts, closeEdit, router]);
 
+  const handleUndo = useCallback(async (r: OrderRow) => {
+    setUndoingId(r.id);
+    try {
+      const res = await fetch(`/api/orders/${r.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: r.productId ?? null,
+          quantity_needed: r.quantityNeeded,
+          status: "pending",
+          priority: r.priority,
+          notes: r.notes ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error("server error");
+      router.refresh();
+    } finally {
+      setUndoingId(null);
+    }
+  }, [router]);
+
   const handleDelete = useCallback(async () => {
     if (!deleteRow) return;
     setDeleting(true);
@@ -282,9 +306,24 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      {r.status === "completed" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 gap-1 cursor-pointer text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                          onClick={() => handleUndo(r)}
+                          disabled={undoingId === r.id}
+                          aria-label="სტატუსის გაუქმება"
+                          title="მოლოდინში დაბრუნება"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" />
+                          <span className="text-xs">{undoingId === r.id ? "..." : "↩️"}</span>
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
