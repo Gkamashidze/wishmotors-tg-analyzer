@@ -185,6 +185,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
           status: editState.status,
           priority: editState.priority,
           notes: editState.notes || null,
+          oem_code: editState.oem_code || null,
         }),
       });
       if (!res.ok) throw new Error("server error");

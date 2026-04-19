@@ -61,21 +61,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
     customer_name,
     sold_at,
     notes,
+    vat_amount,
+    is_vat_included,
   } = body;
 
   const current = await fetchSale(rowId);
 
   await query(
     `UPDATE sales SET
-      product_id     = $2,
-      quantity       = $3,
-      unit_price     = $4,
-      cost_amount    = $5,
-      payment_method = $6,
-      seller_type    = $7,
-      customer_name  = $8,
-      sold_at        = $9,
-      notes          = $10
+      product_id      = $2,
+      quantity        = $3,
+      unit_price      = $4,
+      cost_amount     = $5,
+      payment_method  = $6,
+      seller_type     = $7,
+      customer_name   = $8,
+      sold_at         = $9,
+      notes           = $10,
+      vat_amount      = $11,
+      is_vat_included = $12
     WHERE id = $1`,
     [
       rowId,
@@ -88,6 +92,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
       customer_name ?? null,
       sold_at,
       notes ?? null,
+      vat_amount ?? 0,
+      is_vat_included ?? false,
     ],
   );
 

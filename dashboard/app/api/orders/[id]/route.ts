@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = await req.json() as Record<string, unknown>;
-  const { product_id, quantity_needed, status, priority, notes } = body;
+  const { product_id, quantity_needed, status, priority, notes, oem_code } = body;
 
   const current = await fetchOrder(rowId);
 
@@ -47,9 +47,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
       quantity_needed = $3,
       status          = $4,
       priority        = $5,
-      notes           = $6
+      notes           = $6,
+      oem_code        = $7
     WHERE id = $1`,
-    [rowId, product_id ?? null, quantity_needed, status, priority, notes ?? null],
+    [rowId, product_id ?? null, quantity_needed, status, priority, notes ?? null, oem_code ?? null],
   );
 
   if (current?.topic_id && current.topic_message_id && GROUP_ID) {

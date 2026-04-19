@@ -33,19 +33,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = await req.json() as Record<string, unknown>;
-  const { amount, description, category, payment_method, created_at } = body;
+  const { amount, description, category, payment_method, created_at, vat_amount, is_vat_included } = body;
 
   const current = await fetchExpense(rowId);
 
   await query(
     `UPDATE expenses SET
-      amount         = $2,
-      description    = $3,
-      category       = $4,
-      payment_method = $5,
-      created_at     = $6
+      amount          = $2,
+      description     = $3,
+      category        = $4,
+      payment_method  = $5,
+      created_at      = $6,
+      vat_amount      = $7,
+      is_vat_included = $8
     WHERE id = $1`,
-    [rowId, amount, description ?? null, category ?? null, payment_method, created_at],
+    [rowId, amount, description ?? null, category ?? null, payment_method, created_at, vat_amount ?? 0, is_vat_included ?? false],
   );
 
   if (current?.topic_id && current.topic_message_id && GROUP_ID) {

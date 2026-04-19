@@ -40,6 +40,8 @@ interface EditState {
   category: string;
   payment_method: string;
   created_at: string;
+  vat_amount: string;
+  is_vat_included: string;
 }
 
 function rowToEdit(r: ExpenseRow): EditState {
@@ -49,6 +51,8 @@ function rowToEdit(r: ExpenseRow): EditState {
     category: r.category ?? "",
     payment_method: r.paymentMethod,
     created_at: toDatetimeLocal(r.createdAt),
+    vat_amount: String(r.vatAmount),
+    is_vat_included: String(r.isVatIncluded),
   };
 }
 
@@ -122,6 +126,8 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
           category: editState.category || null,
           payment_method: editState.payment_method,
           created_at: editState.created_at,
+          vat_amount: Number(editState.vat_amount) || 0,
+          is_vat_included: editState.is_vat_included === "true",
         }),
       });
       if (!res.ok) throw new Error("server error");
@@ -343,6 +349,10 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
             <Textarea id="exp-desc" label="აღწერა" value={editState.description} onChange={set("description")} rows={2} placeholder="დეტალები..." />
             <Select id="exp-payment" label="გადახდის მეთოდი" options={PAYMENT_OPTIONS} value={editState.payment_method} onChange={set("payment_method")} />
             <Input id="exp-date" label="თარიღი" type="datetime-local" value={editState.created_at} onChange={set("created_at")} />
+            <div className="grid grid-cols-2 gap-3">
+              <Input id="exp-vat" label="დღგ-ს თანხა (₾)" type="number" min="0" step="0.01" value={editState.vat_amount} onChange={set("vat_amount")} />
+              <Select id="exp-vat-inc" label="დღგ ჩართულია?" options={[{ value: "false", label: "არა" }, { value: "true", label: "დიახ" }]} value={editState.is_vat_included} onChange={set("is_vat_included")} />
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
               <Button onClick={handleSave} disabled={saving} className="cursor-pointer">{saving ? "ინახება..." : "შენახვა"}</Button>

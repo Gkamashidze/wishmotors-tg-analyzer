@@ -54,6 +54,8 @@ interface EditState {
   customer_name: string;
   sold_at: string;
   notes: string;
+  vat_amount: string;
+  is_vat_included: string;
 }
 
 function rowToEdit(r: SaleRow): EditState {
@@ -67,6 +69,8 @@ function rowToEdit(r: SaleRow): EditState {
     customer_name: r.customerName ?? "",
     sold_at: toDatetimeLocal(r.soldAt),
     notes: r.notes ?? "",
+    vat_amount: String(r.vatAmount),
+    is_vat_included: String(r.isVatIncluded),
   };
 }
 
@@ -144,6 +148,8 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
           customer_name: editState.customer_name || null,
           sold_at: editState.sold_at,
           notes: editState.notes || null,
+          vat_amount: Number(editState.vat_amount) || 0,
+          is_vat_included: editState.is_vat_included === "true",
         }),
       });
       if (!res.ok) throw new Error("server error");
@@ -344,6 +350,10 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
             </div>
             <Input id="sale-customer" label="მომხმარებელი" type="text" value={editState.customer_name} onChange={set("customer_name")} placeholder="სახელი (სურვილისამებრ)" />
             <Input id="sale-date" label="გაყიდვის თარიღი" type="datetime-local" value={editState.sold_at} onChange={set("sold_at")} />
+            <div className="grid grid-cols-2 gap-3">
+              <Input id="sale-vat" label="დღგ-ს თანხა (₾)" type="number" min="0" step="0.01" value={editState.vat_amount} onChange={set("vat_amount")} />
+              <Select id="sale-vat-inc" label="დღგ ჩართულია?" options={[{ value: "false", label: "არა" }, { value: "true", label: "დიახ" }]} value={editState.is_vat_included} onChange={set("is_vat_included")} />
+            </div>
             <Textarea id="sale-notes" label="შენიშვნა" value={editState.notes} onChange={set("notes")} rows={2} placeholder="სურვილისამებრ..." />
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
