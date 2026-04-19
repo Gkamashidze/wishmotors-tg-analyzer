@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { TopBar } from "@/components/top-bar";
 import {
   Card,
@@ -27,6 +27,8 @@ import {
   Users,
   Building2,
   CreditCard,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChartOfAccount, AccountType } from "@/app/api/accounting/chart-of-accounts/route";
@@ -509,19 +511,63 @@ function TrialBalanceTab({ from, to }: { from: string; to: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Memoize row rendering to avoid expensive re-renders on unrelated state changes
+  const renderedRows = useMemo(() => {
+    if (!data) return null;
+    const colCell = "px-3 py-2.5 text-right tabular-nums text-sm";
+    return data.rows.map((row) => (
+      <tr key={row.account_code} className="border-t border-border hover:bg-muted/30 transition-colors">
+        <td className="px-3 py-2.5 font-mono font-semibold text-primary">{row.account_code}</td>
+        <td className="px-3 py-2.5 font-medium">
+          <div>{row.account_name}</div>
+          <div className="text-xs text-muted-foreground capitalize">{TYPE_LABELS[row.account_type as AccountType] ?? row.account_type}</div>
+        </td>
+        <td className={cn(colCell, "text-muted-foreground")}>{row.opening_debit > 0 ? fmt(row.opening_debit) : "—"}</td>
+        <td className={cn(colCell, "text-muted-foreground")}>{row.opening_credit > 0 ? fmt(row.opening_credit) : "—"}</td>
+        <td className={cn(colCell, "text-blue-700 font-medium")}>{row.period_debit > 0 ? fmt(row.period_debit) : "—"}</td>
+        <td className={cn(colCell, "text-red-600 font-medium")}>{row.period_credit > 0 ? fmt(row.period_credit) : "—"}</td>
+        <td className={colCell}>{row.closing_debit > 0 ? fmt(row.closing_debit) : "—"}</td>
+        <td className={colCell}>{row.closing_credit > 0 ? fmt(row.closing_credit) : "—"}</td>
+      </tr>
+    ));
+  }, [data]);
+
   const colHead = "px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide";
   const colCell = "px-3 py-2.5 text-right tabular-nums text-sm";
+
+  const exportUrl = (format: "xlsx" | "pdf") =>
+    `/api/accounting/trial-balance/export?from=${from}&to=${to}&format=${format}`;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Scale className="h-5 w-5 text-primary" />
-          ბრუნვითი უწყისი
-        </CardTitle>
-        <CardDescription>
-          {from} — {to} · ყველა ანგარიშზე დებეტ/კრედიტ ბრუნვები
-        </CardDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Scale className="h-5 w-5 text-primary" />
+              ბრუნვითი უწყისი
+            </CardTitle>
+            <CardDescription>
+              {from} — {to} · ყველა ანგარიშზე დებეტ/კრედიტ ბრუნვები
+            </CardDescription>
+          </div>
+          {data && data.rows.length > 0 && (
+            <div className="flex gap-2 shrink-0">
+              <a href={exportUrl("xlsx")} download>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                  Excel
+                </Button>
+              </a>
+              <a href={exportUrl("pdf")} target="_blank" rel="noreferrer">
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <FileText className="h-4 w-4 text-red-600" />
+                  PDF
+                </Button>
+              </a>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {loading && (
@@ -559,21 +605,7 @@ function TrialBalanceTab({ from, to }: { from: string; to: string }) {
                     </td>
                   </tr>
                 )}
-                {data.rows.map((row) => (
-                  <tr key={row.account_code} className="border-t border-border hover:bg-muted/30 transition-colors">
-                    <td className="px-3 py-2.5 font-mono font-semibold text-primary">{row.account_code}</td>
-                    <td className="px-3 py-2.5 font-medium">
-                      <div>{row.account_name}</div>
-                      <div className="text-xs text-muted-foreground capitalize">{TYPE_LABELS[row.account_type as AccountType] ?? row.account_type}</div>
-                    </td>
-                    <td className={cn(colCell, "text-muted-foreground")}>{row.opening_debit > 0 ? fmt(row.opening_debit) : "—"}</td>
-                    <td className={cn(colCell, "text-muted-foreground")}>{row.opening_credit > 0 ? fmt(row.opening_credit) : "—"}</td>
-                    <td className={cn(colCell, "text-blue-700 font-medium")}>{row.period_debit > 0 ? fmt(row.period_debit) : "—"}</td>
-                    <td className={cn(colCell, "text-red-600 font-medium")}>{row.period_credit > 0 ? fmt(row.period_credit) : "—"}</td>
-                    <td className={colCell}>{row.closing_debit > 0 ? fmt(row.closing_debit) : "—"}</td>
-                    <td className={colCell}>{row.closing_credit > 0 ? fmt(row.closing_credit) : "—"}</td>
-                  </tr>
-                ))}
+                {renderedRows}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-border bg-muted/60 font-semibold">
@@ -619,6 +651,22 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Memoize KPI cards to avoid re-renders when expOpen toggled
+  const kpiCards = useMemo(() => {
+    if (!data) return null;
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <KpiCard label="შემოსავალი" value={`₾ ${fmt(data.revenue.total)}`} color="text-green-700" bgColor="bg-green-50" />
+        <KpiCard label="მთლიანი მოგება" value={`₾ ${fmt(data.gross_profit)}`} sub={`მარჟა ${data.gross_margin_pct.toFixed(1)}%`} color={data.gross_profit >= 0 ? "text-blue-700" : "text-red-600"} bgColor={data.gross_profit >= 0 ? "bg-blue-50" : "bg-red-50"} />
+        <KpiCard label="ჯამური ხარჯი" value={`₾ ${fmt(data.total_expenses)}`} color="text-orange-700" bgColor="bg-orange-50" />
+        <KpiCard label="წმინდა მოგება" value={`₾ ${fmt(data.net_profit)}`} sub={`მარჟა ${data.net_margin_pct.toFixed(1)}%`} color={data.net_profit >= 0 ? "text-green-700" : "text-red-600"} bgColor={data.net_profit >= 0 ? "bg-green-50" : "bg-red-50"} />
+      </div>
+    );
+  }, [data]);
+
+  const exportUrl = (format: "xlsx" | "pdf") =>
+    `/api/accounting/profit-loss/export?from=${from}&to=${to}&format=${format}`;
+
   return (
     <div className="space-y-4">
       {loading && (
@@ -637,43 +685,34 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
       {!loading && !error && data && (
         <>
           {/* KPI chips */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <KpiCard
-              label="შემოსავალი"
-              value={`₾ ${fmt(data.revenue.total)}`}
-              color="text-green-700"
-              bgColor="bg-green-50"
-            />
-            <KpiCard
-              label="მთლიანი მოგება"
-              value={`₾ ${fmt(data.gross_profit)}`}
-              sub={`მარჟა ${data.gross_margin_pct.toFixed(1)}%`}
-              color={data.gross_profit >= 0 ? "text-blue-700" : "text-red-600"}
-              bgColor={data.gross_profit >= 0 ? "bg-blue-50" : "bg-red-50"}
-            />
-            <KpiCard
-              label="ჯამური ხარჯი"
-              value={`₾ ${fmt(data.total_expenses)}`}
-              color="text-orange-700"
-              bgColor="bg-orange-50"
-            />
-            <KpiCard
-              label="წმინდა მოგება"
-              value={`₾ ${fmt(data.net_profit)}`}
-              sub={`მარჟა ${data.net_margin_pct.toFixed(1)}%`}
-              color={data.net_profit >= 0 ? "text-green-700" : "text-red-600"}
-              bgColor={data.net_profit >= 0 ? "bg-green-50" : "bg-red-50"}
-            />
-          </div>
+          {kpiCards}
 
           {/* Detailed P&L report */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                მოგება-ზარალის ანგარიში
-              </CardTitle>
-              <CardDescription>{data.period.from} — {data.period.to}</CardDescription>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    მოგება-ზარალის ანგარიში
+                  </CardTitle>
+                  <CardDescription>{data.period.from} — {data.period.to}</CardDescription>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <a href={exportUrl("xlsx")} download>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                      Excel
+                    </Button>
+                  </a>
+                  <a href={exportUrl("pdf")} target="_blank" rel="noreferrer">
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <FileText className="h-4 w-4 text-red-600" />
+                      PDF
+                    </Button>
+                  </a>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-0">
 

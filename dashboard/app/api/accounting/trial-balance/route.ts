@@ -36,6 +36,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "invalid dates" }, { status: 400 });
   }
 
+  if (to < from) {
+    return NextResponse.json({ error: "'to' must be >= 'from'" }, { status: 400 });
+  }
+
+  const diffDays = (to.getTime() - from.getTime()) / 86_400_000;
+  if (diffDays > 3660) {
+    return NextResponse.json({ error: "date range cannot exceed 10 years" }, { status: 400 });
+  }
+
   try {
     const rows = await query<{
       account_code: string;

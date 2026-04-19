@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import "server-only";
+import { type NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 
 export type PartnerType = "debtor" | "creditor";
@@ -41,79 +42,108 @@ async function ensureTables() {
   `);
 }
 
-export async function GET(request: Request) {
-  await ensureTables();
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_STR = 500;
+const MAX_AMOUNT = 100_000_000;
 
-  const { searchParams } = new URL(request.url);
-  const type = searchParams.get("type");
+export async function GET(request: NextRequest) {
+  try {
+    await ensureTables();
 
-  const params: (string | boolean)[] = [true];
-  let whereClause = "WHERE p.is_active = $1";
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get("type");
 
-  if (type === "debtor" || type === "creditor") {
-    params.push(type);
-    whereClause += ` AND p.type = $${params.length}`;
+    const params: (string | boolean)[] = [true];
+    let whereClause = "WHERE p.is_active = $1";
+
+    if (type === "debtor" || type === "creditor") {
+      params.push(type);
+      whereClause += ` AND p.type = $${params.length}`;
+    }
+
+    const rows = await query<PartnerRow>(`
+      SELECT
+        p.id, p.name, p.type, p.phone, p.note, p.is_active, p.created_at,
+        COALESCE(SUM(CASE WHEN t.tx_type = 'debit'  THEN t.amount ELSE 0         END), 0)::float AS opening_balance,
+        COALESCE(SUM(CASE WHEN t.tx_type = 'credit' THEN t.amount ELSE 0         END), 0)::float AS paid_amount,
+        COALESCE(SUM(CASE WHEN t.tx_type = 'debit'  THEN t.amount ELSE -t.amount END), 0)::float AS remaining
+      FROM accounting_partners p
+      LEFT JOIN accounting_partner_transactions t ON t.partner_id = p.id
+      ${whereClause}
+      GROUP BY p.id
+      ORDER BY p.name
+    `, params as string[]);
+
+    return NextResponse.json(rows);
+  } catch (err) {
+    console.error("[partners] GET error:", err);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
   }
-
-  const rows = await query<PartnerRow>(`
-    SELECT
-      p.id, p.name, p.type, p.phone, p.note, p.is_active, p.created_at,
-      COALESCE(SUM(CASE WHEN t.tx_type = 'debit'  THEN t.amount ELSE 0         END), 0)::float AS opening_balance,
-      COALESCE(SUM(CASE WHEN t.tx_type = 'credit' THEN t.amount ELSE 0         END), 0)::float AS paid_amount,
-      COALESCE(SUM(CASE WHEN t.tx_type = 'debit'  THEN t.amount ELSE -t.amount END), 0)::float AS remaining
-    FROM accounting_partners p
-    LEFT JOIN accounting_partner_transactions t ON t.partner_id = p.id
-    ${whereClause}
-    GROUP BY p.id
-    ORDER BY p.name
-  `, params as string[]);
-
-  return NextResponse.json(rows);
 }
 
-export async function POST(request: Request) {
-  await ensureTables();
+export async function POST(request: NextRequest) {
+  try {
+    await ensureTables();
 
-  const body = (await request.json()) as {
-    name?: string;
-    type?: string;
-    phone?: string;
-    note?: string;
-    initial_amount?: number;
-    initial_description?: string;
-    initial_date?: string;
-  };
+    const body = (await request.json()) as {
+      name?: string;
+      type?: string;
+      phone?: string;
+      note?: string;
+      initial_amount?: number;
+      initial_description?: string;
+      initial_date?: string;
+    };
 
-  if (!body.name?.trim()) {
-    return NextResponse.json({ error: "სახელი სავალდებულოა" }, { status: 400 });
-  }
-  if (body.type !== "debtor" && body.type !== "creditor") {
-    return NextResponse.json({ error: "ტიპი უნდა იყოს debtor ან creditor" }, { status: 400 });
-  }
+    const name = body.name?.trim() ?? "";
+    if (!name || name.length > MAX_STR) {
+      return NextResponse.json({ error: "სახელი სავალდებულოა (მაქს. 500 სიმბოლო)" }, { status: 400 });
+    }
+    if (body.type !== "debtor" && body.type !== "creditor") {
+      return NextResponse.json({ error: "ტიპი უნდა იყოს debtor ან creditor" }, { status: 400 });
+    }
 
-  const partner = await queryOne<{ id: number }>(
-    `INSERT INTO accounting_partners (name, type, phone, note)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id`,
-    [body.name.trim(), body.type, body.phone ?? null, body.note ?? null],
-  );
+    const phone = body.phone?.trim().slice(0, 50) ?? null;
+    const note  = body.note?.trim().slice(0, MAX_STR) ?? null;
 
-  if (!partner) {
-    return NextResponse.json({ error: "შეცდომა" }, { status: 500 });
-  }
+    if (body.initial_amount !== undefined) {
+      const amt = Number(body.initial_amount);
+      if (!Number.isFinite(amt) || amt < 0 || amt > MAX_AMOUNT) {
+        return NextResponse.json({ error: "არასწორი საწყისი თანხა" }, { status: 400 });
+      }
+    }
+    if (body.initial_date && !DATE_RE.test(body.initial_date)) {
+      return NextResponse.json({ error: "initial_date ფორმატი: YYYY-MM-DD" }, { status: 400 });
+    }
 
-  if (body.initial_amount && body.initial_amount > 0) {
-    await query(
-      `INSERT INTO accounting_partner_transactions (partner_id, tx_type, amount, description, tx_date)
-       VALUES ($1, 'debit', $2, $3, $4)`,
-      [
-        partner.id,
-        body.initial_amount,
-        body.initial_description ?? "საწყისი ნაშთი",
-        body.initial_date ?? new Date().toISOString().slice(0, 10),
-      ],
+    const partner = await queryOne<{ id: number }>(
+      `INSERT INTO accounting_partners (name, type, phone, note)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [name, body.type, phone, note],
     );
-  }
 
-  return NextResponse.json({ id: partner.id }, { status: 201 });
+    if (!partner) {
+      return NextResponse.json({ error: "server error" }, { status: 500 });
+    }
+
+    if (body.initial_amount && body.initial_amount > 0) {
+      const desc = body.initial_description?.trim().slice(0, MAX_STR) ?? "საწყისი ნაშთი";
+      await query(
+        `INSERT INTO accounting_partner_transactions (partner_id, tx_type, amount, description, tx_date)
+         VALUES ($1, 'debit', $2, $3, $4)`,
+        [
+          partner.id,
+          body.initial_amount,
+          desc,
+          body.initial_date ?? new Date().toISOString().slice(0, 10),
+        ],
+      );
+    }
+
+    return NextResponse.json({ id: partner.id }, { status: 201 });
+  } catch (err) {
+    console.error("[partners] POST error:", err);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
 }

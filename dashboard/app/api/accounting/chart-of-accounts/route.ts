@@ -100,6 +100,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (code.trim().length > 20) {
+      return NextResponse.json({ error: "code is too long (max 20)" }, { status: 400 });
+    }
+    if (name.trim().length > 200) {
+      return NextResponse.json({ error: "name is too long (max 200)" }, { status: 400 });
+    }
+
     const VALID_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
     if (!VALID_TYPES.includes(type as AccountType)) {
       return NextResponse.json({ error: "invalid type" }, { status: 400 });
