@@ -133,7 +133,8 @@ def _expense_action_kb(expense_id: int) -> InlineKeyboardMarkup:
 # ─── State groups ──────────────────────────────────────────────────────────────
 
 class SaleWizard(StatesGroup):
-    product     = State()   # user types OEM / name
+    oem         = State()   # OEM code (collected first, separate step)
+    product     = State()   # product name search
     select      = State()   # choose from list (if multiple matches)
     quantity    = State()   # how many units
     price_type  = State()   # unit price or total amount
@@ -146,6 +147,7 @@ class SaleWizard(StatesGroup):
 
 class NisiaWizard(StatesGroup):
     customer    = State()   # name / phone / both
+    oem         = State()   # OEM code (collected before product name)
     product     = State()
     select      = State()
     quantity    = State()
@@ -181,7 +183,8 @@ class NisiaEditWizard(StatesGroup):
     """
     field           = State()   # user picks which field to change
     value           = State()   # text input for simple fields
-    product_search  = State()   # user types new product name / OEM
+    product_oem     = State()   # step 1: user types new OEM code
+    product_search  = State()   # step 2: user types new product name
     product_select  = State()   # user picks from matches or marks freeform
     confirm         = State()   # final confirmation before saving
 
@@ -234,11 +237,12 @@ async def cb_more_sale(callback: CallbackQuery, state: FSMContext) -> None:
     """User wants to add another sale item in the same session."""
     assert isinstance(callback.message, Message)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await state.set_state(SaleWizard.product)
+    await state.set_state(SaleWizard.oem)
     await state.set_data({})
     await callback.message.answer(
-        "➕ <b>მომდევნო გაყიდვა</b>\n\n"
-        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        "➕ <b>მომდევნო გაყიდვა — ნაბიჯი 1/6</b>\n\n"
+        "1️⃣ ჩაწერე პროდუქტის <b>OEM კოდი</b>:\n"
+        "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>",
         parse_mode=_PARSE,
         reply_markup=_kb(_CANCEL_ROW),
     )
@@ -252,12 +256,13 @@ async def cb_more_nisia(callback: CallbackQuery, state: FSMContext) -> None:
     d = await state.get_data()
     customer = d.get("customer_name", "")
     await callback.message.edit_reply_markup(reply_markup=None)
-    await state.set_state(NisiaWizard.product)
+    await state.set_state(NisiaWizard.oem)
     await state.set_data({"customer_name": customer})
     await callback.message.answer(
         f"💳 <b>კიდევ ერთი ნისია</b>\n"
         f"👤 კლიენტი: <b>{_e(customer)}</b>\n\n"
-        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        "2️⃣ ჩაწერე პროდუქტის <b>OEM კოდი</b>:\n"
+        "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>",
         parse_mode=_PARSE,
         reply_markup=_kb(_CANCEL_ROW),
     )
@@ -286,13 +291,19 @@ async def cb_more_expense(callback: CallbackQuery, state: FSMContext) -> None:
 @wizard_router.callback_query(F.data == "wiz:main:sale", IsAdmin())
 async def sale_start(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
-    await state.set_state(SaleWizard.product)
+    await state.set_state(SaleWizard.oem)
     await callback.message.edit_text(
-        "➕ <b>გაყიდვა — ნაბიჯი 1/5</b>\n\n"
-        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        "➕ <b>გაყიდვა — ნაბიჯი 1/6</b>\n\n"
+        "1️⃣ ჩაწერე პროდუქტის <b>OEM კოდი</b>:\n"
+        "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>",
         parse_mode=_PARSE,
         reply_markup=_kb(_CANCEL_ROW),
     )
+
+
+@wizard_router.message(SaleWizard.oem, IsAdmin(), _PRIVATE)
+async def sale_oem_input(message: Message, state: FSMContext) -> None:
+    await _handle_wizard_oem_input(message, state, wizard="sale")
 
 
 @wizard_router.message(SaleWizard.product, IsAdmin(), _PRIVATE)
@@ -492,14 +503,20 @@ async def nisia_customer_input(message: Message, state: FSMContext, db: Database
         debt = sum(float(s["unit_price"]) * s["quantity"] for s in existing)
         debt_note = f"\n<i>📋 ამ კლიენტს უკვე აქვს <b>{debt:.2f}₾</b> ნისია</i>"
 
-    await state.set_state(NisiaWizard.product)
+    await state.set_state(NisiaWizard.oem)
     await message.answer(
-        f"💳 <b>ნისია — ნაბიჯი 2/5</b>\n"
+        f"💳 <b>ნისია — ნაბიჯი 2/6</b>\n"
         f"👤 კლიენტი: <b>{_e(customer)}</b>{debt_note}\n\n"
-        "ჩაწერე პროდუქტის <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+        "2️⃣ ჩაწერე პროდუქტის <b>OEM კოდი</b>:\n"
+        "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>",
         parse_mode=_PARSE,
         reply_markup=_kb(_CANCEL_ROW),
     )
+
+
+@wizard_router.message(NisiaWizard.oem, IsAdmin(), _PRIVATE)
+async def nisia_oem_input(message: Message, state: FSMContext) -> None:
+    await _handle_wizard_oem_input(message, state, wizard="nisia")
 
 
 @wizard_router.message(NisiaWizard.product, IsAdmin(), _PRIVATE)
@@ -1098,11 +1115,12 @@ async def nisia_edit_field(callback: CallbackQuery, state: FSMContext, db: Datab
     await state.update_data(edit_field=field)
 
     if field == "prod":
-        await state.set_state(NisiaEditWizard.product_search)
+        await state.set_state(NisiaEditWizard.product_oem)
         current = sale.get("product_name") or sale.get("notes") or "—"
         await callback.message.edit_text(
             f"📦 <b>ახალი პროდუქტი</b> (ახლა: {_e(current)})\n\n"
-            "ჩაწერე <b>OEM კოდი</b> ან <b>დასახელება</b>:",
+            "1️⃣ ჩაწერე <b>OEM კოდი</b>:\n"
+            "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>",
             parse_mode=_PARSE,
             reply_markup=_kb(_CANCEL_ROW),
         )
@@ -1175,16 +1193,41 @@ async def nisia_edit_value_input(message: Message, state: FSMContext) -> None:
     )
 
 
+@wizard_router.message(NisiaEditWizard.product_oem, IsAdmin(), _PRIVATE)
+async def nisia_edit_product_oem_input(
+    message: Message, state: FSMContext,
+) -> None:
+    """Step 1 of product edit: collect OEM, then ask for product name."""
+    raw = (message.text or "").strip()
+    oem = None if raw == "-" else (raw or None)
+    await state.update_data(_edit_oem=oem)
+    await state.set_state(NisiaEditWizard.product_search)
+    oem_line = f"✅ OEM: <code>{_e(oem)}</code>\n\n" if oem else ""
+    await message.answer(
+        f"{oem_line}"
+        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+
+
 @wizard_router.message(NisiaEditWizard.product_search, IsAdmin(), _PRIVATE)
 async def nisia_edit_product_search(
     message: Message, state: FSMContext, db: Database,
 ) -> None:
     query = (message.text or "").strip()
     if not query:
-        await message.answer("⚠️ ჩაწერე დასახელება ან OEM.", parse_mode=_PARSE)
+        await message.answer("⚠️ ჩაწერე პროდუქტის დასახელება.", parse_mode=_PARSE)
         return
 
-    products = await db.search_products(query, limit=6)
+    data = await state.get_data()
+    edit_oem: Optional[str] = data.get("_edit_oem")
+
+    products: list = []
+    if edit_oem:
+        products = await db.search_products(edit_oem, limit=6)
+    if not products:
+        products = await db.search_products(query, limit=6)
 
     if len(products) == 1:
         p = products[0]
@@ -1796,28 +1839,44 @@ async def expense_edit_cancel(callback: CallbackQuery, state: FSMContext) -> Non
 # Shared sub-flows (product search, quantity, price)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+async def _handle_wizard_oem_input(
+    message: Message, state: FSMContext, wizard: str
+) -> None:
+    """Step 1 of product entry: collect OEM code, then ask for product name."""
+    raw = (message.text or "").strip()
+    oem = None if raw == "-" else (raw or None)
+    await state.update_data(entered_oem=oem)
+
+    product_state = SaleWizard.product if wizard == "sale" else NisiaWizard.product
+    await state.set_state(product_state)
+
+    step = "2" if wizard == "sale" else "3"
+    oem_line = f"✅ OEM: <code>{_e(oem)}</code>\n\n" if oem else ""
+    await message.answer(
+        f"{oem_line}"
+        f"➕ <b>ნაბიჯი {step}/6</b>\n\n"
+        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+
+
 async def _handle_product_search(
     message: Message, state: FSMContext, db: Database, wizard: str
 ) -> None:
+    """Step 2: receive product name, search DB (using stored OEM if available)."""
     query = (message.text or "").strip()
     if not query:
         return
 
-    # Detect combined "OEM_CODE Georgian_Name" input (e.g. "8390132500მარჭვენა სარკე")
-    # and try searching by the OEM part first, then by the name part.
-    oem_split = _OEM_SPLIT_RE.match(query)
-    if oem_split:
-        oem_part  = oem_split.group(1).strip()
-        name_part = oem_split.group(2).strip()
-        products_by_oem = await db.search_products(oem_part, limit=6)
-        if products_by_oem:
-            products = products_by_oem
-        else:
-            products_by_name = await db.search_products(name_part, limit=6)
-            products = products_by_name if products_by_name else await db.search_products(query, limit=6)
-        # Pre-fill product_name as the human-readable part so freeform fallback is useful
-        await state.update_data(product_name=name_part)
-    else:
+    data = await state.get_data()
+    entered_oem: Optional[str] = data.get("entered_oem")
+
+    # Try OEM-based search first (exact / prefix match), then fall back to name.
+    products: list = []
+    if entered_oem:
+        products = await db.search_products(entered_oem, limit=6)
+    if not products:
         products = await db.search_products(query, limit=6)
 
     if len(products) == 1:

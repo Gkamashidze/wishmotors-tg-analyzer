@@ -1573,10 +1573,28 @@ class AddProductState(StatesGroup):
 @commands_router.message(Command("addproduct"), IsAdmin())
 async def cmd_addproduct(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_state(AddProductState.name)
+    await state.set_state(AddProductState.oem)
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text="➕ <b>ახალი პროდუქტი — 1/5</b>\n\n<b>დასახელება:</b>",
+        text=(
+            "➕ <b>ახალი პროდუქტი — 1/5</b>\n\n"
+            "1️⃣ <b>OEM კოდი:</b>\n"
+            "<i>გამოტოვებისთვის გამოგზავნე <code>-</code></i>"
+        ),
+        parse_mode=_PARSE,
+    )
+
+
+@commands_router.message(StateFilter(AddProductState.oem), IsAdmin())
+async def addproduct_oem(message: Message, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    oem = None if raw == "-" else raw
+    await state.update_data(ap_oem=oem)
+    await state.set_state(AddProductState.name)
+    oem_line = f"✅ OEM: <code>{html.escape(oem)}</code>\n\n" if oem else ""
+    await message.reply(
+        f"{oem_line}"
+        "<b>2/5 — პროდუქტის დასახელება:</b>",
         parse_mode=_PARSE,
     )
 
@@ -1588,20 +1606,6 @@ async def addproduct_name(message: Message, state: FSMContext) -> None:
         await message.reply("❌ სახელი ცარიელია.", parse_mode=_PARSE)
         return
     await state.update_data(ap_name=name)
-    await state.set_state(AddProductState.oem)
-    await message.reply(
-        f"✅ <b>{html.escape(name)}</b>\n\n"
-        "<b>2/5 — OEM კოდი</b>\n"
-        "გამოტოვებისთვის გამოგზავნე <code>-</code>",
-        parse_mode=_PARSE,
-    )
-
-
-@commands_router.message(StateFilter(AddProductState.oem), IsAdmin())
-async def addproduct_oem(message: Message, state: FSMContext) -> None:
-    raw = (message.text or "").strip()
-    oem = None if raw == "-" else raw
-    await state.update_data(ap_oem=oem)
     await state.set_state(AddProductState.qty)
     await message.reply("<b>3/5 — საწყისი რაოდენობა</b> (მთელი რიცხვი):", parse_mode=_PARSE)
 
