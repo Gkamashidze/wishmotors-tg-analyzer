@@ -212,14 +212,14 @@ def _async_state() -> AsyncMock:
 
 
 class TestCmdAddProduct:
-    async def test_clears_state_and_asks_for_name(self):
+    async def test_clears_state_and_asks_for_oem(self):
         msg = _msg("/addproduct")
         state = _async_state()
         await cmd_addproduct(msg, state)
         state.clear.assert_called_once()
         state.set_state.assert_called_once()
         text = _sent_text(msg)
-        assert "დასახელება" in text
+        assert "OEM" in text
 
     async def test_sends_to_private_dm(self):
         """Handler must DM the user, not reply in-group."""
