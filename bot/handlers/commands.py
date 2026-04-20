@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
-import openpyxl
 import pytz
 
 from aiogram import Router
@@ -19,7 +18,7 @@ from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKe
 import config
 from bot.financial_ai import generate_weekly_advice
 from bot.handlers import IsAdmin, is_rate_limited
-from bot.parsers.message_parser import sanitize_oem
+from bot.parsers.import_excel_parser import parse_import_excel
 from bot.handlers.topic_messages import mark_cancelled, restore_original
 from bot.reports.formatter import (
     format_cash_on_hand,
@@ -1723,7 +1722,7 @@ async def addproduct_price(message: Message, state: FSMContext, db: Database) ->
 
 
 
-# ─── /import — Excel product import ──────────────────────────────────────────
+# ─── /import — Excel cost-tracking import (9 columns) ────────────────────────
 
 class ImportState(StatesGroup):
     waiting_file = State()
@@ -1731,15 +1730,18 @@ class ImportState(StatesGroup):
 
 @commands_router.message(Command("import"), IsAdmin())
 async def cmd_import(message: Message, state: FSMContext) -> None:
-    """Start Excel import wizard."""
+    """Start Excel import wizard (9-column cost-tracking format)."""
     await state.set_state(ImportState.waiting_file)
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=(
             "📂 <b>Excel-ის იმპორტი</b>\n\n"
-            "გამოაგზავნე <b>.xlsx</b> ფაილი სვეტებით:\n"
-            "<code>OEM კოდი | დასახელება | რაოდენობა | ერთ. ზომა</code>\n\n"
-            "პირველი სტრიქონი — სათაური (გამოტოვდება)."
+            "გამოაგზავნე <b>.xlsx</b> ფაილი <b>9 სვეტით</b>:\n"
+            "<code>თარიღი | OEM | დასახელება | რაოდ. | ერთ. | ფასი$ | კურსი | ტრანსპ.₾ | სხვა₾</code>\n\n"
+            "• სვეტები 8–9 (ტრანსპ./სხვა) შეიძლება ცარიელი იყოს → 0 ჩაითვლება\n"
+            "• პირველი სტრიქონი — სათაური (გამოტოვდება)\n"
+            "• თვითღირებულება = (ფასი$ × კურსი) + ტრანსპ. + სხვა\n"
+            "• სარეკომენდაციო = თვითღირებ. × 1.4"
         ),
         parse_mode=_PARSE,
     )
@@ -1747,7 +1749,7 @@ async def cmd_import(message: Message, state: FSMContext) -> None:
 
 @commands_router.message(StateFilter(ImportState.waiting_file), IsAdmin())
 async def import_file_received(message: Message, state: FSMContext, db: "Database") -> None:
-    """Handle the uploaded Excel file."""
+    """Handle the uploaded 9-column import Excel file."""
     doc: Optional[Document] = message.document
     if not doc or not (doc.file_name or "").lower().endswith(".xlsx"):
         await message.bot.send_message(
@@ -1764,35 +1766,15 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
         parse_mode=_PARSE,
     )
 
-    # Download file bytes
+    # Download
     file = await message.bot.get_file(doc.file_id)
     buf = io.BytesIO()
     await message.bot.download_file(file.file_path, destination=buf)
     buf.seek(0)
 
-    # Parse Excel
+    # Parse with new 9-column parser
     try:
-        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
-        ws = wb.active
-        rows_data = []
-        skipped = 0
-        for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True)):
-            oem_raw, name_raw, qty_raw, unit_raw = (row[0], row[1], row[2], row[3]) if len(row) >= 4 else (None, None, None, None)
-            name = str(name_raw).strip() if name_raw else ""
-            if not name:
-                skipped += 1
-                continue
-            try:
-                qty = int(float(str(qty_raw).replace(",", "."))) if qty_raw is not None else 0
-            except (ValueError, TypeError):
-                qty = 0
-            rows_data.append({
-                "oem_code": sanitize_oem(oem_raw),
-                "name": name,
-                "current_stock": qty,
-                "unit": str(unit_raw).strip() if unit_raw else "ც",
-            })
-        wb.close()
+        import_rows, parse_errors = parse_import_excel(buf)
     except Exception as e:
         await status_msg.edit_text(
             f"❌ ფაილი ვერ წავიკითხე: {html.escape(str(e))}",
@@ -1800,15 +1782,51 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
         )
         return
 
-    if not rows_data:
-        await status_msg.edit_text("⚠️ ფაილი ცარიელია ან ყველა სტრიქონი გამოტოვდა.", parse_mode=_PARSE)
+    if not import_rows:
+        err_preview = "\n".join(parse_errors[:5])
+        await status_msg.edit_text(
+            f"⚠️ ფაილი ცარიელია ან ყველა სტრიქონი გამოტოვდა.\n\n{html.escape(err_preview)}",
+            parse_mode=_PARSE,
+        )
         return
 
-    added, updated = await db.upsert_products_bulk(rows_data)
-    skip_line = f"\n⏭ გამოტოვებული: {skipped}" if skipped else ""
-    await status_msg.edit_text(
-        f"✅ <b>იმპორტი დასრულდა</b>\n\n"
-        f"➕ დამატებული: <b>{added}</b>\n"
-        f"🔄 განახლებული: <b>{updated}</b>{skip_line}",
-        parse_mode=_PARSE,
-    )
+    # Persist to inventory (receive_inventory_batch) + imports_history atomically
+    added = updated = failed = 0
+    for r in import_rows:
+        try:
+            result = await db.receive_inventory_batch(
+                name=r.name,
+                oem_code=r.oem,
+                quantity=r.quantity,
+                unit_cost=r.total_unit_cost_gel,
+                min_stock=0,
+                unit=r.unit,
+                received_at=datetime.combine(r.import_date, datetime.min.time()),
+            )
+            if result["was_created"]:
+                added += 1
+            else:
+                updated += 1
+        except Exception:
+            failed += 1
+
+    # Save cost history regardless of individual batch failures
+    history_rows = [r.to_dict() for r in import_rows]
+    await db.save_import_history_rows(history_rows)
+
+    # Build summary
+    lines = [
+        "✅ <b>იმპორტი დასრულდა</b>\n",
+        f"➕ ახალი პროდუქტი: <b>{added}</b>",
+        f"🔄 განახლებული: <b>{updated}</b>",
+    ]
+    if failed:
+        lines.append(f"⚠️ შეცდომა: <b>{failed}</b>")
+    if parse_errors:
+        lines.append(f"\n📋 გამოტოვებული სტრიქონები: {len(parse_errors)}")
+        for err in parse_errors[:3]:
+            lines.append(f"  • {html.escape(err)}")
+        if len(parse_errors) > 3:
+            lines.append(f"  … და კიდევ {len(parse_errors) - 3}")
+
+    await status_msg.edit_text("\n".join(lines), parse_mode=_PARSE)

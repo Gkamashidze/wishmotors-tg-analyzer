@@ -243,6 +243,27 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_vat_included  BOOLEAN        NO
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS vat_amount      NUMERIC(12, 2) NOT NULL DEFAULT 0;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS is_vat_included BOOLEAN        NOT NULL DEFAULT FALSE;
 
+-- Import cost history: one row per product per import batch.
+-- Stores all cost components so WAC can be audited independently.
+CREATE TABLE IF NOT EXISTS imports_history (
+    id                         SERIAL PRIMARY KEY,
+    import_date                DATE           NOT NULL,
+    oem                        TEXT           NOT NULL,
+    name                       TEXT           NOT NULL,
+    quantity                   NUMERIC(14, 3) NOT NULL CHECK (quantity > 0),
+    unit                       TEXT           NOT NULL DEFAULT 'ც',
+    unit_price_usd             NUMERIC(12, 4) NOT NULL CHECK (unit_price_usd >= 0),
+    exchange_rate              NUMERIC(10, 4) NOT NULL CHECK (exchange_rate > 0),
+    transport_cost_gel         NUMERIC(12, 4) NOT NULL DEFAULT 0 CHECK (transport_cost_gel >= 0),
+    other_cost_gel             NUMERIC(12, 4) NOT NULL DEFAULT 0 CHECK (other_cost_gel >= 0),
+    total_unit_cost_gel        NUMERIC(12, 4) NOT NULL CHECK (total_unit_cost_gel >= 0),
+    suggested_retail_price_gel NUMERIC(12, 4) NOT NULL CHECK (suggested_retail_price_gel >= 0),
+    created_at                 TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_imports_history_date ON imports_history(import_date DESC);
+CREATE INDEX IF NOT EXISTS idx_imports_history_oem  ON imports_history(oem);
+
 -- Internal transfers between accounts (e.g. cash_gel → bank_gel).
 -- Affects balance of both the source and destination account.
 CREATE TABLE IF NOT EXISTS transfers (
@@ -351,6 +372,22 @@ class TransferRow(TypedDict):
     from_account: str
     to_account: str
     note: Optional[str]
+    created_at: object  # datetime
+
+
+class ImportHistoryRow(TypedDict):
+    id: int
+    import_date: object  # date
+    oem: str
+    name: str
+    quantity: float
+    unit: str
+    unit_price_usd: float
+    exchange_rate: float
+    transport_cost_gel: float
+    other_cost_gel: float
+    total_unit_cost_gel: float
+    suggested_retail_price_gel: float
     created_at: object  # datetime
 
 

@@ -2314,3 +2314,43 @@ class Database:
                 "DELETE FROM deleted_sales WHERE expires_at < NOW()"
             )
             return int(result.split()[-1])
+
+    # ─── Import history ──────────────────────────────────────────────────────────
+
+    async def save_import_history_rows(self, rows: list) -> int:
+        """Insert multiple import history rows in one transaction. Returns row count."""
+        if not rows:
+            return 0
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                for r in rows:
+                    await conn.execute(
+                        """INSERT INTO imports_history
+                               (import_date, oem, name, quantity, unit,
+                                unit_price_usd, exchange_rate,
+                                transport_cost_gel, other_cost_gel,
+                                total_unit_cost_gel, suggested_retail_price_gel)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+                        r["import_date"], r["oem"], r["name"],
+                        r["quantity"], r["unit"],
+                        r["unit_price_usd"], r["exchange_rate"],
+                        r["transport_cost_gel"], r["other_cost_gel"],
+                        r["total_unit_cost_gel"], r["suggested_retail_price_gel"],
+                    )
+        return len(rows)
+
+    async def get_imports_history(self, limit: int = 500) -> list:
+        """Return recent import history rows ordered by import_date DESC."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, import_date, oem, name, quantity, unit,
+                          unit_price_usd, exchange_rate,
+                          transport_cost_gel, other_cost_gel,
+                          total_unit_cost_gel, suggested_retail_price_gel,
+                          created_at
+                   FROM imports_history
+                   ORDER BY import_date DESC, created_at DESC
+                   LIMIT $1""",
+                limit,
+            )
+        return [dict(r) for r in rows]

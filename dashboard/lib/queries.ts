@@ -406,6 +406,76 @@ export async function getDashboardSummaryRange(
   };
 }
 
+// ─── Imports history ──────────────────────────────────────────────────────────
+
+export type ImportHistoryRow = {
+  id: number;
+  importDate: string;
+  oem: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  unitPriceUsd: number;
+  exchangeRate: number;
+  transportCostGel: number;
+  otherCostGel: number;
+  totalUnitCostGel: number;
+  suggestedRetailPriceGel: number;
+  createdAt: string;
+};
+
+export async function getImportsHistory(
+  limit: number = 1000,
+): Promise<ImportHistoryRow[]> {
+  const rows = await query<{
+    id: number;
+    import_date: Date;
+    oem: string;
+    name: string;
+    quantity: string;
+    unit: string;
+    unit_price_usd: string;
+    exchange_rate: string;
+    transport_cost_gel: string;
+    other_cost_gel: string;
+    total_unit_cost_gel: string;
+    suggested_retail_price_gel: string;
+    created_at: Date;
+  }>(
+    `SELECT id, import_date, oem, name, quantity, unit,
+            unit_price_usd, exchange_rate,
+            transport_cost_gel, other_cost_gel,
+            total_unit_cost_gel, suggested_retail_price_gel,
+            created_at
+     FROM imports_history
+     ORDER BY import_date DESC, created_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    importDate:
+      r.import_date instanceof Date
+        ? r.import_date.toISOString().slice(0, 10)
+        : String(r.import_date).slice(0, 10),
+    oem: r.oem,
+    name: r.name,
+    quantity: Number(r.quantity),
+    unit: r.unit,
+    unitPriceUsd: Number(r.unit_price_usd),
+    exchangeRate: Number(r.exchange_rate),
+    transportCostGel: Number(r.transport_cost_gel),
+    otherCostGel: Number(r.other_cost_gel),
+    totalUnitCostGel: Number(r.total_unit_cost_gel),
+    suggestedRetailPriceGel: Number(r.suggested_retail_price_gel),
+    createdAt:
+      r.created_at instanceof Date
+        ? r.created_at.toISOString()
+        : String(r.created_at),
+  }));
+}
+
 export async function getProducts(): Promise<ProductRow[]> {
   const rows = await query<{
     id: number;
