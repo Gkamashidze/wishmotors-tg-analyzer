@@ -15,7 +15,13 @@ import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { AiFinancialManager } from "@/components/dashboard/ai-financial-manager";
 import { AccountBalancesSection } from "@/components/dashboard/account-balances-section";
 import { formatNumber } from "@/lib/utils";
-import { getDailySeries, getDashboardSummaryRange } from "@/lib/queries";
+import {
+  getDailySeries,
+  getDashboardSummaryRange,
+  getTopSellingProducts,
+  getTopProfitableProducts,
+} from "@/lib/queries";
+import { TopProductsSection } from "@/components/dashboard/top-products-section";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,9 +30,11 @@ export default async function DashboardPage() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const [summary, series] = await Promise.all([
+  const [summary, series, topSelling, topProfitable] = await Promise.all([
     getDashboardSummaryRange(monthStart, today),
     getDailySeries(30),
+    getTopSellingProducts(10),
+    getTopProfitableProducts(10),
   ]);
 
   return (
@@ -83,6 +91,11 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </section>
+
+        <TopProductsSection
+          topSelling={topSelling}
+          topProfitable={topProfitable}
+        />
 
         <section>
           <AiFinancialManager />

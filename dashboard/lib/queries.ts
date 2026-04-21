@@ -476,6 +476,137 @@ export async function getImportsHistory(
   }));
 }
 
+// ─── Top Products Analytics ───────────────────────────────────────────────────
+
+export type TopProductRow = {
+  productId: number | null;
+  productName: string;
+  oemCode: string | null;
+  totalQuantity: number;
+  totalRevenue: number;
+  totalProfit: number;
+};
+
+export async function getTopSellingProducts(
+  limit: number = 10,
+  from?: Date,
+  to?: Date,
+): Promise<TopProductRow[]> {
+  const hasRange = from && to;
+  const rows = await query<{
+    product_id: number | null;
+    product_name: string;
+    oem_code: string | null;
+    total_quantity: string;
+    total_revenue: string;
+    total_profit: string;
+  }>(
+    hasRange
+      ? `
+        SELECT
+          s.product_id,
+          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+          p.oem_code,
+          SUM(s.quantity)                        AS total_quantity,
+          SUM(s.quantity * s.unit_price)         AS total_revenue,
+          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
+        FROM sales s
+        LEFT JOIN products p ON p.id = s.product_id
+        WHERE s.sold_at >= $2::timestamptz
+          AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+        GROUP BY s.product_id, p.name, p.oem_code
+        ORDER BY total_quantity DESC
+        LIMIT $1
+        `
+      : `
+        SELECT
+          s.product_id,
+          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+          p.oem_code,
+          SUM(s.quantity)                        AS total_quantity,
+          SUM(s.quantity * s.unit_price)         AS total_revenue,
+          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
+        FROM sales s
+        LEFT JOIN products p ON p.id = s.product_id
+        GROUP BY s.product_id, p.name, p.oem_code
+        ORDER BY total_quantity DESC
+        LIMIT $1
+        `,
+    hasRange
+      ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
+      : [limit],
+  );
+
+  return rows.map((r) => ({
+    productId: r.product_id,
+    productName: r.product_name,
+    oemCode: r.oem_code,
+    totalQuantity: Number(r.total_quantity),
+    totalRevenue: Number(r.total_revenue),
+    totalProfit: Number(r.total_profit),
+  }));
+}
+
+export async function getTopProfitableProducts(
+  limit: number = 10,
+  from?: Date,
+  to?: Date,
+): Promise<TopProductRow[]> {
+  const hasRange = from && to;
+  const rows = await query<{
+    product_id: number | null;
+    product_name: string;
+    oem_code: string | null;
+    total_quantity: string;
+    total_revenue: string;
+    total_profit: string;
+  }>(
+    hasRange
+      ? `
+        SELECT
+          s.product_id,
+          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+          p.oem_code,
+          SUM(s.quantity)                        AS total_quantity,
+          SUM(s.quantity * s.unit_price)         AS total_revenue,
+          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
+        FROM sales s
+        LEFT JOIN products p ON p.id = s.product_id
+        WHERE s.sold_at >= $2::timestamptz
+          AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+        GROUP BY s.product_id, p.name, p.oem_code
+        ORDER BY total_profit DESC
+        LIMIT $1
+        `
+      : `
+        SELECT
+          s.product_id,
+          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+          p.oem_code,
+          SUM(s.quantity)                        AS total_quantity,
+          SUM(s.quantity * s.unit_price)         AS total_revenue,
+          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
+        FROM sales s
+        LEFT JOIN products p ON p.id = s.product_id
+        GROUP BY s.product_id, p.name, p.oem_code
+        ORDER BY total_profit DESC
+        LIMIT $1
+        `,
+    hasRange
+      ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
+      : [limit],
+  );
+
+  return rows.map((r) => ({
+    productId: r.product_id,
+    productName: r.product_name,
+    oemCode: r.oem_code,
+    totalQuantity: Number(r.total_quantity),
+    totalRevenue: Number(r.total_revenue),
+    totalProfit: Number(r.total_profit),
+  }));
+}
+
 export async function getProducts(): Promise<ProductRow[]> {
   const rows = await query<{
     id: number;
