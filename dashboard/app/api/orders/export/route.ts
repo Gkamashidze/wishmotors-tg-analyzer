@@ -15,8 +15,9 @@ interface OrderExportRow {
 
 const PRIORITY_MAP: Record<string, string> = {
   urgent: "სასწრაფო",
-  normal: "ჩვეულებრივი",
-  low: "დაბალი",
+  low: "არც ისე სასწრაფო",
+  // Legacy: old rows may still carry 'normal' — map to low label.
+  normal: "არც ისე სასწრაფო",
 };
 
 const STATUS_MAP: Record<string, string> = {
@@ -27,7 +28,7 @@ const STATUS_MAP: Record<string, string> = {
   completed: "შესრულდა",
 };
 
-const VALID_PRIORITIES = new Set(["all", "urgent", "normal", "low"]);
+const VALID_PRIORITIES = new Set(["all", "urgent", "low"]);
 const VALID_STATUSES = new Set(["all", "pending", "ordered", "received", "cancelled", "completed"]);
 
 export async function GET(req: NextRequest) {

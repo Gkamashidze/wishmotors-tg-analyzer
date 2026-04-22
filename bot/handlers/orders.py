@@ -23,9 +23,10 @@ orders_router = Router(name="orders")
 _PARSE = ParseMode.HTML
 
 _PRIORITY_LABEL = {
-    ORDER_PRIORITY_URGENT: "🔴 სასწრაფო — ახლავე",
-    "normal": "🟡 ჩვეულებრივი",
-    ORDER_PRIORITY_LOW: "🟢 ლოდინი — ჯერ არ მჭირდება",
+    ORDER_PRIORITY_URGENT: "🚨 სასწრაფო — ახლავე",
+    ORDER_PRIORITY_LOW: "🟢 არც ისე სასწრაფო",
+    # Legacy value: map 'normal' to low label so old DB rows display correctly.
+    "normal": "🟢 არც ისე სასწრაფო",
 }
 
 
@@ -66,7 +67,7 @@ async def handle_order_message(message: Message, db: Database) -> None:
             notes=text,
         )
 
-        priority_label = _PRIORITY_LABEL.get(parsed.priority, "🟡 ჩვეულებრივი")
+        priority_label = _PRIORITY_LABEL.get(parsed.priority, "🟢 არც ისე სასწრაფო")
         qty_line = f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც\n" if parsed.quantity else ""
         await message.bot.send_message(
             chat_id=message.from_user.id,

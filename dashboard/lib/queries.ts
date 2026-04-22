@@ -146,7 +146,7 @@ export type OrderRow = {
   oemCode: string | null;
   quantityNeeded: number;
   status: string;
-  priority: "urgent" | "normal" | "low" | string;
+  priority: "urgent" | "low" | string;
   createdAt: string;
   notes: string | null;
 };
@@ -181,7 +181,7 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
       LEFT JOIN products p ON p.id = o.product_id
       ORDER BY
         CASE COALESCE(o.status, 'pending') WHEN 'pending' THEN 0 ELSE 1 END,
-        CASE COALESCE(o.priority, 'normal') WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+        CASE COALESCE(o.priority, 'low') WHEN 'urgent' THEN 0 ELSE 1 END,
         o.created_at DESC
       LIMIT $1
       `,

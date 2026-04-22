@@ -191,8 +191,10 @@ ALTER TABLE products ALTER COLUMN unit SET DEFAULT 'ცალი';
 -- Track whether a company (შპს) sale has been receipted at the cash register
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS receipt_printed BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Order priority: urgent | normal | low
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
+-- Order priority: urgent | low  (legacy 'normal' rows already normalized to 'low')
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'low';
+-- Change column default so any future INSERT without explicit priority lands on 'low'.
+ALTER TABLE orders ALTER COLUMN priority SET DEFAULT 'low';
 
 DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
@@ -364,7 +366,7 @@ class OrderRow(TypedDict):
     client_id: Optional[int]
     quantity_needed: int
     status: str
-    priority: str  # urgent | normal | low
+    priority: str  # urgent | low
     created_at: object  # datetime
     notes: Optional[str]
     product_name: Optional[str]

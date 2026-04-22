@@ -1264,7 +1264,7 @@ class Database:
         self,
         product_id: Optional[int],
         quantity_needed: int,
-        priority: str = "normal",
+        priority: str = "low",
         notes: Optional[str] = None,
         oem_code: Optional[str] = None,
     ) -> int:
@@ -1330,7 +1330,7 @@ class Database:
                             f"Row {idx}: quantity_needed is missing — item keys: {list(item.keys())}"
                         )
                     quantity_needed = int(raw_qty)
-                    priority: str = str(item.get("priority") or "normal")
+                    priority: str = str(item.get("priority") or "low")
                     notes: Optional[str] = item.get("notes")
                     oem_code: Optional[str] = item.get("oem_code")
                     client_id: Optional[int] = item.get("client_id")
@@ -1472,8 +1472,6 @@ class Database:
                        ORDER BY
                          CASE o.priority
                            WHEN 'urgent' THEN 1
-                           WHEN 'normal' THEN 2
-                           WHEN 'low'    THEN 3
                            ELSE 2
                          END,
                          o.id""",

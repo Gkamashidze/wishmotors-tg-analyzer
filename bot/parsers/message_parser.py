@@ -68,7 +68,7 @@ class ParsedExpense:
 
 
 ORDER_PRIORITY_URGENT = "urgent"
-ORDER_PRIORITY_NORMAL = "normal"
+ORDER_PRIORITY_NORMAL = "normal"  # legacy — retained for import compat; do not use in new code
 ORDER_PRIORITY_LOW = "low"
 
 
@@ -76,7 +76,7 @@ ORDER_PRIORITY_LOW = "low"
 class ParsedOrder:
     raw_product: str
     quantity: int
-    priority: str = ORDER_PRIORITY_NORMAL  # urgent | normal | low
+    priority: str = ORDER_PRIORITY_LOW  # urgent | low
     notes: str = ""
 
 
@@ -214,12 +214,13 @@ _PRIORITY_LOW_RE = re.compile(r"ლოდინ|არ\s+მჭირდებ�
 
 
 def _detect_priority(text: str) -> str:
-    """Return order priority based on keyword in text."""
+    """Return order priority based on keyword in text.
+
+    Defaults to 'low' — 'normal' is no longer a valid priority value.
+    """
     if _PRIORITY_URGENT_RE.search(text):
         return ORDER_PRIORITY_URGENT
-    if _PRIORITY_LOW_RE.search(text):
-        return ORDER_PRIORITY_LOW
-    return ORDER_PRIORITY_NORMAL
+    return ORDER_PRIORITY_LOW
 
 # Phone number — silently ignored in sales topic (contact info, not a sale).
 # Covers: +995 592 15 90 52  |  592159052  |  555 12 34 56  |  032 2 XX XX XX
