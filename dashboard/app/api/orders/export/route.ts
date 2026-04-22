@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { query } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 interface OrderExportRow {
   id: number;
   oem_code: string | null;
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
             COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
             COALESCE(p.name, NULLIF(o.part_name, ''), 'ძველი ჩანაწერი') AS product_name,
             COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
-            COALESCE(o.priority, 'low')                                  AS priority,
+            CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END  AS priority,
             COALESCE(o.status, 'pending')                                AS status,
             o.notes,
             COALESCE(o.created_at, NOW())                                AS created_at

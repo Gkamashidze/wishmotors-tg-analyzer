@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 import { telegramMarkCancelled, telegramMarkUpdated } from "@/lib/telegram";
 import { formatTopicOrder } from "@/lib/formatters";
 

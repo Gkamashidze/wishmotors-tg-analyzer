@@ -174,7 +174,7 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
         COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
         COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
         COALESCE(o.status, 'pending')                                AS status,
-        COALESCE(o.priority, 'low')                                  AS priority,
+        CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END AS priority,
         COALESCE(o.created_at, NOW())                                AS created_at,
         o.notes
       FROM orders o
