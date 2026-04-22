@@ -89,7 +89,7 @@ export function MobileNav() {
               width={36}
               height={36}
               priority
-              quality={90}
+              unoptimized
               className="h-9 w-9 rounded-lg object-contain"
             />
           </div>
