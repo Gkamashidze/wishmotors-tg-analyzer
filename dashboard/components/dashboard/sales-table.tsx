@@ -89,6 +89,8 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
   const [deleteRow, setDeleteRow] = useState<SaleRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [returnRow, setReturnRow] = useState<SaleRow | null>(null);
+  const [returning, setReturning] = useState(false);
 
   const productOptions = useMemo(() => [
     { value: "", label: "— პროდუქტი არ არის —" },
@@ -172,6 +174,24 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
       setDeleting(false);
     }
   }, [deleteRow, router]);
+
+  const handleReturn = useCallback(async (method: "cash" | "bank") => {
+    if (!returnRow) return;
+    setReturning(true);
+    try {
+      const res = await fetch(`/api/sales/${returnRow.id}/return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refund_method: method }),
+      });
+      if (!res.ok) throw new Error("server error");
+      setReturnRow(null);
+      closeEdit();
+      router.refresh();
+    } finally {
+      setReturning(false);
+    }
+  }, [returnRow, closeEdit, router]);
 
   const set = (key: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
@@ -355,9 +375,19 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
               <Select id="sale-vat-inc" label="დღგ ჩართულია?" options={[{ value: "false", label: "არა" }, { value: "true", label: "დიახ" }]} value={editState.is_vat_included} onChange={set("is_vat_included")} />
             </div>
             <Textarea id="sale-notes" label="შენიშვნა" value={editState.notes} onChange={set("notes")} rows={2} placeholder="სურვილისამებრ..." />
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
-              <Button onClick={handleSave} disabled={saving} className="cursor-pointer">{saving ? "ინახება..." : "შენახვა"}</Button>
+            <div className="flex justify-between gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setReturnRow(editRow)}
+                disabled={saving}
+                className="cursor-pointer text-destructive border-destructive/40 hover:bg-destructive/10"
+              >
+                დაბრუნება
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
+                <Button onClick={handleSave} disabled={saving} className="cursor-pointer">{saving ? "ინახება..." : "შენახვა"}</Button>
+              </div>
             </div>
           </div>
         )}
@@ -372,6 +402,52 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
         description={`გსურთ გაყიდვა #${deleteRow?.id} (${deleteRow?.productName ?? "—"}) წაშლა? ეს მოქმედება შეუქცევადია.`}
         loading={deleting}
       />
+
+      {/* Return — Refund Method Modal */}
+      <Dialog
+        open={!!returnRow}
+        onClose={() => setReturnRow(null)}
+        title="გაყიდვის დაბრუნება"
+      >
+        {returnRow && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{returnRow.productName ?? `#${returnRow.id}`}</span>
+              {" — "}
+              {formatGEL(returnRow.quantity * returnRow.unitPrice)}
+            </p>
+            <p className="text-sm font-medium">რა ფორმით დაუბრუნეთ თანხა კლიენტს?</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-16 flex-col gap-1 cursor-pointer text-base"
+                disabled={returning}
+                onClick={() => handleReturn("cash")}
+              >
+                <span className="text-2xl">💵</span>
+                <span>ხელზე</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-16 flex-col gap-1 cursor-pointer text-base"
+                disabled={returning}
+                onClick={() => handleReturn("bank")}
+              >
+                <span className="text-2xl">💳</span>
+                <span>ბანკით</span>
+              </Button>
+            </div>
+            {returning && (
+              <p className="text-center text-sm text-muted-foreground">მუშავდება...</p>
+            )}
+            <div className="flex justify-end pt-1">
+              <Button variant="ghost" onClick={() => setReturnRow(null)} disabled={returning} className="cursor-pointer">
+                გაუქმება
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

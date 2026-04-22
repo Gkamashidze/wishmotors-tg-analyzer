@@ -280,6 +280,10 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE INDEX IF NOT EXISTS idx_transfers_created_at ON transfers(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transfers_from       ON transfers(from_account);
 CREATE INDEX IF NOT EXISTS idx_transfers_to         ON transfers(to_account);
+
+-- Refund method on returns: tracks whether money was given back as cash or bank transfer.
+-- Used by the cashflow dashboard to deduct from the correct account.
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT 'cash';
 """
 
 
@@ -324,6 +328,7 @@ class ReturnRow(TypedDict):
     product_id: int
     quantity: int
     refund_amount: float
+    refund_method: str  # 'cash' | 'bank'
     exchange_product_id: Optional[int]
     returned_at: object  # datetime
     notes: Optional[str]

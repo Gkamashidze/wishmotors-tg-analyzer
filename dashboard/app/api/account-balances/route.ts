@@ -90,6 +90,14 @@ export async function GET() {
         tr_bank_in AS (
           SELECT COALESCE(SUM(amount), 0) AS total
           FROM transfers WHERE to_account = 'bank_gel'
+        ),
+        cash_returns AS (
+          SELECT COALESCE(SUM(refund_amount), 0) AS total
+          FROM returns WHERE refund_method = 'cash'
+        ),
+        bank_returns AS (
+          SELECT COALESCE(SUM(refund_amount), 0) AS total
+          FROM returns WHERE refund_method = 'bank'
         )
       SELECT
         ab.account_key,
@@ -99,9 +107,9 @@ export async function GET() {
         ab.updated_at,
         CASE
           WHEN ab.account_key = 'cash_gel'
-            THEN ab.initial_balance + cs.total - ce.total - tco.total + tci.total
+            THEN ab.initial_balance + cs.total - ce.total - tco.total + tci.total - cr.total
           WHEN ab.account_key = 'bank_gel'
-            THEN ab.initial_balance + ts.total - te.total - tbo.total + tbi.total
+            THEN ab.initial_balance + ts.total - te.total - tbo.total + tbi.total - br.total
           ELSE ab.initial_balance
         END AS current_balance
       FROM account_balances ab
@@ -113,6 +121,8 @@ export async function GET() {
       CROSS JOIN tr_cash_in tci
       CROSS JOIN tr_bank_out tbo
       CROSS JOIN tr_bank_in tbi
+      CROSS JOIN cash_returns cr
+      CROSS JOIN bank_returns br
       ORDER BY ab.id
     `);
 
