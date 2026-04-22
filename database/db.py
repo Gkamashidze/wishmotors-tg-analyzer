@@ -47,6 +47,25 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(CREATE_TABLES_SQL)
             await conn.execute(MIGRATE_SQL)
+            # Log the orders table schema on every startup so Railway logs
+            # show exactly which columns exist — critical for diagnosing
+            # "column does not exist" INSERT failures.
+            cols = await conn.fetch(
+                """SELECT column_name, data_type
+                   FROM information_schema.columns
+                   WHERE table_schema = 'public' AND table_name = 'orders'
+                   ORDER BY ordinal_position""",
+            )
+            col_names = [c["column_name"] for c in cols]
+            logger.info("orders table columns after migrations: %s", col_names)
+            required = {"product_id", "quantity_needed", "priority", "notes", "oem_code"}
+            missing = required - set(col_names)
+            if missing:
+                logger.error(
+                    "CRITICAL: orders table is missing required columns: %s "
+                    "— INSERT will fail until these are added via migration.",
+                    sorted(missing),
+                )
         logger.info("Database pool initialised.")
 
     async def close(self) -> None:
@@ -1272,22 +1291,73 @@ class Database:
         if not items:
             return []
 
+        logger.info(
+            "create_orders_bulk: inserting %d order(s) | "
+            "qty_needed=%s | priorities=%s | oem_codes=%s",
+            len(items),
+            [item.get("quantity_needed") for item in items],
+            [item.get("priority") for item in items],
+            [item.get("oem_code") for item in items],
+        )
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 ids: List[int] = []
-                for item in items:
-                    row = await conn.fetchrow(
-                        """INSERT INTO orders
-                               (product_id, quantity_needed, priority, notes, oem_code)
-                           VALUES ($1, $2, $3, $4, $5)
-                           RETURNING id""",
-                        item.get("product_id"),
-                        int(item["quantity_needed"]),
-                        item.get("priority", "normal"),
-                        item.get("notes"),
-                        item.get("oem_code"),
+                for idx, item in enumerate(items):
+                    product_id: Optional[int] = item.get("product_id")
+                    if product_id is not None:
+                        product_id = int(product_id)
+
+                    raw_qty = item.get("quantity_needed")
+                    if raw_qty is None:
+                        logger.error(
+                            "create_orders_bulk: row %d — quantity_needed key missing! "
+                            "item keys=%s item=%r",
+                            idx, list(item.keys()), item,
+                        )
+                        raise ValueError(
+                            f"Row {idx}: quantity_needed is missing — item keys: {list(item.keys())}"
+                        )
+                    quantity_needed = int(raw_qty)
+                    priority: str = str(item.get("priority") or "normal")
+                    notes: Optional[str] = item.get("notes")
+                    oem_code: Optional[str] = item.get("oem_code")
+
+                    logger.info(
+                        "create_orders_bulk: row %d — product_id=%r(%s) "
+                        "quantity_needed=%d priority=%r oem_code=%r",
+                        idx,
+                        product_id, type(product_id).__name__,
+                        quantity_needed, priority, oem_code,
                     )
+
+                    try:
+                        row = await conn.fetchrow(
+                            """INSERT INTO orders
+                                   (product_id, quantity_needed, priority, notes, oem_code)
+                               VALUES ($1, $2, $3, $4, $5)
+                               RETURNING id""",
+                            product_id,
+                            quantity_needed,
+                            priority,
+                            notes,
+                            oem_code,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "create_orders_bulk: INSERT failed at row %d | "
+                            "product_id=%r(%s) quantity_needed=%d priority=%r oem_code=%r | "
+                            "error_type=%s | error=%s",
+                            idx,
+                            product_id, type(product_id).__name__,
+                            quantity_needed, priority, oem_code,
+                            type(exc).__name__, exc,
+                            exc_info=True,
+                        )
+                        raise
                     ids.append(row["id"])
+
+        logger.info("create_orders_bulk: success — inserted IDs: %s", ids)
         self._audit("orders_bulk_created", {
             "order_ids": ids,
             "items": items,
@@ -1535,37 +1605,64 @@ class Database:
             return row["id"]
 
     async def get_cash_on_hand(self) -> Dict[str, float]:
-        """Return a breakdown: cash_sales, cash_expenses, deposits, transfers, and net balance."""
+        """Return cash balance breakdown — SSOT formula used by both bot and dashboard.
+
+        balance = cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns
+
+        Only active (non-returned) sales count. NULL refund_method defaults to 'cash'.
+        """
         async with self.pool.acquire() as conn:
-            sales_row = await conn.fetchrow(
-                """SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
-                   FROM sales WHERE payment_method = 'cash'"""
+            row = await conn.fetchrow(
+                """
+                WITH
+                  cash_s AS (
+                    SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
+                    FROM sales
+                    WHERE payment_method = 'cash' AND status != 'returned'
+                  ),
+                  cash_e AS (
+                    SELECT COALESCE(SUM(amount), 0) AS total
+                    FROM expenses WHERE payment_method = 'cash'
+                  ),
+                  deps AS (
+                    SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits
+                  ),
+                  tr_out AS (
+                    SELECT COALESCE(SUM(amount), 0) AS total
+                    FROM transfers WHERE from_account = 'cash_gel'
+                  ),
+                  tr_in AS (
+                    SELECT COALESCE(SUM(amount), 0) AS total
+                    FROM transfers WHERE to_account = 'cash_gel'
+                  ),
+                  cash_ret AS (
+                    SELECT COALESCE(SUM(refund_amount), 0) AS total
+                    FROM returns WHERE COALESCE(refund_method, 'cash') = 'cash'
+                  )
+                SELECT
+                  cash_s.total  AS cash_sales,
+                  cash_e.total  AS cash_expenses,
+                  deps.total    AS deposits,
+                  tr_out.total  AS transfers_out,
+                  tr_in.total   AS transfers_in,
+                  cash_ret.total AS cash_returns
+                FROM cash_s, cash_e, deps, tr_out, tr_in, cash_ret
+                """
             )
-            exp_row = await conn.fetchrow(
-                """SELECT COALESCE(SUM(amount), 0) AS total
-                   FROM expenses WHERE payment_method = 'cash'"""
-            )
-            dep_row = await conn.fetchrow(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits"
-            )
-            tr_out_row = await conn.fetchrow(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM transfers WHERE from_account = 'cash_gel'"
-            )
-            tr_in_row = await conn.fetchrow(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM transfers WHERE to_account = 'cash_gel'"
-            )
-        cash_sales = float(sales_row["total"])
-        cash_expenses = float(exp_row["total"])
-        deposits = float(dep_row["total"])
-        transfers_out = float(tr_out_row["total"])
-        transfers_in = float(tr_in_row["total"])
+        cash_sales    = float(row["cash_sales"])
+        cash_expenses = float(row["cash_expenses"])
+        deposits      = float(row["deposits"])
+        transfers_out = float(row["transfers_out"])
+        transfers_in  = float(row["transfers_in"])
+        cash_returns  = float(row["cash_returns"])
         return {
-            "cash_sales": cash_sales,
+            "cash_sales":    cash_sales,
             "cash_expenses": cash_expenses,
-            "deposits": deposits,
+            "deposits":      deposits,
             "transfers_out": transfers_out,
-            "transfers_in": transfers_in,
-            "balance": cash_sales - cash_expenses - deposits - transfers_out + transfers_in,
+            "transfers_in":  transfers_in,
+            "cash_returns":  cash_returns,
+            "balance": cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns,
         }
 
     # ─── Internal transfers ───────────────────────────────────────────────────

@@ -286,6 +286,13 @@ CREATE INDEX IF NOT EXISTS idx_transfers_to         ON transfers(to_account);
 -- Refund method on returns: tracks whether money was given back as cash or bank transfer.
 -- Used by the cashflow dashboard to deduct from the correct account.
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT 'cash';
+
+-- Sale status: 'active' (default) or 'returned'.
+-- Returned sales stay in the table for audit history but are excluded from all
+-- revenue / cashflow calculations.  Use status != 'returned' in every query
+-- that counts money or products sold.
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status) WHERE status != 'active';
 """
 
 

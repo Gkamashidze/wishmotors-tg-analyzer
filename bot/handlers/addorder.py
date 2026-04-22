@@ -481,6 +481,7 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
 
     # DB insert is wrapped in a single transaction — partial failure rolls
     # back the whole batch so we never end up with half-saved orders.
+    rows_to_insert: list = []
     try:
         rows_to_insert = [
             {
@@ -503,9 +504,23 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
             }
             for item in items
         ]
+        logger.info(
+            "_finalize: built %d rows_to_insert — keys=%s qty_values=%s",
+            len(rows_to_insert),
+            list(rows_to_insert[0].keys()) if rows_to_insert else [],
+            [r["quantity_needed"] for r in rows_to_insert],
+        )
         order_ids = await db.create_orders_bulk(rows_to_insert)
-    except Exception:
-        logger.exception("create_orders_bulk failed for items=%r", items)
+    except Exception as exc:
+        logger.error(
+            "_finalize: save failed | error_type=%s | error=%s | "
+            "rows_to_insert=%r | original_items=%r",
+            type(exc).__name__,
+            exc,
+            rows_to_insert,
+            items,
+            exc_info=True,
+        )
         # Critical: reset FSM so the user is never stuck mid-wizard after
         # a DB error. The transaction was rolled back — nothing was saved.
         await state.clear()
