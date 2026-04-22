@@ -14,7 +14,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function ImportsPage() {
-  const rows = await getImportsHistory(1000);
+  let rows = await getImportsHistory(1000).catch((err) => {
+    console.error("[imports page] getImportsHistory failed:", err);
+    return [];
+  });
 
   return (
     <>

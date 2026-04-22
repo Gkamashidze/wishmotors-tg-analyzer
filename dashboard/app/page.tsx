@@ -20,21 +20,45 @@ import {
   getDashboardSummaryRange,
   getTopSellingProducts,
   getTopProfitableProducts,
+  type DashboardSummary,
 } from "@/lib/queries";
 import { TopProductsSection } from "@/components/dashboard/top-products-section";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const DEFAULT_SUMMARY: DashboardSummary = {
+  totalSales: 0,
+  totalExpenses: 0,
+  totalCogs: 0,
+  grossProfit: 0,
+  netProfit: 0,
+  salesCount: 0,
+  pendingOrders: 0,
+  urgentOrders: 0,
+};
+
 export default async function DashboardPage() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const [summary, series, topSelling, topProfitable] = await Promise.all([
-    getDashboardSummaryRange(monthStart, today),
-    getDailySeries(30),
-    getTopSellingProducts(10),
-    getTopProfitableProducts(10),
+    getDashboardSummaryRange(monthStart, today).catch((err) => {
+      console.error("[dashboard] getDashboardSummaryRange failed:", err);
+      return DEFAULT_SUMMARY;
+    }),
+    getDailySeries(30).catch((err) => {
+      console.error("[dashboard] getDailySeries failed:", err);
+      return [];
+    }),
+    getTopSellingProducts(10).catch((err) => {
+      console.error("[dashboard] getTopSellingProducts failed:", err);
+      return [];
+    }),
+    getTopProfitableProducts(10).catch((err) => {
+      console.error("[dashboard] getTopProfitableProducts failed:", err);
+      return [];
+    }),
   ]);
 
   return (

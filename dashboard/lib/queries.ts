@@ -427,7 +427,7 @@ export type ImportHistoryRow = {
 export async function getImportsHistory(
   limit: number = 1000,
 ): Promise<ImportHistoryRow[]> {
-  const rows = await query<{
+  let rows: {
     id: number;
     import_date: Date;
     oem: string;
@@ -441,17 +441,25 @@ export async function getImportsHistory(
     total_unit_cost_gel: string;
     suggested_retail_price_gel: string;
     created_at: Date;
-  }>(
-    `SELECT id, import_date, oem, name, quantity, unit,
-            unit_price_usd, exchange_rate,
-            transport_cost_gel, other_cost_gel,
-            total_unit_cost_gel, suggested_retail_price_gel,
-            created_at
-     FROM imports_history
-     ORDER BY import_date DESC, created_at DESC
-     LIMIT $1`,
-    [limit],
-  );
+  }[];
+
+  try {
+    rows = await query(
+      `SELECT id, import_date, oem, name, quantity, unit,
+              unit_price_usd, exchange_rate,
+              transport_cost_gel, other_cost_gel,
+              total_unit_cost_gel, suggested_retail_price_gel,
+              created_at
+       FROM imports_history
+       ORDER BY import_date DESC, created_at DESC
+       LIMIT $1`,
+      [limit],
+    );
+  } catch (err) {
+    // Table may not exist yet on older deployments — return empty list gracefully.
+    console.error("[getImportsHistory] query failed:", err);
+    return [];
+  }
 
   return rows.map((r) => ({
     id: r.id,
@@ -493,57 +501,65 @@ export async function getTopSellingProducts(
   to?: Date,
 ): Promise<TopProductRow[]> {
   const hasRange = from && to;
-  const rows = await query<{
+
+  let rows: {
     product_id: number | null;
     product_name: string;
     oem_code: string | null;
     total_quantity: string;
     total_revenue: string;
     total_profit: string;
-  }>(
-    hasRange
-      ? `
-        SELECT
-          s.product_id,
-          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
-          p.oem_code,
-          SUM(s.quantity)                        AS total_quantity,
-          SUM(s.quantity * s.unit_price)         AS total_revenue,
-          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
-        FROM sales s
-        LEFT JOIN products p ON p.id = s.product_id
-        WHERE s.sold_at >= $2::timestamptz
-          AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
-        GROUP BY s.product_id, p.name, p.oem_code
-        ORDER BY total_quantity DESC
-        LIMIT $1
-        `
-      : `
-        SELECT
-          s.product_id,
-          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
-          p.oem_code,
-          SUM(s.quantity)                        AS total_quantity,
-          SUM(s.quantity * s.unit_price)         AS total_revenue,
-          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
-        FROM sales s
-        LEFT JOIN products p ON p.id = s.product_id
-        GROUP BY s.product_id, p.name, p.oem_code
-        ORDER BY total_quantity DESC
-        LIMIT $1
-        `,
-    hasRange
-      ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
-      : [limit],
-  );
+  }[];
+
+  try {
+    rows = await query(
+      hasRange
+        ? `
+          SELECT
+            s.product_id,
+            COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+            p.oem_code,
+            SUM(s.quantity)                        AS total_quantity,
+            SUM(s.quantity * s.unit_price)         AS total_revenue,
+            SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
+          FROM sales s
+          LEFT JOIN products p ON p.id = s.product_id
+          WHERE s.sold_at >= $2::timestamptz
+            AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+          GROUP BY s.product_id, p.name, p.oem_code
+          ORDER BY total_quantity DESC
+          LIMIT $1
+          `
+        : `
+          SELECT
+            s.product_id,
+            COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+            p.oem_code,
+            SUM(s.quantity)                        AS total_quantity,
+            SUM(s.quantity * s.unit_price)         AS total_revenue,
+            SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
+          FROM sales s
+          LEFT JOIN products p ON p.id = s.product_id
+          GROUP BY s.product_id, p.name, p.oem_code
+          ORDER BY total_quantity DESC
+          LIMIT $1
+          `,
+      hasRange
+        ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
+        : [limit],
+    );
+  } catch (err) {
+    console.error("[getTopSellingProducts] query failed:", err);
+    return [];
+  }
 
   return rows.map((r) => ({
     productId: r.product_id,
-    productName: r.product_name,
+    productName: r.product_name ?? "უცნობი პროდუქტი",
     oemCode: r.oem_code,
-    totalQuantity: Number(r.total_quantity),
-    totalRevenue: Number(r.total_revenue),
-    totalProfit: Number(r.total_profit),
+    totalQuantity: Number(r.total_quantity ?? 0),
+    totalRevenue: Number(r.total_revenue ?? 0),
+    totalProfit: Number(r.total_profit ?? 0),
   }));
 }
 
@@ -553,57 +569,65 @@ export async function getTopProfitableProducts(
   to?: Date,
 ): Promise<TopProductRow[]> {
   const hasRange = from && to;
-  const rows = await query<{
+
+  let rows: {
     product_id: number | null;
     product_name: string;
     oem_code: string | null;
     total_quantity: string;
     total_revenue: string;
     total_profit: string;
-  }>(
-    hasRange
-      ? `
-        SELECT
-          s.product_id,
-          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
-          p.oem_code,
-          SUM(s.quantity)                        AS total_quantity,
-          SUM(s.quantity * s.unit_price)         AS total_revenue,
-          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
-        FROM sales s
-        LEFT JOIN products p ON p.id = s.product_id
-        WHERE s.sold_at >= $2::timestamptz
-          AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
-        GROUP BY s.product_id, p.name, p.oem_code
-        ORDER BY total_profit DESC
-        LIMIT $1
-        `
-      : `
-        SELECT
-          s.product_id,
-          COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
-          p.oem_code,
-          SUM(s.quantity)                        AS total_quantity,
-          SUM(s.quantity * s.unit_price)         AS total_revenue,
-          SUM(s.quantity * s.unit_price - s.cost_amount) AS total_profit
-        FROM sales s
-        LEFT JOIN products p ON p.id = s.product_id
-        GROUP BY s.product_id, p.name, p.oem_code
-        ORDER BY total_profit DESC
-        LIMIT $1
-        `,
-    hasRange
-      ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
-      : [limit],
-  );
+  }[];
+
+  try {
+    rows = await query(
+      hasRange
+        ? `
+          SELECT
+            s.product_id,
+            COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+            p.oem_code,
+            SUM(s.quantity)                        AS total_quantity,
+            SUM(s.quantity * s.unit_price)         AS total_revenue,
+            SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
+          FROM sales s
+          LEFT JOIN products p ON p.id = s.product_id
+          WHERE s.sold_at >= $2::timestamptz
+            AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+          GROUP BY s.product_id, p.name, p.oem_code
+          ORDER BY total_profit DESC
+          LIMIT $1
+          `
+        : `
+          SELECT
+            s.product_id,
+            COALESCE(p.name, 'უცნობი პროდუქტი') AS product_name,
+            p.oem_code,
+            SUM(s.quantity)                        AS total_quantity,
+            SUM(s.quantity * s.unit_price)         AS total_revenue,
+            SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
+          FROM sales s
+          LEFT JOIN products p ON p.id = s.product_id
+          GROUP BY s.product_id, p.name, p.oem_code
+          ORDER BY total_profit DESC
+          LIMIT $1
+          `,
+      hasRange
+        ? [limit, from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)]
+        : [limit],
+    );
+  } catch (err) {
+    console.error("[getTopProfitableProducts] query failed:", err);
+    return [];
+  }
 
   return rows.map((r) => ({
     productId: r.product_id,
-    productName: r.product_name,
+    productName: r.product_name ?? "უცნობი პროდუქტი",
     oemCode: r.oem_code,
-    totalQuantity: Number(r.total_quantity),
-    totalRevenue: Number(r.total_revenue),
-    totalProfit: Number(r.total_profit),
+    totalQuantity: Number(r.total_quantity ?? 0),
+    totalRevenue: Number(r.total_revenue ?? 0),
+    totalProfit: Number(r.total_profit ?? 0),
   }));
 }
 

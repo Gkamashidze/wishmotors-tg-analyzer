@@ -7,18 +7,26 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = req.nextUrl;
-  const fromParam = searchParams.get("from");
-  const toParam = searchParams.get("to");
-  const limit = Math.min(Number(searchParams.get("limit") ?? 10), 50);
+  try {
+    const { searchParams } = req.nextUrl;
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
+    const limit = Math.min(Number(searchParams.get("limit") ?? 10), 50);
 
-  const from = fromParam ? new Date(fromParam) : undefined;
-  const to = toParam ? new Date(toParam) : undefined;
+    const from = fromParam ? new Date(fromParam) : undefined;
+    const to = toParam ? new Date(toParam) : undefined;
 
-  const [topSelling, topProfitable] = await Promise.all([
-    getTopSellingProducts(limit, from, to),
-    getTopProfitableProducts(limit, from, to),
-  ]);
+    const [topSelling, topProfitable] = await Promise.all([
+      getTopSellingProducts(limit, from, to),
+      getTopProfitableProducts(limit, from, to),
+    ]);
 
-  return NextResponse.json({ topSelling, topProfitable });
+    return NextResponse.json({ topSelling, topProfitable });
+  } catch (err) {
+    console.error("[top-products] GET error:", err);
+    return NextResponse.json(
+      { topSelling: [], topProfitable: [], error: "server error" },
+      { status: 500 },
+    );
+  }
 }
