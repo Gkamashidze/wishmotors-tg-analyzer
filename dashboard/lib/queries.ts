@@ -152,47 +152,56 @@ export type OrderRow = {
 };
 
 export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
-  const rows = await query<{
+  let rows: {
     id: number;
     product_id: number | null;
     product_name: string | null;
     oem_code: string | null;
-    quantity_needed: number;
+    quantity_needed: number | null;
     status: string;
-    priority: string;
+    priority: string | null;
     created_at: Date;
     notes: string | null;
-  }>(
-    `
-    SELECT
-      o.id,
-      o.product_id,
-      p.name      AS product_name,
-      COALESCE(o.oem_code, p.oem_code) AS oem_code,
-      o.quantity_needed,
-      o.status,
-      o.priority,
-      o.created_at,
-      o.notes
-    FROM orders o
-    LEFT JOIN products p ON p.id = o.product_id
-    ORDER BY
-      CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
-      CASE o.priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
-      o.created_at DESC
-    LIMIT $1
-    `,
-    [limit],
-  );
+  }[];
+
+  try {
+    rows = await query(
+      `
+      SELECT
+        o.id,
+        o.product_id,
+        p.name      AS product_name,
+        COALESCE(o.oem_code, p.oem_code) AS oem_code,
+        o.quantity_needed,
+        o.status,
+        o.priority,
+        o.created_at,
+        o.notes
+      FROM orders o
+      LEFT JOIN products p ON p.id = o.product_id
+      ORDER BY
+        CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+        CASE COALESCE(o.priority, 'normal') WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+        o.created_at DESC
+      LIMIT $1
+      `,
+      [limit],
+    );
+  } catch (err) {
+    console.error("[getOrders] query failed:", err);
+    throw new Error(
+      `შეკვეთების წამოღება ვერ მოხერხდა: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   return rows.map((r) => ({
     id: r.id,
     productId: r.product_id,
     productName: r.product_name,
     oemCode: r.oem_code,
-    quantityNeeded: r.quantity_needed,
+    quantityNeeded: r.quantity_needed ?? 1,
     status: r.status,
-    priority: r.priority,
+    priority: (r.priority ?? "normal") as OrderRow["priority"],
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()

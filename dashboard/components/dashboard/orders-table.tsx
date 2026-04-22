@@ -289,7 +289,18 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
-                  შედეგი არ არის — შეცვალე ფილტრი
+                  <div className="space-y-2">
+                    <p>შედეგი არ არის ამ ფილტრით.</p>
+                    {(priority !== "all" || status !== "all" || queryText) && (
+                      <button
+                        type="button"
+                        onClick={() => { setPriority("all"); setStatus("all"); setQueryText(""); }}
+                        className="text-sm text-primary underline underline-offset-2 cursor-pointer hover:opacity-75"
+                      >
+                        ფილტრის გასუფთავება
+                      </button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
