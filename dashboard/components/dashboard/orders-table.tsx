@@ -91,7 +91,8 @@ function rowToEdit(r: OrderRow): EditState {
   };
 }
 
-export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; products?: ProductRow[] }) {
+export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]; products?: ProductRow[] }) {
+  const rows = rawRows ?? [];
   const router = useRouter();
   const [priority, setPriority] = useState<PriorityFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -137,14 +138,17 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
   }, []);
 
   const filtered = useMemo(() => {
+    console.log("[OrdersTable] rows received:", rows.length, rows.map((o) => ({ id: o.id, status: o.status, priority: o.priority })));
     const q = queryText.trim().toLowerCase();
-    return rows.filter((r) => {
+    const result = rows.filter((r) => {
       const normalizedPriority = normalizePriority(r.priority);
       if (priority !== "all" && normalizedPriority !== priority) return false;
       if (status !== "all" && r.status !== status) return false;
       if (!q) return true;
       return [r.productName, r.oemCode ?? "", r.notes ?? ""].join(" ").toLowerCase().includes(q);
     });
+    console.log("[OrdersTable] filtered:", result.length, "priority:", priority, "status:", status, "q:", q);
+    return result;
   }, [rows, priority, status, queryText]);
 
   const counts = useMemo(() => {
@@ -297,8 +301,8 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
                   <div className="space-y-2">
-                    <p>შედეგი არ არის ამ ფილტრით.</p>
-                    {(priority !== "all" || status !== "all" || queryText) && (
+                    <p>{rows.length === 0 ? "შეკვეთები ვერ ჩაიტვირთა ან ჯერ არ არის დამატებული." : "შედეგი არ არის ამ ფილტრით."}</p>
+                    {rows.length > 0 && (priority !== "all" || status !== "all" || queryText) && (
                       <button
                         type="button"
                         onClick={() => { setPriority("all"); setStatus("all"); setQueryText(""); }}

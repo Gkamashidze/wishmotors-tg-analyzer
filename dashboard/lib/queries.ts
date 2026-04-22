@@ -42,8 +42,8 @@ export async function getDashboardSummary(
       ),
       ord_agg AS (
         SELECT
-          COUNT(*) FILTER (WHERE status = 'pending') AS pending_orders,
-          COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'urgent') AS urgent_orders
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing')) AS pending_orders,
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent') AS urgent_orders
         FROM orders
       )
     SELECT
@@ -392,8 +392,8 @@ export async function getDashboardSummaryRange(
       ),
       ord_agg AS (
         SELECT
-          COUNT(*) FILTER (WHERE status = 'pending')                          AS pending_orders,
-          COUNT(*) FILTER (WHERE status = 'pending' AND priority = 'urgent')  AS urgent_orders
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing'))                          AS pending_orders,
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent')  AS urgent_orders
         FROM orders
       )
     SELECT
