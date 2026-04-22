@@ -138,6 +138,8 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_needed INTEGER NOT NULL DEFAULT 1;
+
 DO $$ BEGIN
   ALTER TABLE orders ADD CONSTRAINT orders_quantity_positive CHECK (quantity_needed > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;
