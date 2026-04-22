@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const rows = await query<OrderExportRow>(
-    `SELECT o.id, COALESCE(o.oem_code, p.oem_code) AS oem_code, p.name AS product_name,
+    `SELECT o.id,
+            COALESCE(o.oem_code, p.oem_code) AS oem_code,
+            COALESCE(p.name, NULLIF(o.part_name, '')) AS product_name,
             o.quantity_needed, o.priority, o.status, o.notes, o.created_at
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id

@@ -58,7 +58,7 @@ class Database:
             )
             col_names = [c["column_name"] for c in cols]
             logger.info("orders table columns after migrations: %s", col_names)
-            required = {"product_id", "quantity_needed", "priority", "notes", "oem_code"}
+            required = {"product_id", "quantity_needed", "priority", "notes", "oem_code", "part_name"}
             missing = required - set(col_names)
             if missing:
                 logger.error(
@@ -1267,13 +1267,15 @@ class Database:
         priority: str = "low",
         notes: Optional[str] = None,
         oem_code: Optional[str] = None,
+        part_name: str = "",
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """INSERT INTO orders (product_id, quantity_needed, priority, notes, oem_code)
-                   VALUES ($1, $2, $3, $4, $5)
+                """INSERT INTO orders
+                       (product_id, quantity_needed, priority, notes, oem_code, part_name)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    RETURNING id""",
-                product_id, quantity_needed, priority, notes, oem_code,
+                product_id, quantity_needed, priority, notes, oem_code, part_name,
             )
             order_id: int = row["id"]
         self._audit("order_created", {
@@ -1283,6 +1285,7 @@ class Database:
             "priority": priority,
             "notes": notes,
             "oem_code": oem_code,
+            "part_name": part_name,
         }, reference_id=f"order:{order_id}")
         return order_id
 
@@ -1294,7 +1297,7 @@ class Database:
 
         Each entry must contain: ``product_id`` (Optional[int]),
         ``quantity_needed`` (int > 0), ``priority`` (str), ``notes``
-        (Optional[str]), ``oem_code`` (Optional[str]).
+        (Optional[str]), ``oem_code`` (Optional[str]), ``part_name`` (str).
         Returns the inserted IDs in the same order.
         Wrapped in a single transaction — a partial failure rolls back
         the whole batch.
@@ -1334,20 +1337,22 @@ class Database:
                     notes: Optional[str] = item.get("notes")
                     oem_code: Optional[str] = item.get("oem_code")
                     client_id: Optional[int] = item.get("client_id")
+                    part_name: str = str(item.get("part_name") or "")
 
                     logger.info(
                         "create_orders_bulk: row %d — product_id=%r(%s) "
-                        "quantity_needed=%d priority=%r oem_code=%r client_id=%r",
+                        "quantity_needed=%d priority=%r oem_code=%r client_id=%r part_name=%r",
                         idx,
                         product_id, type(product_id).__name__,
-                        quantity_needed, priority, oem_code, client_id,
+                        quantity_needed, priority, oem_code, client_id, part_name,
                     )
 
                     try:
                         row = await conn.fetchrow(
                             """INSERT INTO orders
-                                   (product_id, quantity_needed, priority, notes, oem_code, client_id)
-                               VALUES ($1, $2, $3, $4, $5, $6)
+                                   (product_id, quantity_needed, priority, notes,
+                                    oem_code, client_id, part_name)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7)
                                RETURNING id""",
                             product_id,
                             quantity_needed,
@@ -1355,16 +1360,17 @@ class Database:
                             notes,
                             oem_code,
                             client_id,
+                            part_name,
                         )
                     except Exception as exc:
                         logger.error(
                             "create_orders_bulk: INSERT failed at row %d | "
                             "product_id=%r(%s) quantity_needed=%d priority=%r "
-                            "oem_code=%r client_id=%r | "
+                            "oem_code=%r client_id=%r part_name=%r | "
                             "error_type=%s | error=%s",
                             idx,
                             product_id, type(product_id).__name__,
-                            quantity_needed, priority, oem_code, client_id,
+                            quantity_needed, priority, oem_code, client_id, part_name,
                             type(exc).__name__, exc,
                             exc_info=True,
                         )

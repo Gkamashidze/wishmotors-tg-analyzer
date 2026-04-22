@@ -196,6 +196,16 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'low'
 -- Change column default so any future INSERT without explicit priority lands on 'low'.
 ALTER TABLE orders ALTER COLUMN priority SET DEFAULT 'low';
 
+-- part_name: human-readable product name stored directly on the order row so
+-- freeform orders (product_id IS NULL) still carry a display name.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS part_name TEXT NOT NULL DEFAULT '';
+-- Back-fill existing rows from the joined products table.
+UPDATE orders o
+SET part_name = COALESCE(p.name, '')
+FROM products p
+WHERE o.product_id = p.id
+  AND (o.part_name IS NULL OR o.part_name = '');
+
 DO $$ BEGIN
   ALTER TABLE expenses ADD CONSTRAINT expenses_amount_positive CHECK (amount > 0) NOT VALID;
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -369,7 +379,8 @@ class OrderRow(TypedDict):
     priority: str  # urgent | low
     created_at: object  # datetime
     notes: Optional[str]
-    product_name: Optional[str]
+    part_name: str  # name stored on the order row itself (always present)
+    product_name: Optional[str]  # joined from products (may be None)
     oem_code: Optional[str]
 
 

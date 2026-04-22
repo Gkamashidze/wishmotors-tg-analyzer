@@ -495,6 +495,9 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
                 "client_id": requester_id,
                 # Enforce only valid priorities; unknown values fall back to low.
                 "priority": item["priority"] if item["priority"] in VALID_PRIORITIES else _PRIORITY_LOW,
+                # part_name: always stored so the row is self-describing even when
+                # product_id IS NULL (freeform / not-in-catalog orders).
+                "part_name": item.get("product_name") or "",
                 "notes": (
                     f"manual /addorder by {requester_name or 'admin'}"
                     + (

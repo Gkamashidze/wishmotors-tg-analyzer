@@ -65,6 +65,7 @@ async def handle_order_message(message: Message, db: Database) -> None:
             quantity_needed=parsed.quantity,
             priority=parsed.priority,
             notes=text,
+            part_name=product_name,
         )
 
         priority_label = _PRIORITY_LABEL.get(parsed.priority, "🟢 არც ისე სასწრაფო")
