@@ -158,10 +158,10 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     id: number;
     product_id: number | null;
     product_name: string | null;
-    oem_code: string | null;
-    quantity_needed: number | null;
+    oem_code: string;
+    quantity_needed: number;
     status: string;
-    priority: string | null;
+    priority: string;
     created_at: Date;
     notes: string | null;
   }[];
@@ -172,18 +172,18 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
       SELECT
         o.id,
         o.product_id,
-        COALESCE(p.name, NULLIF(o.part_name, ''), 'ძველი ჩანაწერი') AS product_name,
-        COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
-        COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
-        COALESCE(o.status, 'pending')                                AS status,
+        COALESCE(p.name, o.part_name) AS product_name,
+        o.oem_code,
+        o.quantity_needed,
+        o.status,
         CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END AS priority,
-        COALESCE(o.created_at, NOW())                                AS created_at,
+        o.created_at,
         o.notes
       FROM orders o
       LEFT JOIN products p ON p.id = o.product_id
       ORDER BY
-        CASE COALESCE(o.status, 'pending') WHEN 'pending' THEN 0 ELSE 1 END,
-        CASE COALESCE(o.priority, 'low') WHEN 'urgent' THEN 0 ELSE 1 END,
+        CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+        CASE o.priority WHEN 'urgent' THEN 0 ELSE 1 END,
         o.created_at DESC NULLS LAST
       LIMIT $1
       `,
@@ -199,17 +199,14 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
   return rows.map((r) => ({
     id: r.id,
     productId: r.product_id ?? null,
-    // SQL already guarantees a non-null, non-empty string; keep as-is for display.
     productName: r.product_name ?? "ძველი ჩანაწერი",
-    oemCode: r.oem_code && r.oem_code !== "-" ? r.oem_code : null,
-    quantityNeeded: Number(r.quantity_needed ?? 0),
-    status: r.status ?? "pending",
+    oemCode: r.oem_code !== "-" ? r.oem_code : null,
+    quantityNeeded: Number(r.quantity_needed),
+    status: r.status,
     priority: (r.priority === "urgent" ? "urgent" : "low") as OrderRow["priority"],
-    createdAt: r.created_at
-      ? r.created_at instanceof Date
-        ? r.created_at.toISOString()
-        : String(r.created_at)
-      : new Date().toISOString(),
+    createdAt: r.created_at instanceof Date
+      ? r.created_at.toISOString()
+      : String(r.created_at),
     notes: r.notes ?? null,
   }));
 }

@@ -56,25 +56,25 @@ export async function GET(req: NextRequest) {
   if (q) {
     params.push(`%${q}%`);
     const n = params.length;
-    conditions.push(`(LOWER(p.name) LIKE $${n} OR LOWER(COALESCE(o.oem_code, p.oem_code)) LIKE $${n} OR LOWER(o.notes) LIKE $${n})`);
+    conditions.push(`(LOWER(COALESCE(p.name, o.part_name)) LIKE $${n} OR LOWER(o.oem_code) LIKE $${n} OR LOWER(o.notes) LIKE $${n})`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const rows = await query<OrderExportRow>(
     `SELECT o.id,
-            COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
-            COALESCE(p.name, NULLIF(o.part_name, ''), 'ძველი ჩანაწერი') AS product_name,
-            COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
-            CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END  AS priority,
-            COALESCE(o.status, 'pending')                                AS status,
+            o.oem_code,
+            COALESCE(p.name, o.part_name) AS product_name,
+            o.quantity_needed,
+            CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END AS priority,
+            o.status,
             o.notes,
-            COALESCE(o.created_at, NOW())                                AS created_at
+            o.created_at
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id
      ${where}
      ORDER BY CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
-              CASE o.priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+              CASE o.priority WHEN 'urgent' THEN 0 ELSE 1 END,
               o.created_at DESC`,
     params,
   );
