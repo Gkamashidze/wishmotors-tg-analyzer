@@ -486,11 +486,13 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
     # back the whole batch so we never end up with half-saved orders.
     rows_to_insert: list = []
     try:
+        requester_id: Optional[int] = callback.from_user.id if callback.from_user else None
         rows_to_insert = [
             {
                 "product_id": item.get("product_id"),
                 "oem_code": item.get("oem_code") or None,
                 "quantity_needed": int(item["quantity"]),
+                "client_id": requester_id,
                 # Enforce only valid priorities; unknown values fall back to low.
                 "priority": item["priority"] if item["priority"] in VALID_PRIORITIES else _PRIORITY_LOW,
                 "notes": (

@@ -1333,35 +1333,38 @@ class Database:
                     priority: str = str(item.get("priority") or "normal")
                     notes: Optional[str] = item.get("notes")
                     oem_code: Optional[str] = item.get("oem_code")
+                    client_id: Optional[int] = item.get("client_id")
 
                     logger.info(
                         "create_orders_bulk: row %d — product_id=%r(%s) "
-                        "quantity_needed=%d priority=%r oem_code=%r",
+                        "quantity_needed=%d priority=%r oem_code=%r client_id=%r",
                         idx,
                         product_id, type(product_id).__name__,
-                        quantity_needed, priority, oem_code,
+                        quantity_needed, priority, oem_code, client_id,
                     )
 
                     try:
                         row = await conn.fetchrow(
                             """INSERT INTO orders
-                                   (product_id, quantity_needed, priority, notes, oem_code)
-                               VALUES ($1, $2, $3, $4, $5)
+                                   (product_id, quantity_needed, priority, notes, oem_code, client_id)
+                               VALUES ($1, $2, $3, $4, $5, $6)
                                RETURNING id""",
                             product_id,
                             quantity_needed,
                             priority,
                             notes,
                             oem_code,
+                            client_id,
                         )
                     except Exception as exc:
                         logger.error(
                             "create_orders_bulk: INSERT failed at row %d | "
-                            "product_id=%r(%s) quantity_needed=%d priority=%r oem_code=%r | "
+                            "product_id=%r(%s) quantity_needed=%d priority=%r "
+                            "oem_code=%r client_id=%r | "
                             "error_type=%s | error=%s",
                             idx,
                             product_id, type(product_id).__name__,
-                            quantity_needed, priority, oem_code,
+                            quantity_needed, priority, oem_code, client_id,
                             type(exc).__name__, exc,
                             exc_info=True,
                         )

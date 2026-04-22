@@ -299,6 +299,12 @@ CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status) WHERE status != 'ac
 -- Bot only ever creates 'urgent' or 'low'; 'normal' was the old DB default.
 -- Idempotent: safe to run multiple times.
 UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL;
+
+-- client_id: Telegram user ID of the person who placed the order.
+-- Added as nullable so existing rows and fresh INSERTs without a known
+-- requester are not rejected.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id BIGINT;
+ALTER TABLE orders ALTER COLUMN client_id DROP NOT NULL;
 """
 
 
@@ -353,6 +359,7 @@ class ReturnRow(TypedDict):
 class OrderRow(TypedDict):
     id: int
     product_id: Optional[int]
+    client_id: Optional[int]
     quantity_needed: int
     status: str
     priority: str  # urgent | normal | low
