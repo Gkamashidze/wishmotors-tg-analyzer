@@ -1388,8 +1388,6 @@ class Database:
                    ORDER BY
                      CASE o.priority
                        WHEN 'urgent' THEN 1
-                       WHEN 'normal' THEN 2
-                       WHEN 'low'    THEN 3
                        ELSE 2
                      END,
                      o.created_at DESC""",
@@ -1495,8 +1493,6 @@ class Database:
                    ORDER BY
                      CASE o.priority
                        WHEN 'urgent' THEN 1
-                       WHEN 'normal' THEN 2
-                       WHEN 'low'    THEN 3
                        ELSE 2
                      END,
                      o.id""",

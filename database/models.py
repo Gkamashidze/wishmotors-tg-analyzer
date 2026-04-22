@@ -294,6 +294,11 @@ ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_method TEXT NOT NULL DEFAULT
 -- that counts money or products sold.
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
 CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status) WHERE status != 'active';
+
+-- Normalize legacy 'normal' priority orders → 'low'.
+-- Bot only ever creates 'urgent' or 'low'; 'normal' was the old DB default.
+-- Idempotent: safe to run multiple times.
+UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL;
 """
 
 

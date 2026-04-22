@@ -17,14 +17,13 @@ import { formatNumber } from "@/lib/utils";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import { cn } from "@/lib/utils";
 
-type PriorityFilter = "all" | "urgent" | "normal" | "low";
+type PriorityFilter = "all" | "urgent" | "low";
 type StatusFilter = "all" | "pending" | "ordered" | "received" | "cancelled" | "completed";
 
 const PRIORITY_TABS: { key: PriorityFilter; label: string; icon?: string }[] = [
   { key: "all", label: "ყველა" },
   { key: "urgent", label: "სასწრაფო", icon: "🚨" },
-  { key: "normal", label: "ჩვეულებრივი", icon: "🟢" },
-  { key: "low", label: "დაბალი" },
+  { key: "low", label: "არც ისე სასწრაფო", icon: "🟢" },
 ];
 
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
@@ -38,15 +37,18 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 
 const STATUS_OPTIONS = STATUS_TABS.slice(1).map((s) => ({ value: s.key, label: s.label }));
 const PRIORITY_OPTIONS = [
-  { value: "urgent", label: "სასწრაფო" },
-  { value: "normal", label: "ჩვეულებრივი" },
-  { value: "low", label: "დაბალი" },
+  { value: "urgent", label: "🚨 სასწრაფო" },
+  { value: "low", label: "🟢 არც ისე სასწრაფო" },
 ];
 
+function normalizePriority(p: string): "urgent" | "low" {
+  return p === "urgent" ? "urgent" : "low";
+}
+
 function priorityBadge(p: string) {
-  if (p === "urgent") return <Badge variant="destructive" className="gap-1"><span aria-hidden="true">🚨</span> სასწრაფო</Badge>;
-  if (p === "low") return <Badge variant="muted" className="gap-1">დაბალი</Badge>;
-  return <Badge variant="success" className="gap-1"><span aria-hidden="true">🟢</span> ჩვეულებრივი</Badge>;
+  const n = normalizePriority(p);
+  if (n === "urgent") return <Badge variant="destructive" className="gap-1"><span aria-hidden="true">🚨</span> სასწრაფო</Badge>;
+  return <Badge variant="success" className="gap-1"><span aria-hidden="true">🟢</span> არც ისე სასწრაფო</Badge>;
 }
 
 function statusBadge(s: string) {
@@ -82,7 +84,7 @@ function rowToEdit(r: OrderRow): EditState {
     oem_code: r.oemCode ?? "",
     quantity_needed: String(r.quantityNeeded),
     status: r.status,
-    priority: r.priority,
+    priority: normalizePriority(r.priority),
     notes: r.notes ?? "",
   };
 }
@@ -135,7 +137,8 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
   const filtered = useMemo(() => {
     const q = queryText.trim().toLowerCase();
     return rows.filter((r) => {
-      if (priority !== "all" && r.priority !== priority) return false;
+      const normalizedPriority = normalizePriority(r.priority);
+      if (priority !== "all" && normalizedPriority !== priority) return false;
       if (status !== "all" && r.status !== status) return false;
       if (!q) return true;
       return [r.productName ?? "", r.oemCode ?? "", r.notes ?? ""].join(" ").toLowerCase().includes(q);
@@ -146,9 +149,8 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
     const base = status === "all" ? rows : rows.filter((r) => r.status === status);
     return {
       all: base.length,
-      urgent: base.filter((r) => r.priority === "urgent").length,
-      normal: base.filter((r) => r.priority === "normal").length,
-      low: base.filter((r) => r.priority === "low").length,
+      urgent: base.filter((r) => normalizePriority(r.priority) === "urgent").length,
+      low: base.filter((r) => normalizePriority(r.priority) === "low").length,
     };
   }, [rows, status]);
 

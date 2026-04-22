@@ -174,7 +174,7 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
         COALESCE(o.oem_code, p.oem_code, '-')       AS oem_code,
         COALESCE(o.quantity_needed, 0)               AS quantity_needed,
         COALESCE(o.status, 'pending')                AS status,
-        COALESCE(o.priority, 'normal')               AS priority,
+        COALESCE(o.priority, 'low')                  AS priority,
         o.created_at,
         o.notes
       FROM orders o
@@ -201,7 +201,7 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
     oemCode: r.oem_code && r.oem_code !== "-" ? r.oem_code : null,
     quantityNeeded: Number(r.quantity_needed ?? 0),
     status: r.status ?? "pending",
-    priority: (r.priority ?? "normal") as OrderRow["priority"],
+    priority: (r.priority === "urgent" ? "urgent" : "low") as OrderRow["priority"],
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()

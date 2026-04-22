@@ -57,6 +57,9 @@ _PRIVATE = F.chat.type == ChatType.PRIVATE
 _PRIORITY_URGENT = "urgent"
 _PRIORITY_LOW = "low"
 
+# Only two priority levels — must match DB values and dashboard UI.
+VALID_PRIORITIES = frozenset({_PRIORITY_URGENT, _PRIORITY_LOW})
+
 _PRIORITY_LABEL: Dict[str, str] = {
     _PRIORITY_URGENT: "🚨 სასწრაფო",
     _PRIORITY_LOW: "🟢 არც ისე სასწრაფო",
@@ -399,8 +402,8 @@ async def on_quantity_input(message: Message, state: FSMContext, db: Database) -
 async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
     chosen = (callback.data or "").split(":", 2)[2]
-    if chosen not in (_PRIORITY_URGENT, _PRIORITY_LOW):
-        await callback.answer("❌ უცნობი პრიორიტეტი", show_alert=True)
+    if chosen not in VALID_PRIORITIES:
+        await callback.answer("❌ უცნობი პრიორიტეტი — მხოლოდ 'urgent' ან 'low'", show_alert=True)
         return
 
     data = await state.get_data()
@@ -486,9 +489,10 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         rows_to_insert = [
             {
                 "product_id": item.get("product_id"),
-                "oem_code": item.get("oem_code"),
-                "quantity_needed": item["quantity"],
-                "priority": item["priority"],
+                "oem_code": item.get("oem_code") or None,
+                "quantity_needed": int(item["quantity"]),
+                # Enforce only valid priorities; unknown values fall back to low.
+                "priority": item["priority"] if item["priority"] in VALID_PRIORITIES else _PRIORITY_LOW,
                 "notes": (
                     f"manual /addorder by {requester_name or 'admin'}"
                     + (
