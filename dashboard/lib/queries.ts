@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_noStore as noStore } from "next/cache";
 import { query, queryOne } from "./db";
 
 export type DashboardSummary = {
@@ -151,7 +152,8 @@ export type OrderRow = {
   notes: string | null;
 };
 
-export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
+export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
+  noStore();
   let rows: {
     id: number;
     product_id: number | null;

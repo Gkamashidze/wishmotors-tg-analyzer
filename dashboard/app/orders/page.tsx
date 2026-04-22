@@ -12,7 +12,7 @@ export default async function OrdersPage() {
   let fetchError: string | null = null;
 
   try {
-    [orders, products] = await Promise.all([getOrders(500), getProducts()]);
+    [orders, products] = await Promise.all([getOrders(), getProducts()]);
   } catch (err) {
     console.error("[OrdersPage] მონაცემების ჩატვირთვა ვერ მოხერხდა:", err);
     fetchError =
