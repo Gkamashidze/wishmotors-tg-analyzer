@@ -302,8 +302,10 @@ UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL
 
 -- client_id: Telegram user ID of the person who placed the order.
 -- Added as nullable so existing rows and fresh INSERTs without a known
--- requester are not rejected.
+-- requester are not rejected. Column type must be BIGINT — Telegram user IDs
+-- exceed int32 range (max 2 147 483 647).
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id BIGINT;
+ALTER TABLE orders ALTER COLUMN client_id TYPE BIGINT;
 ALTER TABLE orders ALTER COLUMN client_id DROP NOT NULL;
 """
 
