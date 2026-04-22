@@ -142,12 +142,12 @@ export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
 export type OrderRow = {
   id: number;
   productId: number | null;
-  productName: string | null;
+  productName: string;       // always set — fallback: 'ძველი ჩანაწერი'
   oemCode: string | null;
-  quantityNeeded: number;
+  quantityNeeded: number;    // always set — fallback: 0
   status: string;
   priority: "urgent" | "low" | string;
-  createdAt: string;
+  createdAt: string;         // always set — fallback: NOW()
   notes: string | null;
 };
 
@@ -170,19 +170,19 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
       SELECT
         o.id,
         o.product_id,
-        COALESCE(p.name, NULLIF(o.part_name, ''), '-') AS product_name,
-        COALESCE(o.oem_code, p.oem_code, '-')         AS oem_code,
-        COALESCE(o.quantity_needed, 0)               AS quantity_needed,
-        COALESCE(o.status, 'pending')                AS status,
-        COALESCE(o.priority, 'low')                  AS priority,
-        o.created_at,
+        COALESCE(p.name, NULLIF(o.part_name, ''), 'ძველი ჩანაწერი') AS product_name,
+        COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
+        COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
+        COALESCE(o.status, 'pending')                                AS status,
+        COALESCE(o.priority, 'low')                                  AS priority,
+        COALESCE(o.created_at, NOW())                                AS created_at,
         o.notes
       FROM orders o
       LEFT JOIN products p ON p.id = o.product_id
       ORDER BY
         CASE COALESCE(o.status, 'pending') WHEN 'pending' THEN 0 ELSE 1 END,
         CASE COALESCE(o.priority, 'low') WHEN 'urgent' THEN 0 ELSE 1 END,
-        o.created_at DESC
+        o.created_at DESC NULLS LAST
       LIMIT $1
       `,
       [limit],
@@ -197,15 +197,17 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
   return rows.map((r) => ({
     id: r.id,
     productId: r.product_id ?? null,
-    productName: r.product_name && r.product_name !== "-" ? r.product_name : null,
+    // SQL already guarantees a non-null, non-empty string; keep as-is for display.
+    productName: r.product_name ?? "ძველი ჩანაწერი",
     oemCode: r.oem_code && r.oem_code !== "-" ? r.oem_code : null,
     quantityNeeded: Number(r.quantity_needed ?? 0),
     status: r.status ?? "pending",
     priority: (r.priority === "urgent" ? "urgent" : "low") as OrderRow["priority"],
-    createdAt:
-      r.created_at instanceof Date
+    createdAt: r.created_at
+      ? r.created_at instanceof Date
         ? r.created_at.toISOString()
-        : String(r.created_at),
+        : String(r.created_at)
+      : new Date().toISOString(),
     notes: r.notes ?? null,
   }));
 }

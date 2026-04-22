@@ -61,9 +61,13 @@ export async function GET(req: NextRequest) {
 
   const rows = await query<OrderExportRow>(
     `SELECT o.id,
-            COALESCE(o.oem_code, p.oem_code) AS oem_code,
-            COALESCE(p.name, NULLIF(o.part_name, '')) AS product_name,
-            o.quantity_needed, o.priority, o.status, o.notes, o.created_at
+            COALESCE(o.oem_code, p.oem_code, '-')                        AS oem_code,
+            COALESCE(p.name, NULLIF(o.part_name, ''), 'ძველი ჩანაწერი') AS product_name,
+            COALESCE(o.quantity_needed, 0)                               AS quantity_needed,
+            COALESCE(o.priority, 'low')                                  AS priority,
+            COALESCE(o.status, 'pending')                                AS status,
+            o.notes,
+            COALESCE(o.created_at, NOW())                                AS created_at
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id
      ${where}

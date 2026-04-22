@@ -141,7 +141,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
       if (priority !== "all" && normalizedPriority !== priority) return false;
       if (status !== "all" && r.status !== status) return false;
       if (!q) return true;
-      return [r.productName ?? "", r.oemCode ?? "", r.notes ?? ""].join(" ").toLowerCase().includes(q);
+      return [r.productName, r.oemCode ?? "", r.notes ?? ""].join(" ").toLowerCase().includes(q);
     });
   }, [rows, priority, status, queryText]);
 
@@ -312,7 +312,11 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
               filtered.map((r, idx) => (
                 <TableRow key={r.id}>
                   <TableCell className="font-medium tabular-nums text-muted-foreground">{idx + 1}</TableCell>
-                  <TableCell className="font-medium">{r.productName ?? <span className="text-muted-foreground italic">—</span>}</TableCell>
+                  <TableCell className="font-medium">
+                    {r.productName === "ძველი ჩანაწერი"
+                      ? <span className="text-muted-foreground italic text-xs">{r.productName}</span>
+                      : r.productName}
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{r.oemCode ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(r.quantityNeeded)}</TableCell>
                   <TableCell>{priorityBadge(r.priority)}</TableCell>
@@ -363,7 +367,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
         {viewRow && (
           <div className="space-y-3">
             <ViewFieldGrid>
-              <ViewField label="პროდუქტი" value={viewRow.productName} />
+              <ViewField label="პროდუქტი" value={viewRow.productName || "—"} />
               <ViewField label="OEM კოდი" value={viewRow.oemCode} />
               <ViewField label="საჭირო რ-ბა" value={formatNumber(viewRow.quantityNeeded)} />
               <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />
@@ -413,7 +417,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
         onClose={() => setDeleteRow(null)}
         onConfirm={handleDelete}
         title="შეკვეთის წაშლა"
-        description={`გსურთ შეკვეთა #${deleteRow?.id} (${deleteRow?.productName ?? "—"}) წაშლა? ეს მოქმედება შეუქცევადია.`}
+        description={`გსურთ შეკვეთა #${deleteRow?.id} (${deleteRow?.productName || "—"}) წაშლა? ეს მოქმედება შეუქცევადია.`}
         loading={deleting}
       />
     </div>
