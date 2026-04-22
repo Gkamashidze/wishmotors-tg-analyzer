@@ -274,6 +274,7 @@ def _build_report_body(
             f"   📈 ნაღდი გაყიდვები: +{cash_on_hand['cash_sales']:.2f}₾",
             f"   📉 ნაღდი ხარჯები: −{cash_on_hand['cash_expenses']:.2f}₾",
             f"   🏦 ბანკში შეტანილი: −{cash_on_hand['deposits']:.2f}₾",
+            f"   ↩️ ნაღდი დაბრუნებები: −{cash_on_hand.get('cash_returns', 0.0):.2f}₾",
             f"   💼 <b>სულ ხელზე: {cash_on_hand['balance']:.2f}₾</b>",
             "━━━━━━━━━━━━━━━━━━━━━",
         ]
@@ -461,6 +462,7 @@ def format_cash_on_hand(data: Dict[str, float]) -> str:
     sign = "✅" if balance >= 0 else "⚠️"
     transfers_out = data.get("transfers_out", 0.0)
     transfers_in = data.get("transfers_in", 0.0)
+    cash_returns = data.get("cash_returns", 0.0)
     lines: List[str] = [
         "🏧 <b>ხელზე არსებული თანხა</b>",
         f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
@@ -469,6 +471,7 @@ def format_cash_on_hand(data: Dict[str, float]) -> str:
         f"📈 ნაღდი გაყიდვები:    <b>+{data['cash_sales']:.2f}₾</b>",
         f"📉 ნაღდი ხარჯები:      <b>−{data['cash_expenses']:.2f}₾</b>",
         f"🏦 ბანკში შეტანილი:    <b>−{data['deposits']:.2f}₾</b>",
+        f"↩️ ნაღდი დაბრუნებები:  <b>−{cash_returns:.2f}₾</b>",
     ]
     if transfers_out > 0:
         lines.append(f"🔄 გადარიცხული გასვლა:  <b>−{transfers_out:.2f}₾</b>")

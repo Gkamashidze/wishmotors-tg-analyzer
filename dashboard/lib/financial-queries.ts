@@ -45,6 +45,7 @@ export async function getGlobalFinancialMetrics(
         FROM sales
         WHERE sold_at >= $1::timestamptz
           AND sold_at <  $2::timestamptz + INTERVAL '1 day'
+          AND status != 'returned'
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS expenses
@@ -64,7 +65,8 @@ export async function getGlobalFinancialMetrics(
         WHERE remaining_quantity > 0
       ),
       alltime_sales AS (
-        SELECT COALESCE(SUM(unit_price * quantity), 0) AS total_rev FROM sales
+        SELECT COALESCE(SUM(unit_price * quantity), 0) AS total_rev
+        FROM sales WHERE status != 'returned'
       ),
       alltime_exp AS (
         SELECT COALESCE(SUM(amount), 0) AS total_exp FROM expenses
@@ -127,6 +129,7 @@ export async function getProductMetrics(
       JOIN sales s ON s.product_id = p.id
         AND s.sold_at >= $1::timestamptz
         AND s.sold_at <  $2::timestamptz + INTERVAL '1 day'
+        AND s.status != 'returned'
       GROUP BY p.id, p.name, p.oem_code
       HAVING COALESCE(SUM(s.cost_amount), 0) > 0
     ),

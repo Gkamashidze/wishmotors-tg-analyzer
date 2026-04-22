@@ -61,7 +61,7 @@ export async function GET() {
       WITH
         cash_sales AS (
           SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
-          FROM sales WHERE payment_method = 'cash'
+          FROM sales WHERE payment_method = 'cash' AND status != 'returned'
         ),
         cash_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
@@ -69,7 +69,7 @@ export async function GET() {
         ),
         transfer_sales AS (
           SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
-          FROM sales WHERE payment_method = 'transfer'
+          FROM sales WHERE payment_method = 'transfer' AND status != 'returned'
         ),
         transfer_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
@@ -93,7 +93,7 @@ export async function GET() {
         ),
         cash_returns AS (
           SELECT COALESCE(SUM(refund_amount), 0) AS total
-          FROM returns WHERE refund_method = 'cash'
+          FROM returns WHERE COALESCE(refund_method, 'cash') = 'cash'
         ),
         bank_returns AS (
           SELECT COALESCE(SUM(refund_amount), 0) AS total

@@ -27,7 +27,7 @@ interface SaleForReturn {
 //   1. Inserts a row in `returns` with refund_method
 //   2. Restores product stock
 //   3. Restores inventory batch at original unit cost (so WAC stays correct)
-//   4. Deletes the sale row
+//   4. Marks the sale status='returned' (keeps it for audit; excluded from all financial queries)
 export async function POST(req: NextRequest, { params }: { params: Params }) {
   const { id } = await params;
   const rowId = Number(id);
@@ -84,8 +84,8 @@ export async function POST(req: NextRequest, { params }: { params: Params }) {
       );
     }
 
-    // 4. Delete the sale
-    await client.query(`DELETE FROM sales WHERE id = $1`, [rowId]);
+    // 4. Mark the sale as returned (kept for audit history, excluded from all financial queries)
+    await client.query(`UPDATE sales SET status = 'returned' WHERE id = $1`, [rowId]);
   });
 
   if (sale.topic_id && sale.topic_message_id && GROUP_ID) {

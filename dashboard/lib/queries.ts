@@ -32,6 +32,7 @@ export async function getDashboardSummary(
           COUNT(*) AS sales_count
         FROM sales
         WHERE sold_at >= NOW() - ($1::int || ' days')::interval
+          AND status != 'returned'
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -102,6 +103,7 @@ export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
         SUM(cost_amount) AS cogs
       FROM sales
       WHERE sold_at >= date_trunc('day', NOW()) - (($1::int - 1) || ' days')::interval
+        AND status != 'returned'
       GROUP BY 1
     ),
     exp_per_day AS (
@@ -216,6 +218,7 @@ export type SaleRow = {
   receiptPrinted: boolean;
   vatAmount: number;
   isVatIncluded: boolean;
+  status: string;
 };
 
 export async function getSales(limit: number = 500): Promise<SaleRow[]> {
@@ -234,6 +237,7 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
     receipt_printed: boolean;
     vat_amount: string;
     is_vat_included: boolean;
+    status: string;
   }>(
     `
     SELECT
@@ -250,7 +254,8 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
       s.notes,
       s.receipt_printed,
       s.vat_amount,
-      s.is_vat_included
+      s.is_vat_included,
+      s.status
     FROM sales s
     LEFT JOIN products p ON p.id = s.product_id
     ORDER BY s.sold_at DESC
@@ -277,6 +282,7 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
     receiptPrinted: r.receipt_printed,
     vatAmount: Number(r.vat_amount),
     isVatIncluded: r.is_vat_included,
+    status: r.status ?? "active",
   }));
 }
 
@@ -364,6 +370,7 @@ export async function getDashboardSummaryRange(
         FROM sales
         WHERE sold_at >= $1::timestamptz
           AND sold_at <  $2::timestamptz + INTERVAL '1 day'
+          AND status != 'returned'
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -526,6 +533,7 @@ export async function getTopSellingProducts(
           LEFT JOIN products p ON p.id = s.product_id
           WHERE s.sold_at >= $2::timestamptz
             AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+            AND s.status != 'returned'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_quantity DESC
           LIMIT $1
@@ -540,6 +548,7 @@ export async function getTopSellingProducts(
             SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
           FROM sales s
           LEFT JOIN products p ON p.id = s.product_id
+          WHERE s.status != 'returned'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_quantity DESC
           LIMIT $1
@@ -594,6 +603,7 @@ export async function getTopProfitableProducts(
           LEFT JOIN products p ON p.id = s.product_id
           WHERE s.sold_at >= $2::timestamptz
             AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
+            AND s.status != 'returned'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_profit DESC
           LIMIT $1
@@ -608,6 +618,7 @@ export async function getTopProfitableProducts(
             SUM(s.quantity * s.unit_price - COALESCE(s.cost_amount, 0)) AS total_profit
           FROM sales s
           LEFT JOIN products p ON p.id = s.product_id
+          WHERE s.status != 'returned'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_profit DESC
           LIMIT $1

@@ -1082,7 +1082,7 @@ class Database:
                 """SELECT s.*, p.name AS product_name, p.oem_code
                    FROM sales s
                    LEFT JOIN products p ON s.product_id = p.id
-                   WHERE s.sold_at >= $1
+                   WHERE s.sold_at >= $1 AND s.status != 'returned'
                    ORDER BY s.sold_at DESC""",
                 self._week_ago(),
             )
@@ -1095,7 +1095,7 @@ class Database:
                 """SELECT s.*, p.name AS product_name, p.oem_code
                    FROM sales s
                    LEFT JOIN products p ON s.product_id = p.id
-                   WHERE s.payment_method = 'credit'
+                   WHERE s.payment_method = 'credit' AND s.status != 'returned'
                    ORDER BY s.sold_at ASC""",
             )
             return self._rows(rows)  # type: ignore[return-value]
@@ -1154,16 +1154,19 @@ class Database:
         sale_id: Optional[int] = None,
         exchange_product_id: Optional[int] = None,
         notes: Optional[str] = None,
+        refund_method: str = "cash",
     ) -> Tuple[int, int]:
         """Record a return: restore stock + inventory batch + contra-revenue.
 
         One transaction performs:
-          1. INSERT the return row.
+          1. INSERT the return row with refund_method.
           2. Increment product stock by quantity.
-          3. If linked to a sale: restore the proportional inventory batch at
+          3. If linked to a sale: mark it status='returned' so all financial
+             queries exclude it automatically.
+          4. If linked to a sale: restore the proportional inventory batch at
              the original cost per unit (qty/sale_qty * cost_amount). Reverse
              the COGS side for that portion so COGS doesn't double-count.
-          4. Post a contra-revenue pair for the refund:
+          5. Post a contra-revenue pair for the refund:
                 DR 6100 Revenue   = refund_amount   (reversing some revenue)
                 CR 1100 Cash / 1400 AR (depending on the sale's payment_method)
         Returns (return_id, new_stock_level).
@@ -1173,10 +1176,12 @@ class Database:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     """INSERT INTO returns
-                           (sale_id, product_id, quantity, refund_amount, exchange_product_id, notes)
-                       VALUES ($1, $2, $3, $4, $5, $6)
+                           (sale_id, product_id, quantity, refund_amount,
+                            refund_method, exchange_product_id, notes)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7)
                        RETURNING id""",
-                    sale_id, product_id, qty, refund_amount, exchange_product_id, notes,
+                    sale_id, product_id, qty, refund_amount,
+                    refund_method, exchange_product_id, notes,
                 )
                 return_id = row["id"]
 
@@ -1192,7 +1197,7 @@ class Database:
                 # If we know the original sale, use its COGS + payment method to
                 # build an accurate, balanced reversal.
                 cogs_portion = 0.0
-                pm = "cash"
+                pm = refund_method if refund_method in ("cash", "transfer") else "cash"
                 if sale_id is not None:
                     sale = await conn.fetchrow(
                         """SELECT quantity, cost_amount, payment_method
@@ -1205,6 +1210,12 @@ class Database:
                         portion = min(qty, sale_qty) / sale_qty
                         cogs_portion = round(sale_cost * portion, 2)
                         pm = sale["payment_method"]
+                        # Mark the original sale as returned so it is excluded
+                        # from all financial calculations going forward.
+                        await conn.execute(
+                            "UPDATE sales SET status = 'returned' WHERE id = $1",
+                            sale_id,
+                        )
 
                 await self._restore_inventory_batch(
                     conn, product_id, qty, cogs_portion,
@@ -1750,6 +1761,7 @@ class Database:
                    FROM sales s
                    LEFT JOIN products p ON s.product_id = p.id
                    WHERE s.sold_at >= $1 AND s.sold_at <= $2
+                     AND s.status != 'returned'
                    ORDER BY s.sold_at DESC""",
                 date_from, date_to,
             )
