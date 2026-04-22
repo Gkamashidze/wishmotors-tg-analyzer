@@ -23,15 +23,16 @@ const PRIORITY_MAP: Record<string, string> = {
 };
 
 const STATUS_MAP: Record<string, string> = {
-  pending: "მოლოდინში",
-  ordered: "შეკვეთილი",
-  received: "მიღებული",
-  cancelled: "გაუქმებული",
-  completed: "შესრულდა",
+  new:        "ახალი",
+  processing: "მუშავდება",
+  ordered:    "შეკვეთილი",
+  ready:      "მზადაა",
+  delivered:  "მიტანილი",
+  cancelled:  "გაუქმებული",
 };
 
 const VALID_PRIORITIES = new Set(["all", "urgent", "low"]);
-const VALID_STATUSES = new Set(["all", "pending", "ordered", "received", "cancelled", "completed"]);
+const VALID_STATUSES = new Set(["all", "new", "processing", "ordered", "ready", "delivered", "cancelled"]);
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;

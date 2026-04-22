@@ -182,7 +182,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
       FROM orders o
       LEFT JOIN products p ON p.id = o.product_id
       ORDER BY
-        CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+        CASE o.status WHEN 'new' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END,
         CASE o.priority WHEN 'urgent' THEN 0 ELSE 1 END,
         o.created_at DESC NULLS LAST
       LIMIT $1
@@ -196,7 +196,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     );
   }
 
-  return rows.map((r) => ({
+  const mapped = rows.map((r) => ({
     id: r.id,
     productId: r.product_id ?? null,
     productName: r.product_name ?? "ძველი ჩანაწერი",
@@ -209,6 +209,8 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
       : String(r.created_at),
     notes: r.notes ?? null,
   }));
+  console.log("[getOrders] rows from DB:", mapped.length, mapped.map((o) => ({ id: o.id, status: o.status, priority: o.priority })));
+  return mapped;
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────

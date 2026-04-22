@@ -18,7 +18,7 @@ import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import { cn } from "@/lib/utils";
 
 type PriorityFilter = "all" | "urgent" | "low";
-type StatusFilter = "all" | "pending" | "ordered" | "received" | "cancelled" | "completed";
+type StatusFilter = "all" | "new" | "processing" | "ordered" | "ready" | "delivered" | "cancelled";
 
 const PRIORITY_TABS: { key: PriorityFilter; label: string; icon?: string }[] = [
   { key: "all", label: "ყველა" },
@@ -27,12 +27,13 @@ const PRIORITY_TABS: { key: PriorityFilter; label: string; icon?: string }[] = [
 ];
 
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "ყველა სტატუსი" },
-  { key: "pending", label: "მოლოდინში" },
-  { key: "ordered", label: "შეკვეთილი" },
-  { key: "received", label: "მიღებული" },
-  { key: "cancelled", label: "გაუქმებული" },
-  { key: "completed", label: "შესრულდა" },
+  { key: "all",        label: "ყველა სტატუსი" },
+  { key: "new",        label: "ახალი" },
+  { key: "processing", label: "მუშავდება" },
+  { key: "ordered",    label: "შეკვეთილი" },
+  { key: "ready",      label: "მზადაა" },
+  { key: "delivered",  label: "მიტანილი" },
+  { key: "cancelled",  label: "გაუქმებული" },
 ];
 
 const STATUS_OPTIONS = STATUS_TABS.slice(1).map((s) => ({ value: s.key, label: s.label }));
@@ -53,12 +54,13 @@ function priorityBadge(p: string) {
 
 function statusBadge(s: string) {
   switch (s) {
-    case "pending": return <Badge variant="warning">მოლოდინში</Badge>;
-    case "ordered": return <Badge variant="default">შეკვეთილი</Badge>;
-    case "received": return <Badge variant="success">მიღებული</Badge>;
-    case "cancelled": return <Badge variant="muted">გაუქმებული</Badge>;
-    case "completed": return <Badge variant="success"><span aria-hidden="true">✅</span> შესრულდა</Badge>;
-    default: return <Badge variant="outline">{s}</Badge>;
+    case "new":        return <Badge variant="warning">ახალი</Badge>;
+    case "processing": return <Badge variant="default">მუშავდება</Badge>;
+    case "ordered":    return <Badge variant="default">შეკვეთილი</Badge>;
+    case "ready":      return <Badge variant="success">მზადაა</Badge>;
+    case "delivered":  return <Badge variant="success"><span aria-hidden="true">✅</span> მიტანილი</Badge>;
+    case "cancelled":  return <Badge variant="muted">გაუქმებული</Badge>;
+    default:           return <Badge variant="outline">{s}</Badge>;
   }
 }
 
@@ -210,7 +212,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
         body: JSON.stringify({
           product_id: r.productId ?? null,
           quantity_needed: r.quantityNeeded,
-          status: "pending",
+          status: "new",
           priority: r.priority,
           notes: r.notes ?? null,
         }),
@@ -328,7 +330,7 @@ export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; product
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      {r.status === "completed" ? (
+                      {r.status === "delivered" ? (
                         <Button
                           size="sm"
                           variant="ghost"
