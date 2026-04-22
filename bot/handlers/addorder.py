@@ -475,18 +475,35 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         return
 
     requester_name: Optional[str] = None
+    requester_id: Optional[int] = None
+    requester_username: Optional[str] = None
     if callback.from_user:
+        requester_id = callback.from_user.id
         requester_name = (
             callback.from_user.full_name
             or callback.from_user.username
             or str(callback.from_user.id)
         )
+        requester_username = callback.from_user.username
+
+    # Ensure the requester exists in the clients table before the bulk INSERT
+    # so the FK constraint (orders.client_id → clients.id) is never violated.
+    if requester_id is not None:
+        try:
+            await db.upsert_client(
+                telegram_id=requester_id,
+                full_name=callback.from_user.full_name if callback.from_user else None,
+                username=requester_username,
+            )
+        except Exception:
+            logger.exception("upsert_client failed for telegram_id=%s", requester_id)
+            # Non-fatal: set client_id to None so the order can still be saved.
+            requester_id = None
 
     # DB insert is wrapped in a single transaction — partial failure rolls
     # back the whole batch so we never end up with half-saved orders.
     rows_to_insert: list = []
     try:
-        requester_id: Optional[int] = callback.from_user.id if callback.from_user else None
         rows_to_insert = [
             {
                 "product_id": item.get("product_id"),

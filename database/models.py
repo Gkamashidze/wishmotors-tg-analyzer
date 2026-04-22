@@ -312,6 +312,18 @@ CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status) WHERE status != 'ac
 -- Idempotent: safe to run multiple times.
 UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL;
 
+-- clients: one row per Telegram user who has placed at least one order.
+-- id = Telegram user ID (BIGINT — exceeds int32). Extra columns are optional
+-- and populated lazily; only id is required for the FK on orders.client_id.
+CREATE TABLE IF NOT EXISTS clients (
+    id           BIGINT PRIMARY KEY,
+    full_name    TEXT,
+    username     TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clients_created_at ON clients(created_at DESC);
+
 -- client_id: Telegram user ID of the person who placed the order.
 -- Added as nullable so existing rows and fresh INSERTs without a known
 -- requester are not rejected. Column type must be BIGINT — Telegram user IDs
@@ -319,12 +331,28 @@ UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id BIGINT;
 ALTER TABLE orders ALTER COLUMN client_id TYPE BIGINT;
 ALTER TABLE orders ALTER COLUMN client_id DROP NOT NULL;
+
+-- Ensure FK exists only if the clients table is present.
+-- Idempotent: skips if the constraint already exists.
+DO $$ BEGIN
+  ALTER TABLE orders
+    ADD CONSTRAINT orders_client_id_fkey
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 """
 
 
 # ─── TypedDict — type-safe dict shapes returned by db.py ─────────────────────
 # These let handlers use typed access (e.g. product["id"]) with IDE support
 # and mypy validation, without requiring a full ORM migration.
+
+class ClientRow(TypedDict):
+    id: int  # Telegram user ID
+    full_name: Optional[str]
+    username: Optional[str]
+    created_at: object  # datetime
+
 
 class ProductRow(TypedDict):
     id: int

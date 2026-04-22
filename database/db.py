@@ -1258,6 +1258,30 @@ class Database:
             )
             return self._rows(rows)  # type: ignore[return-value]
 
+    # ─── Clients ──────────────────────────────────────────────────────────────
+
+    async def upsert_client(
+        self,
+        telegram_id: int,
+        full_name: Optional[str] = None,
+        username: Optional[str] = None,
+    ) -> None:
+        """Ensure a row exists in clients for this Telegram user.
+
+        Called before any order INSERT that carries a client_id so the FK
+        constraint (orders.client_id → clients.id) is never violated.
+        ON CONFLICT DO UPDATE refreshes the display name if it changed.
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO clients (id, full_name, username)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (id) DO UPDATE
+                     SET full_name = COALESCE(EXCLUDED.full_name, clients.full_name),
+                         username  = COALESCE(EXCLUDED.username,  clients.username)""",
+                telegram_id, full_name or None, username or None,
+            )
+
     # ─── Orders ───────────────────────────────────────────────────────────────
 
     async def create_order(
@@ -1313,6 +1337,15 @@ class Database:
             [item.get("priority") for item in items],
             [item.get("oem_code") for item in items],
         )
+
+        # Ensure every distinct client_id exists in the clients table before the
+        # bulk INSERT so the FK constraint is never violated.
+        distinct_client_ids: set = {
+            item["client_id"] for item in items
+            if item.get("client_id") is not None
+        }
+        for cid in distinct_client_ids:
+            await self.upsert_client(int(cid))
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
