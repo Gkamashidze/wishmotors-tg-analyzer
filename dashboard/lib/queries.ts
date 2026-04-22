@@ -170,17 +170,17 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
       SELECT
         o.id,
         o.product_id,
-        p.name      AS product_name,
-        COALESCE(o.oem_code, p.oem_code) AS oem_code,
-        o.quantity_needed,
-        o.status,
-        o.priority,
+        COALESCE(p.name, '-')                       AS product_name,
+        COALESCE(o.oem_code, p.oem_code, '-')       AS oem_code,
+        COALESCE(o.quantity_needed, 0)               AS quantity_needed,
+        COALESCE(o.status, 'pending')                AS status,
+        COALESCE(o.priority, 'normal')               AS priority,
         o.created_at,
         o.notes
       FROM orders o
       LEFT JOIN products p ON p.id = o.product_id
       ORDER BY
-        CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+        CASE COALESCE(o.status, 'pending') WHEN 'pending' THEN 0 ELSE 1 END,
         CASE COALESCE(o.priority, 'normal') WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
         o.created_at DESC
       LIMIT $1
@@ -196,17 +196,17 @@ export async function getOrders(limit: number = 500): Promise<OrderRow[]> {
 
   return rows.map((r) => ({
     id: r.id,
-    productId: r.product_id,
-    productName: r.product_name,
-    oemCode: r.oem_code,
-    quantityNeeded: r.quantity_needed ?? 1,
-    status: r.status,
+    productId: r.product_id ?? null,
+    productName: r.product_name && r.product_name !== "-" ? r.product_name : null,
+    oemCode: r.oem_code && r.oem_code !== "-" ? r.oem_code : null,
+    quantityNeeded: Number(r.quantity_needed ?? 0),
+    status: r.status ?? "pending",
     priority: (r.priority ?? "normal") as OrderRow["priority"],
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()
         : String(r.created_at),
-    notes: r.notes,
+    notes: r.notes ?? null,
   }));
 }
 

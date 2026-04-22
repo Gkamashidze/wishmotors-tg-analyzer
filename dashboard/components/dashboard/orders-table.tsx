@@ -60,8 +60,11 @@ function statusBadge(s: string) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ka-GE", { year: "numeric", month: "short", day: "numeric" });
+function formatDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ka-GE", { year: "numeric", month: "short", day: "numeric" });
 }
 
 interface EditState {
@@ -87,7 +90,7 @@ function rowToEdit(r: OrderRow): EditState {
 export function OrdersTable({ rows, products = [] }: { rows: OrderRow[]; products?: ProductRow[] }) {
   const router = useRouter();
   const [priority, setPriority] = useState<PriorityFilter>("all");
-  const [status, setStatus] = useState<StatusFilter>("pending");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [queryText, setQueryText] = useState("");
   const [viewRow, setViewRow] = useState<OrderRow | null>(null);
   const [editRow, setEditRow] = useState<OrderRow | null>(null);
