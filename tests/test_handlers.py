@@ -330,8 +330,8 @@ class TestOnOemInput:
         await on_oem_input(msg, state)
         state.set_state.assert_called_once_with(AddOrderWizard.name)
 
-    async def test_invalid_oem_with_letters_sends_warning(self):
-        msg = _msg("ABC123")
+    async def test_invalid_oem_with_special_chars_sends_warning(self):
+        msg = _msg("!@#$")
         state = _state_mock({"items": []})
         await on_oem_input(msg, state)
         state.set_state.assert_not_called()
