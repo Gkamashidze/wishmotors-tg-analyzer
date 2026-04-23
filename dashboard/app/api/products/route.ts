@@ -62,13 +62,17 @@ export async function POST(req: NextRequest) {
   const currentStock = Number(body.current_stock ?? 0);
   const minStock = Number(body.min_stock ?? 0);
 
-  const existing = await query<{ id: number; name: string }>(
-    "SELECT id, name FROM products WHERE LOWER(name) = LOWER($1) LIMIT 1",
-    [name],
-  );
-
-  if (existing.length > 0) {
-    return NextResponse.json({ id: existing[0].id, name: existing[0].name });
+  if (oemCode) {
+    const existing = await query<{ id: number }>(
+      "SELECT id FROM products WHERE oem_code = $1 LIMIT 1",
+      [oemCode],
+    );
+    if (existing.length > 0) {
+      return NextResponse.json(
+        { error: "ამ OEM კოდით პროდუქტი უკვე არსებობს" },
+        { status: 409 },
+      );
+    }
   }
 
   const created = await query<{ id: number; name: string }>(
