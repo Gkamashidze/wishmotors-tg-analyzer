@@ -1,7 +1,4 @@
-import {
-  PackageSearch,
-  AlertTriangle,
-} from "lucide-react";
+import { PackageSearch, AlertTriangle } from "lucide-react";
 import { TopBar } from "@/components/top-bar";
 import {
   Card,
@@ -36,6 +33,12 @@ const DEFAULT_SUMMARY: DashboardSummary = {
   salesCount: 0,
   pendingOrders: 0,
   urgentOrders: 0,
+  ordersNew: 0,
+  ordersProcessing: 0,
+  ordersOrdered: 0,
+  ordersReady: 0,
+  ordersDelivered: 0,
+  ordersCancelled: 0,
 };
 
 export default async function DashboardPage() {
@@ -94,23 +97,25 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle>შეკვეთები</CardTitle>
-              <CardDescription>აქტიური პოზიციები</CardDescription>
+              <CardDescription>სტატუსების მიხედვით</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <MiniStat
-                icon={PackageSearch}
-                label="მოლოდინში"
-                value={formatNumber(summary.pendingOrders)}
-                tone="default"
-              />
-              <MiniStat
-                icon={AlertTriangle}
-                label="სასწრაფო"
-                value={formatNumber(summary.urgentOrders)}
-                tone="destructive"
-              />
-              <p className="text-xs text-muted-foreground pt-2 border-t border-border">
-                სრულ სიაში გადასვლისთვის გვერდით მენიუდან — „შეკვეთები".
+            <CardContent className="space-y-2">
+              <StatusRow label="ახალი" value={summary.ordersNew} tone="warning" />
+              <StatusRow label="მუშავდება" value={summary.ordersProcessing} tone="default" />
+              <StatusRow label="შეკვეთილი" value={summary.ordersOrdered} tone="default" />
+              <StatusRow label="მზადაა" value={summary.ordersReady} tone="success" />
+              <StatusRow label="მიტანილი" value={summary.ordersDelivered} tone="muted" />
+              <StatusRow label="გაუქმებული" value={summary.ordersCancelled} tone="cancelled" />
+              <div className="pt-2 border-t border-border flex items-center justify-between">
+                <MiniStat
+                  icon={AlertTriangle}
+                  label="სასწრაფო"
+                  value={formatNumber(summary.urgentOrders)}
+                  tone="destructive"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                სრული სია — გვერდით მენიუდან „შეკვეთები".
               </p>
             </CardContent>
           </Card>
@@ -168,6 +173,36 @@ function MiniStat({
         <span className="text-xs text-muted-foreground">{label}</span>
         <span className="text-lg font-semibold tabular-nums">{value}</span>
       </div>
+    </div>
+  );
+}
+
+type StatusTone = "default" | "warning" | "success" | "muted" | "cancelled";
+
+function StatusRow({ label, value, tone }: { label: string; value: number; tone: StatusTone }) {
+  const dotClass: Record<StatusTone, string> = {
+    default:   "bg-primary",
+    warning:   "bg-amber-400",
+    success:   "bg-emerald-500",
+    muted:     "bg-muted-foreground",
+    cancelled: "bg-border",
+  };
+  const countClass: Record<StatusTone, string> = {
+    default:   "text-foreground",
+    warning:   "text-amber-600",
+    success:   "text-emerald-600",
+    muted:     "text-muted-foreground",
+    cancelled: "text-muted-foreground",
+  };
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className={`h-2 w-2 rounded-full flex-shrink-0 ${dotClass[tone]}`} aria-hidden="true" />
+        {label}
+      </span>
+      <span className={`text-sm font-semibold tabular-nums ${countClass[tone]}`}>
+        {formatNumber(value)}
+      </span>
     </div>
   );
 }

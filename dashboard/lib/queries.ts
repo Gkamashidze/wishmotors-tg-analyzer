@@ -11,6 +11,12 @@ export type DashboardSummary = {
   salesCount: number;
   pendingOrders: number;
   urgentOrders: number;
+  ordersNew: number;
+  ordersProcessing: number;
+  ordersOrdered: number;
+  ordersReady: number;
+  ordersDelivered: number;
+  ordersCancelled: number;
 };
 
 export async function getDashboardSummary(
@@ -23,6 +29,12 @@ export async function getDashboardSummary(
     sales_count: string | null;
     pending_orders: string | null;
     urgent_orders: string | null;
+    orders_new: string | null;
+    orders_processing: string | null;
+    orders_ordered: string | null;
+    orders_ready: string | null;
+    orders_delivered: string | null;
+    orders_cancelled: string | null;
   }>(
     `
     WITH
@@ -42,8 +54,14 @@ export async function getDashboardSummary(
       ),
       ord_agg AS (
         SELECT
-          COUNT(*) FILTER (WHERE status IN ('new', 'processing')) AS pending_orders,
-          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent') AS urgent_orders
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing'))                          AS pending_orders,
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent')  AS urgent_orders,
+          COUNT(*) FILTER (WHERE status = 'new')                                           AS orders_new,
+          COUNT(*) FILTER (WHERE status = 'processing')                                    AS orders_processing,
+          COUNT(*) FILTER (WHERE status = 'ordered')                                       AS orders_ordered,
+          COUNT(*) FILTER (WHERE status = 'ready')                                         AS orders_ready,
+          COUNT(*) FILTER (WHERE status = 'delivered')                                     AS orders_delivered,
+          COUNT(*) FILTER (WHERE status = 'cancelled')                                     AS orders_cancelled
         FROM orders
       )
     SELECT
@@ -52,7 +70,13 @@ export async function getDashboardSummary(
       sales_agg.sales_count,
       exp_agg.total_expenses,
       ord_agg.pending_orders,
-      ord_agg.urgent_orders
+      ord_agg.urgent_orders,
+      ord_agg.orders_new,
+      ord_agg.orders_processing,
+      ord_agg.orders_ordered,
+      ord_agg.orders_ready,
+      ord_agg.orders_delivered,
+      ord_agg.orders_cancelled
     FROM sales_agg, exp_agg, ord_agg
     `,
     [days],
@@ -72,6 +96,12 @@ export async function getDashboardSummary(
     salesCount: Number(row?.sales_count ?? 0),
     pendingOrders: Number(row?.pending_orders ?? 0),
     urgentOrders: Number(row?.urgent_orders ?? 0),
+    ordersNew: Number(row?.orders_new ?? 0),
+    ordersProcessing: Number(row?.orders_processing ?? 0),
+    ordersOrdered: Number(row?.orders_ordered ?? 0),
+    ordersReady: Number(row?.orders_ready ?? 0),
+    ordersDelivered: Number(row?.orders_delivered ?? 0),
+    ordersCancelled: Number(row?.orders_cancelled ?? 0),
   };
 }
 
@@ -369,6 +399,12 @@ export async function getDashboardSummaryRange(
     sales_count: string | null;
     pending_orders: string | null;
     urgent_orders: string | null;
+    orders_new: string | null;
+    orders_processing: string | null;
+    orders_ordered: string | null;
+    orders_ready: string | null;
+    orders_delivered: string | null;
+    orders_cancelled: string | null;
   }>(
     `
     WITH
@@ -391,7 +427,13 @@ export async function getDashboardSummaryRange(
       ord_agg AS (
         SELECT
           COUNT(*) FILTER (WHERE status IN ('new', 'processing'))                          AS pending_orders,
-          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent')  AS urgent_orders
+          COUNT(*) FILTER (WHERE status IN ('new', 'processing') AND priority = 'urgent')  AS urgent_orders,
+          COUNT(*) FILTER (WHERE status = 'new')                                           AS orders_new,
+          COUNT(*) FILTER (WHERE status = 'processing')                                    AS orders_processing,
+          COUNT(*) FILTER (WHERE status = 'ordered')                                       AS orders_ordered,
+          COUNT(*) FILTER (WHERE status = 'ready')                                         AS orders_ready,
+          COUNT(*) FILTER (WHERE status = 'delivered')                                     AS orders_delivered,
+          COUNT(*) FILTER (WHERE status = 'cancelled')                                     AS orders_cancelled
         FROM orders
       )
     SELECT
@@ -400,7 +442,13 @@ export async function getDashboardSummaryRange(
       sales_agg.sales_count,
       exp_agg.total_expenses,
       ord_agg.pending_orders,
-      ord_agg.urgent_orders
+      ord_agg.urgent_orders,
+      ord_agg.orders_new,
+      ord_agg.orders_processing,
+      ord_agg.orders_ordered,
+      ord_agg.orders_ready,
+      ord_agg.orders_delivered,
+      ord_agg.orders_cancelled
     FROM sales_agg, exp_agg, ord_agg
     `,
     [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)],
@@ -420,6 +468,12 @@ export async function getDashboardSummaryRange(
     salesCount: Number(row?.sales_count ?? 0),
     pendingOrders: Number(row?.pending_orders ?? 0),
     urgentOrders: Number(row?.urgent_orders ?? 0),
+    ordersNew: Number(row?.orders_new ?? 0),
+    ordersProcessing: Number(row?.orders_processing ?? 0),
+    ordersOrdered: Number(row?.orders_ordered ?? 0),
+    ordersReady: Number(row?.orders_ready ?? 0),
+    ordersDelivered: Number(row?.orders_delivered ?? 0),
+    ordersCancelled: Number(row?.orders_cancelled ?? 0),
   };
 }
 
