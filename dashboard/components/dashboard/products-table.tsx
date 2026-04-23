@@ -284,8 +284,12 @@ export function ProductsTable({
       setAddError("დასახელება სავალდებულოა");
       return;
     }
+    if (wizardStep === 2 && addState.oem_code.trim() && !/^[A-Za-z0-9]{4,}$/.test(addState.oem_code.trim())) {
+      setAddError("OEM კოდი უნდა შეიცავდეს მინიმუმ 4 სიმბოლოს (ციფრებს ან/და ლათინურ ასოებს)");
+      return;
+    }
     if (wizardStep < 4) setWizardStep((s) => (s + 1) as WizardStep);
-  }, [wizardStep, addState.name]);
+  }, [wizardStep, addState.name, addState.oem_code]);
 
   const wizardBack = useCallback(() => {
     setAddError(null);
@@ -295,6 +299,10 @@ export function ProductsTable({
   const handleAdd = useCallback(async () => {
     if (!addState.name.trim()) {
       setAddError("დასახელება სავალდებულოა");
+      return;
+    }
+    if (addState.oem_code.trim() && !/^[A-Za-z0-9]{4,}$/.test(addState.oem_code.trim())) {
+      setAddError("OEM კოდი უნდა შეიცავდეს მინიმუმ 4 სიმბოლოს (ციფრებს ან/და ლათინურ ასოებს)");
       return;
     }
     setAddSaving(true);

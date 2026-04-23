@@ -2,7 +2,7 @@
 /addorder — manual multi-item order entry wizard.
 
 Flow (DM only, admin only):
-  1. /addorder              → OEM code prompt (strict digits-only)
+  1. /addorder              → OEM code prompt (alphanumeric, min 4 chars)
   2. OEM input              → product name prompt
   3. name input             → quantity prompt
   4. quantity input         → priority prompt  → 🚨 urgent  /  🟢 low
@@ -11,7 +11,7 @@ Flow (DM only, admin only):
                               then a single grouped summary is posted to
                               ORDERS_TOPIC_ID (urgent first, then low).
 
-OEM code is collected first (strict digits-only) so every order is always
+OEM code is collected first (alphanumeric, min 4 chars) so every order is always
 linked by a machine-readable identifier before a human label is entered.
 
 State is stored in the project FSM (Redis when REDIS_URL is set —
@@ -48,8 +48,8 @@ from database.db import Database
 logger = logging.getLogger(__name__)
 addorder_router = Router(name="addorder")
 
-# Strict OEM code: digits only, minimum 4 characters.
-_OEM_RE = re.compile(r'^\d{4,}$')
+# OEM code: alphanumeric (A-Z, a-z, 0-9), minimum 4 characters.
+_OEM_RE = re.compile(r'^[A-Za-z0-9]{4,}$')
 
 _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
@@ -346,8 +346,8 @@ async def on_oem_input(message: Message, state: FSMContext) -> None:
     raw = (message.text or "").strip()
     if not _OEM_RE.match(raw):
         await message.answer(
-            "⚠️ OEM კოდი უნდა შეიცავდეს <b>მხოლოდ ციფრებს</b> (მინ. 4).\n"
-            "<i>მაგ: 4571234000</i>",
+            "⚠️ OEM კოდი უნდა შეიცავდეს მინიმუმ 4 სიმბოლოს (ციფრებს ან/და ლათინურ ასოებს).\n"
+            "<i>მაგ: 4571234000 ან HU7009Z</i>",
             parse_mode=_PARSE,
         )
         return
