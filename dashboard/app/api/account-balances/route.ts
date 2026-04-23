@@ -42,8 +42,8 @@ export type AccountBalance = {
 // ---------------------------------------------------------------------------
 // GET /api/account-balances
 // Returns all 4 accounts with computed current balances.
-// GEL cash:  initial + SUM(cash sales) - SUM(cash expenses)
-// GEL bank:  initial + SUM(transfer sales) - SUM(transfer expenses)
+// GEL cash:  initial + cash_sales - cash_expenses - transfers_out + transfers_in - cash_returns - cash_deposits
+// GEL bank:  initial + transfer_sales - transfer_expenses - bank_transfers_out + bank_transfers_in - bank_returns
 // USD accounts: initial_balance only (no USD transactions tracked)
 // ---------------------------------------------------------------------------
 export async function GET() {
@@ -98,6 +98,11 @@ export async function GET() {
         bank_returns AS (
           SELECT COALESCE(SUM(refund_amount), 0) AS total
           FROM returns WHERE refund_method = 'bank'
+        ),
+        -- Cash physically moved to bank (matches bot's cash_deposits CTE)
+        cash_deps AS (
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM cash_deposits
         )
       SELECT
         ab.account_key,
@@ -107,7 +112,7 @@ export async function GET() {
         ab.updated_at,
         CASE
           WHEN ab.account_key = 'cash_gel'
-            THEN ab.initial_balance + cs.total - ce.total - tco.total + tci.total - cr.total
+            THEN ab.initial_balance + cs.total - ce.total - tco.total + tci.total - cr.total - cd.total
           WHEN ab.account_key = 'bank_gel'
             THEN ab.initial_balance + ts.total - te.total - tbo.total + tbi.total - br.total
           ELSE ab.initial_balance
@@ -123,6 +128,7 @@ export async function GET() {
       CROSS JOIN tr_bank_in tbi
       CROSS JOIN cash_returns cr
       CROSS JOIN bank_returns br
+      CROSS JOIN cash_deps cd
       ORDER BY ab.id
     `);
 
