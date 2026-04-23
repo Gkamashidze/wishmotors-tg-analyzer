@@ -4,7 +4,11 @@
       "Bash(ruff check *)",
       "Bash(mypy *)",
       "Bash(npx tsc --noEmit)",
-      "Bash(npx tsc --noEmit *)"
+      "Bash(npx tsc --noEmit *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(git add *)",
+      "Bash(mkdir *)"
     ]
   }
 }
