@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
+import { ProductCombobox } from "@/components/ui/product-combobox";
 import { DateRangePicker, type DateRange } from "@/components/dashboard/date-range-picker";
 import type { SaleRow, ProductRow } from "@/lib/queries";
 import { formatGEL, formatNumber } from "@/lib/utils";
@@ -91,11 +92,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
   const [deleting, setDeleting] = useState(false);
   const [returnRow, setReturnRow] = useState<SaleRow | null>(null);
   const [returning, setReturning] = useState(false);
-
-  const productOptions = useMemo(() => [
-    { value: "", label: "— პროდუქტი არ არის —" },
-    ...products.map((p) => ({ value: String(p.id), label: p.name })),
-  ], [products]);
+  const [localProducts, setLocalProducts] = useState<ProductRow[]>(products);
 
   const fromTime = useMemo(() => dateRange.from.getTime(), [dateRange.from]);
   const toTime = useMemo(() => {
@@ -358,7 +355,14 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
       <Dialog open={!!editRow} onClose={closeEdit} title={`გაყიდვის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
-            <Select id="sale-product" label="პროდუქტი" options={productOptions} value={editState.product_id} onChange={set("product_id")} />
+            <ProductCombobox
+              id="sale-product"
+              label="პროდუქტი"
+              products={localProducts}
+              value={editState.product_id}
+              onChange={(val) => setEditState((prev) => prev ? { ...prev, product_id: val } : prev)}
+              onProductAdded={(p) => setLocalProducts((prev) => [...prev, p].sort((a, b) => a.name.localeCompare(b.name)))}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Input id="sale-qty" label="რაოდენობა" type="number" min="1" value={editState.quantity} onChange={set("quantity")} />
               <Input id="sale-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />

@@ -18,6 +18,8 @@ interface CreatableComboboxProps {
   value: string;
   onChange: (value: string) => void;
   onCreateOption?: (inputValue: string) => Promise<ComboOption> | ComboOption;
+  onAddNew?: () => void;
+  addNewLabel?: string;
   placeholder?: string;
   createLabel?: string;
   disabled?: boolean;
@@ -30,6 +32,8 @@ export function CreatableCombobox({
   value,
   onChange,
   onCreateOption,
+  onAddNew,
+  addNewLabel = "+ ახალი პროდუქტის დამატება",
   placeholder = "პროდუქტი...",
   createLabel = "შექმნა",
   disabled = false,
@@ -64,7 +68,7 @@ export function CreatableCombobox({
   );
 
   const showCreate = !!onCreateOption && inputValue.trim().length > 1 && !exactMatch;
-  const hasResults = filtered.length > 0 || showCreate;
+  const hasResults = filtered.length > 0 || showCreate || !!onAddNew;
 
   useEffect(() => {
     setMounted(true);
@@ -173,6 +177,24 @@ export function CreatableCombobox({
               <span className="font-medium">"{inputValue.trim()}"</span>
             </span>
             {creating && <span className="ml-auto text-xs text-muted-foreground animate-pulse">ინახება...</span>}
+          </li>
+        )}
+
+        {onAddNew && (
+          <li
+            role="option"
+            aria-selected={false}
+            className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground border-t border-border select-none"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setOpen(false);
+              setFocused(false);
+              setInputValue("");
+              onAddNew();
+            }}
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="text-primary font-medium">{addNewLabel}</span>
           </li>
         )}
       </ul>

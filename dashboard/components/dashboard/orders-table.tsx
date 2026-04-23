@@ -10,8 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea, Select } from "@/components/ui/input";
-import { CreatableCombobox } from "@/components/ui/creatable-combobox";
-import type { ComboOption } from "@/components/ui/creatable-combobox";
+import { ProductCombobox } from "@/components/ui/product-combobox";
 import type { OrderRow, ProductRow } from "@/lib/queries";
 import { formatNumber } from "@/lib/utils";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
@@ -107,37 +106,6 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
   const [changingStatusId, setChangingStatusId] = useState<number | null>(null);
   const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
   const [localProducts, setLocalProducts] = useState<ProductRow[]>(products);
-
-  const productOptions = useMemo<ComboOption[]>(() => [
-    { value: "", label: "— პროდუქტი არ არის —" },
-    ...localProducts.map((p) => ({
-      value: String(p.id),
-      label: p.name,
-      sublabel: p.oemCode ?? undefined,
-    })),
-  ], [localProducts]);
-
-  const handleCreateProduct = useCallback(async (name: string): Promise<ComboOption> => {
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) throw new Error("product create failed");
-    const data = (await res.json()) as { id: number; name: string };
-    const newProduct: ProductRow = {
-      id: data.id,
-      name: data.name,
-      oemCode: null,
-      currentStock: 0,
-      minStock: 20,
-      unitPrice: 0,
-      unit: "ც",
-      createdAt: new Date().toISOString(),
-    };
-    setLocalProducts((prev) => [...prev, newProduct].sort((a, b) => a.name.localeCompare(b.name)));
-    return { value: String(data.id), label: data.name };
-  }, []);
 
   const filtered = useMemo(() => {
     const q = queryText.trim().toLowerCase();
@@ -424,18 +392,20 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
       <Dialog open={!!editRow} onClose={closeEdit} title={`შეკვეთის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
-            <CreatableCombobox
-                id="ord-product"
-                label="პროდუქტი"
-                options={productOptions}
-                value={editState.product_id}
-                onChange={(val) => {
-                  const product = localProducts.find((p) => String(p.id) === val);
-                  setEditState((prev) => prev ? { ...prev, product_id: val, oem_code: product?.oemCode ?? "" } : prev);
-                }}
-                onCreateOption={handleCreateProduct}
-                createLabel="ახალი პროდუქტი"
-              />
+            <ProductCombobox
+              id="ord-product"
+              label="პროდუქტი"
+              products={localProducts}
+              value={editState.product_id}
+              onChange={(val) => {
+                const product = localProducts.find((p) => String(p.id) === val);
+                setEditState((prev) => prev ? { ...prev, product_id: val, oem_code: product?.oemCode ?? prev.oem_code } : prev);
+              }}
+              onProductAdded={(p) => {
+                setLocalProducts((prev) => [...prev, p].sort((a, b) => a.name.localeCompare(b.name)));
+                setEditState((prev) => prev ? { ...prev, product_id: String(p.id), oem_code: p.oemCode ?? "" } : prev);
+              }}
+            />
             <Input id="ord-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
             <Input id="ord-qty" label="საჭირო რაოდენობა" type="number" min="1" value={editState.quantity_needed} onChange={set("quantity_needed")} />
             <div className="grid grid-cols-2 gap-3">
