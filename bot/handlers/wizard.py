@@ -891,6 +891,7 @@ def _sale_edit_field_kb(sale_id: int, is_credit: bool) -> InlineKeyboardMarkup:
          _btn("💰 ფასი",       f"sef:{sale_id}:price")],
         [_btn("💳 გადახდა",    f"sef:{sale_id}:pay"),
          _btn("👤 კლიენტი",   f"sef:{sale_id}:cust")],
+        [_btn("↩️ დაბრუნება",  f"ret:sale:{sale_id}")],
         _CANCEL_ROW,
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -2143,3 +2144,130 @@ async def _show_expense_confirm(msg: Message, state: FSMContext, edit: bool) -> 
         await msg.edit_text(text, parse_mode=_PARSE, reply_markup=kb)
     else:
         await msg.answer(text, parse_mode=_PARSE, reply_markup=kb)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SALE RETURN WIZARD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@wizard_router.callback_query(F.data.startswith("ret:sale:"), IsAdmin())
+async def sale_return_start(callback: CallbackQuery, db: Database) -> None:
+    """Show the refund-method picker for a sale return."""
+    assert isinstance(callback.message, Message)
+    try:
+        sale_id = int(callback.data.split(":")[2])
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
+        return
+
+    if sale.get("status") == "returned":
+        await callback.answer("⚠️ ეს გაყიდვა უკვე დაბრუნებულია.", show_alert=True)
+        return
+
+    qty   = sale["quantity"]
+    price = float(sale["unit_price"])
+    name  = sale.get("product_name") or sale.get("notes") or f"#{sale_id}"
+
+    text = (
+        f"↩️ <b>გაყიდვის დაბრუნება #{sale_id}</b>\n\n"
+        f"📦 {_e(name)}\n"
+        f"🔢 {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n\n"
+        "რა ფორმით დაუბრუნეთ თანხა კლიენტს?"
+    )
+    kb = _kb(
+        [_btn("💵 ხელზე",  f"ret:c:{sale_id}:cash"),
+         _btn("🏦 ბანკით", f"ret:c:{sale_id}:bank")],
+        _CANCEL_ROW,
+    )
+
+    target_chat_id = _edit_target_chat(callback)
+    if target_chat_id != callback.message.chat.id:
+        await callback.bot.send_message(
+            chat_id=target_chat_id, text=text, parse_mode=_PARSE, reply_markup=kb,
+        )
+        await callback.answer("↩️ დაბრუნება DM-ში")
+    else:
+        await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=kb)
+        await callback.answer()
+
+
+@wizard_router.callback_query(F.data.startswith("ret:c:"), IsAdmin())
+async def sale_return_confirm(callback: CallbackQuery, db: Database) -> None:
+    """Execute the return: restore stock, mark sale returned, notify admin."""
+    assert isinstance(callback.message, Message)
+    try:
+        parts   = callback.data.split(":")   # ret:c:{sale_id}:{method}
+        sale_id = int(parts[2])
+        method  = parts[3]                   # cash | bank
+    except (IndexError, ValueError):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    if method not in ("cash", "bank"):
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    sale = await db.get_sale(sale_id)
+    if not sale:
+        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა.", show_alert=True)
+        return
+
+    if sale.get("status") == "returned":
+        await callback.answer("⚠️ ეს გაყიდვა უკვე დაბრუნებულია.", show_alert=True)
+        return
+
+    product_id = sale.get("product_id")
+    if not product_id:
+        await callback.answer(
+            "⚠️ ამ გაყიდვას პროდუქტი არ აქვს მიბმული — დაბრუნება ვერ მოხდება.",
+            show_alert=True,
+        )
+        return
+
+    qty    = sale["quantity"]
+    price  = float(sale["unit_price"])
+    refund = round(qty * price, 2)
+    name   = sale.get("product_name") or sale.get("notes") or f"#{sale_id}"
+
+    refund_method_db = "cash" if method == "cash" else "transfer"
+    _return_id, new_stock = await db.create_return(
+        product_id=product_id,
+        quantity=qty,
+        refund_amount=refund,
+        sale_id=sale_id,
+        refund_method=refund_method_db,
+        notes=f"დაბრუნება — გაყიდვა #{sale_id}",
+    )
+
+    topic_msg = sale.get("topic_message_id")
+    if topic_msg:
+        from bot.reports.formatter import format_topic_sale as _fmt_topic  # noqa: PLC0415
+        try:
+            original_text = _fmt_topic(
+                product_name=name,
+                qty=qty,
+                price=price,
+                payment=sale.get("payment_method", "cash"),
+                sale_id=sale_id,
+                customer_name=sale.get("customer_name"),
+            )
+        except Exception:
+            original_text = f"გაყიდვა #{sale_id}"
+        await mark_cancelled(callback.bot, config.GROUP_ID, topic_msg, original_text)
+
+    from bot.reports.formatter import format_return_confirmation  # noqa: PLC0415
+    confirmation = format_return_confirmation(
+        product_name=name,
+        qty=qty,
+        refund=refund,
+        new_stock=new_stock,
+        refund_method=method,
+    )
+
+    await callback.message.edit_text(confirmation, parse_mode=_PARSE)
+    await callback.answer(f"✅ #{sale_id} დაბრუნდა — {refund:.2f}₾")

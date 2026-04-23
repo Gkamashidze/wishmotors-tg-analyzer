@@ -149,12 +149,15 @@ def format_return_confirmation(
     qty: int,
     refund: float,
     new_stock: int,
+    refund_method: str = "cash",
 ) -> str:
+    method_label = "💵 ხელზე" if refund_method == "cash" else "🏦 ბანკით"
     return (
         f"↩️ <b>დაბრუნება დაფიქსირდა</b>\n"
         f"📦 პროდუქტი: {_e(product_name)}\n"
         f"🔢 რაოდენობა: {qty}ც\n"
         f"💰 დაბრუნებული თანხა: {refund:.2f}₾\n"
+        f"💳 გაცემის ფორმა: {method_label}\n"
         f"📊 საწყობში ახლა: {new_stock}ც"
     )
 
