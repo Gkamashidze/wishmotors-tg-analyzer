@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const negativeOnly = searchParams.get("negativeStock") === "true";
+  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+  const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? PRODUCTS_PAGE_SIZE)));
+  const offset = (page - 1) * limit;
 
   const rows = await query<{
     id: number;
@@ -14,15 +18,21 @@ export async function GET(req: NextRequest) {
     unit_price: string;
     unit: string;
     created_at: Date;
+    total_count: string;
   }>(
-    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
+    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at,
+            COUNT(*) OVER() AS total_count
      FROM products
      ${negativeOnly ? "WHERE current_stock < 0" : ""}
-     ORDER BY name ASC, created_at DESC`,
+     ORDER BY name ASC, created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
   );
 
-  return NextResponse.json(
-    rows.map((r) => ({
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
       id: r.id,
       name: r.name,
       oemCode: r.oem_code,
@@ -32,7 +42,10 @@ export async function GET(req: NextRequest) {
       unit: r.unit,
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     })),
-  );
+    total,
+    page,
+    limit,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -40,8 +53,14 @@ export async function POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : null;
 
   if (!name) {
-    return NextResponse.json({ error: "name is required" }, { status: 400 });
+    return NextResponse.json({ error: "სახელი სავალდებულოა" }, { status: 400 });
   }
+
+  const oemCode = typeof body.oem_code === "string" ? body.oem_code.trim() || null : null;
+  const unit = typeof body.unit === "string" && body.unit.trim() ? body.unit.trim() : "ცალი";
+  const unitPrice = Number(body.unit_price ?? 0);
+  const currentStock = Number(body.current_stock ?? 0);
+  const minStock = Number(body.min_stock ?? 0);
 
   const existing = await query<{ id: number; name: string }>(
     "SELECT id, name FROM products WHERE LOWER(name) = LOWER($1) LIMIT 1",
@@ -53,8 +72,10 @@ export async function POST(req: NextRequest) {
   }
 
   const created = await query<{ id: number; name: string }>(
-    "INSERT INTO products (name) VALUES ($1) RETURNING id, name",
-    [name],
+    `INSERT INTO products (name, oem_code, unit, unit_price, current_stock, min_stock)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, name`,
+    [name, oemCode, unit, unitPrice, currentStock, minStock],
   );
 
   return NextResponse.json({ id: created[0].id, name: created[0].name }, { status: 201 });

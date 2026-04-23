@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -11,6 +11,7 @@ import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import type { ProductRow } from "@/lib/queries";
+import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 import type { ProductMetricRow } from "@/lib/financial-queries";
 import { formatGEL, formatNumber, cn } from "@/lib/utils";
 
@@ -91,12 +92,39 @@ interface OrderEditState {
   notes: string;
 }
 
-// ─── Product edit state ───────────────────────────────────────────────────────
+// ─── Product edit / add state ─────────────────────────────────────────────────
 
 interface EditState {
   name: string;
   oem_code: string;
 }
+
+interface AddState {
+  name: string;
+  oem_code: string;
+  unit: string;
+  unit_price: string;
+  current_stock: string;
+  min_stock: string;
+}
+
+type WizardStep = 1 | 2 | 3 | 4;
+
+const WIZARD_STEPS: Record<WizardStep, string> = {
+  1: "დასახელება",
+  2: "OEM კოდი",
+  3: "მარაგი",
+  4: "ფასი",
+};
+
+const DEFAULT_ADD: AddState = {
+  name: "",
+  oem_code: "",
+  unit: "ცალი",
+  unit_price: "0",
+  current_stock: "0",
+  min_stock: "0",
+};
 
 function rowToEdit(r: ProductRow): EditState {
   return { name: r.name, oem_code: r.oemCode ?? "" };
@@ -126,7 +154,15 @@ function orderToEdit(o: ProductOrder): OrderEditState {
 
 type TxTab = "info" | "sales" | "orders";
 
-export function ProductsTable({ rows }: { rows: ProductRow[] }) {
+export function ProductsTable({
+  rows,
+  total,
+  page,
+}: {
+  rows: ProductRow[];
+  total: number;
+  page: number;
+}) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [showNegative, setShowNegative] = useState(false);
@@ -148,6 +184,13 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Add product wizard state
+  const [isAdding, setIsAdding] = useState(false);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  const [addState, setAddState] = useState<AddState>(DEFAULT_ADD);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addSaving, setAddSaving] = useState(false);
+
   // Transactions tab state
   const [txTab, setTxTab] = useState<TxTab>("info");
   const [txSales, setTxSales] = useState<ProductSale[]>([]);
@@ -166,6 +209,14 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
 
   const [subSaving, setSubSaving] = useState(false);
   const [subDeleting, setSubDeleting] = useState(false);
+
+  // ── Pagination ──────────────────────────────────────────────────────────────
+
+  const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE));
+
+  const goToPage = useCallback((p: number) => {
+    router.push(`?page=${p}`);
+  }, [router]);
 
   // ── Load transactions when viewRow changes ──────────────────────────────────
 
@@ -201,21 +252,86 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
     return () => { cancelled = true; };
   }, [viewRow?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filtered rows ───────────────────────────────────────────────────────────
-
-  const sorted = useMemo(
-    () => [...rows].sort((a, b) => a.name.localeCompare(b.name, "ka")),
-    [rows],
-  );
+  // ── Filtered rows (client-side within current page) ─────────────────────────
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return sorted.filter((r) => {
+    return rows.filter((r) => {
       if (showNegative && r.currentStock >= 0) return false;
       if (!q) return true;
       return [r.name, r.oemCode ?? ""].join(" ").toLowerCase().includes(q);
     });
-  }, [sorted, search, showNegative]);
+  }, [rows, search, showNegative]);
+
+  // ── Add product ─────────────────────────────────────────────────────────────
+
+  const openAdd = useCallback(() => {
+    setAddState(DEFAULT_ADD);
+    setAddError(null);
+    setWizardStep(1);
+    setIsAdding(true);
+  }, []);
+
+  const closeAdd = useCallback(() => {
+    setIsAdding(false);
+    setAddError(null);
+    setWizardStep(1);
+  }, []);
+
+  const wizardNext = useCallback(() => {
+    setAddError(null);
+    if (wizardStep === 1 && !addState.name.trim()) {
+      setAddError("დასახელება სავალდებულოა");
+      return;
+    }
+    if (wizardStep < 4) setWizardStep((s) => (s + 1) as WizardStep);
+  }, [wizardStep, addState.name]);
+
+  const wizardBack = useCallback(() => {
+    setAddError(null);
+    if (wizardStep > 1) setWizardStep((s) => (s - 1) as WizardStep);
+  }, [wizardStep]);
+
+  const handleAdd = useCallback(async () => {
+    if (!addState.name.trim()) {
+      setAddError("დასახელება სავალდებულოა");
+      return;
+    }
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addState.name.trim(),
+          oem_code: addState.oem_code.trim() || null,
+          unit: addState.unit.trim() || "ცალი",
+          unit_price: Number(addState.unit_price) || 0,
+          current_stock: Number(addState.current_stock) || 0,
+          min_stock: Number(addState.min_stock) || 0,
+        }),
+      });
+      if (res.status === 200) {
+        setAddError("ამ სახელის პროდუქტი უკვე არსებობს");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setAddError(body.error ?? "შეცდომა. სცადეთ თავიდან.");
+        return;
+      }
+      closeAdd();
+      router.push("?page=1");
+      router.refresh();
+    } finally {
+      setAddSaving(false);
+    }
+  }, [addState, closeAdd, router]);
+
+  const setAdd = (key: keyof AddState) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setAddState((prev) => ({ ...prev, [key]: e.target.value }));
 
   // ── Product edit/delete ─────────────────────────────────────────────────────
 
@@ -373,6 +489,7 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
 
   return (
     <div className="space-y-4">
+      {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <input
@@ -395,11 +512,18 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
             ⚠️ უარყოფითი მარაგები
           </button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {formatNumber(filtered.length)} / {formatNumber(rows.length)} პროდუქტი
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-muted-foreground">
+            {formatNumber(filtered.length)} / {formatNumber(total)} პროდუქტი
+          </p>
+          <Button size="sm" onClick={openAdd} className="h-9 cursor-pointer gap-1.5">
+            <Plus className="h-4 w-4" />
+            პროდუქტის დამატება
+          </Button>
+        </div>
       </div>
 
+      {/* Table */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
@@ -421,7 +545,9 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
             ) : (
               filtered.map((r, idx) => (
                 <TableRow key={r.id}>
-                  <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground text-xs">
+                    {(page - 1) * PRODUCTS_PAGE_SIZE + idx + 1}
+                  </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {r.oemCode ?? <span className="italic">—</span>}
                   </TableCell>
@@ -451,6 +577,107 @@ export function ProductsTable({ rows }: { rows: ProductRow[] }) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1}
+            className="gap-1 cursor-pointer"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            წინა
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            გვ. <span className="font-medium text-foreground">{page}</span> / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages}
+            className="gap-1 cursor-pointer"
+          >
+            შემდეგი
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* ── Add Product Modal ────────────────────────────────────────────────── */}
+      <Dialog open={isAdding} onClose={closeAdd} title="ახალი პროდუქტის დამატება">
+        <div className="space-y-3">
+          <Input
+            id="add-name"
+            label="დასახელება *"
+            type="text"
+            value={addState.name}
+            onChange={setAdd("name")}
+            placeholder="მაგ: ზეთის ფილტრი"
+          />
+          <Input
+            id="add-oem"
+            label="OEM კოდი"
+            type="text"
+            value={addState.oem_code}
+            onChange={setAdd("oem_code")}
+            placeholder="სურვილისამებრ"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              id="add-stock"
+              label="რაოდენობა"
+              type="number"
+              min="0"
+              value={addState.current_stock}
+              onChange={setAdd("current_stock")}
+            />
+            <Input
+              id="add-unit"
+              label="ერთეული"
+              type="text"
+              value={addState.unit}
+              onChange={setAdd("unit")}
+              placeholder="ცალი"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              id="add-price"
+              label="ერთ. ფასი (₾)"
+              type="number"
+              min="0"
+              step="0.01"
+              value={addState.unit_price}
+              onChange={setAdd("unit_price")}
+            />
+            <Input
+              id="add-min"
+              label="მინ. მარაგი"
+              type="number"
+              min="0"
+              value={addState.min_stock}
+              onChange={setAdd("min_stock")}
+            />
+          </div>
+          {addError && (
+            <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+              {addError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={closeAdd} disabled={addSaving} className="cursor-pointer">
+              გაუქმება
+            </Button>
+            <Button onClick={handleAdd} disabled={addSaving} className="cursor-pointer">
+              {addSaving ? "ემატება..." : "დამატება"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* ── View Modal ──────────────────────────────────────────────────────── */}
       <Dialog

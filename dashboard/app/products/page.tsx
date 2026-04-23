@@ -2,13 +2,19 @@ import { TopBar } from "@/components/top-bar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductsTable } from "@/components/dashboard/products-table";
 import { FixUnknownsPanel } from "@/components/dashboard/fix-unknowns-panel";
-import { getProducts } from "@/lib/queries";
+import { getProductsPaged } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function ProductsPage() {
-  const products = await getProducts();
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const params = await searchParams;
+  const page = Math.max(1, Number(params.page ?? 1));
+  const { rows: products, total } = await getProductsPaged(page);
 
   return (
     <>
@@ -37,7 +43,7 @@ export default async function ProductsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ProductsTable rows={products} />
+            <ProductsTable rows={products} total={total} page={page} />
           </CardContent>
         </Card>
       </main>

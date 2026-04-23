@@ -684,3 +684,49 @@ export async function getProducts(): Promise<ProductRow[]> {
         : String(r.created_at),
   }));
 }
+
+export { PRODUCTS_PAGE_SIZE } from "./constants";
+import { PRODUCTS_PAGE_SIZE } from "./constants";
+
+export async function getProductsPaged(
+  page: number,
+  limit: number = PRODUCTS_PAGE_SIZE,
+): Promise<{ rows: ProductRow[]; total: number }> {
+  const offset = (Math.max(1, page) - 1) * limit;
+  const rows = await query<{
+    id: number;
+    name: string;
+    oem_code: string | null;
+    current_stock: number;
+    min_stock: number;
+    unit_price: string;
+    unit: string;
+    created_at: Date;
+    total_count: string;
+  }>(
+    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at,
+            COUNT(*) OVER() AS total_count
+     FROM products
+     ORDER BY name ASC, created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset],
+  );
+
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      oemCode: r.oem_code,
+      currentStock: r.current_stock,
+      minStock: r.min_stock,
+      unitPrice: Number(r.unit_price),
+      unit: r.unit,
+      createdAt:
+        r.created_at instanceof Date
+          ? r.created_at.toISOString()
+          : String(r.created_at),
+    })),
+    total,
+  };
+}
