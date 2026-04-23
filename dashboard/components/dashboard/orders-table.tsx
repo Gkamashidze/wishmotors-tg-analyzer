@@ -138,17 +138,14 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
   }, []);
 
   const filtered = useMemo(() => {
-    console.log("[OrdersTable] rows received:", rows.length, rows.map((o) => ({ id: o.id, status: o.status, priority: o.priority })));
     const q = queryText.trim().toLowerCase();
-    const result = rows.filter((r) => {
+    return rows.filter((r) => {
       const normalizedPriority = normalizePriority(r.priority);
       if (priority !== "all" && normalizedPriority !== priority) return false;
       if (status !== "all" && r.status !== status) return false;
       if (!q) return true;
       return [r.productName, r.oemCode ?? "", r.notes ?? ""].join(" ").toLowerCase().includes(q);
     });
-    console.log("[OrdersTable] filtered:", result.length, "priority:", priority, "status:", status, "q:", q);
-    return result;
   }, [rows, priority, status, queryText]);
 
   const counts = useMemo(() => {

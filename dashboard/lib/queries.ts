@@ -158,7 +158,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     id: number;
     product_id: number | null;
     product_name: string | null;
-    oem_code: string;
+    oem_code: string | null;
     quantity_needed: number;
     status: string;
     priority: string;
@@ -196,7 +196,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     );
   }
 
-  const mapped = rows.map((r) => ({
+  return rows.map((r) => ({
     id: r.id,
     productId: r.product_id ?? null,
     productName: r.product_name ?? "ძველი ჩანაწერი",
@@ -209,8 +209,6 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
       : String(r.created_at),
     notes: r.notes ?? null,
   }));
-  console.log("[getOrders] rows from DB:", mapped.length, mapped.map((o) => ({ id: o.id, status: o.status, priority: o.priority })));
-  return mapped;
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────

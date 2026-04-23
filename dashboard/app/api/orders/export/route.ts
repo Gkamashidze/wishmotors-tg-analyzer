@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id
      ${where}
-     ORDER BY CASE o.status WHEN 'pending' THEN 0 ELSE 1 END,
+     ORDER BY CASE o.status WHEN 'new' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END,
               CASE o.priority WHEN 'urgent' THEN 0 ELSE 1 END,
               o.created_at DESC`,
     params,
