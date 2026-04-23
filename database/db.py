@@ -1580,6 +1580,39 @@ class Database:
             }, reference_id=f"order:{order_id}")
         return updated
 
+    _VALID_ORDER_STATUSES = frozenset(
+        {"new", "processing", "ordered", "ready", "delivered", "cancelled"}
+    )
+
+    async def update_order_status(self, order_id: int, status: str) -> bool:
+        """Update the status of a single order. Returns True if the row was found."""
+        if status not in self._VALID_ORDER_STATUSES:
+            raise ValueError(f"Invalid order status: {status!r}")
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE orders SET status = $1 WHERE id = $2",
+                status, order_id,
+            )
+        updated = result == "UPDATE 1"
+        if updated:
+            self._audit("order_status_updated", {
+                "order_id": order_id,
+                "status": status,
+            }, reference_id=f"order:{order_id}")
+        return updated
+
+    async def get_order_by_id(self, order_id: int) -> Optional[Dict[str, Any]]:
+        """Return a single order row (with joined product_name) or None."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT o.*, p.name AS product_name
+                   FROM orders o
+                   LEFT JOIN products p ON p.id = o.product_id
+                   WHERE o.id = $1""",
+                order_id,
+            )
+        return self._row(row)
+
     # ─── Expenses ─────────────────────────────────────────────────────────────
 
     async def create_expense(

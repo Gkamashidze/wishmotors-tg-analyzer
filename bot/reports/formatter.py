@@ -69,6 +69,38 @@ def _category_label(category: Optional[str]) -> str:
     return _CATEGORY_LABELS.get(category or "", "") if category else ""
 
 
+_STATUS_LABELS = {
+    "new":        "🆕 ახალია",
+    "processing": "⚙️ მუშავდება",
+    "ordered":    "📦 შეკვეთილია",
+    "ready":      "✅ მზადაა",
+    "delivered":  "🚚 მიტანილია",
+    "cancelled":  "❌ გაუქმებულია",
+}
+
+_ORDER_PRIORITY_LABELS = {
+    "urgent": "🔴 სასწრაფო",
+    "low":    "🟢 არც ისე სასწრაფო",
+}
+
+
+def format_topic_order(
+    product_name: str,
+    qty: int,
+    status: str,
+    priority: str,
+    order_id: int,
+    notes: Optional[str] = None,
+) -> str:
+    st = _STATUS_LABELS.get(status, status)
+    pr = _ORDER_PRIORITY_LABELS.get(priority, priority)
+    notes_line = f"\n📝 {_e(notes)}" if notes else ""
+    return (
+        f"📋 <b>{_e(product_name)}</b> — {qty}ც | {st} | {pr}"
+        f"{notes_line} | <code>#{order_id}</code>"
+    )
+
+
 # ─── Confirmation messages ────────────────────────────────────────────────────
 
 def format_sale_confirmation(

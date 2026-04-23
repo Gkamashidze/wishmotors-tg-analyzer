@@ -104,6 +104,8 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoingId, setUndoingId] = useState<number | null>(null);
+  const [changingStatusId, setChangingStatusId] = useState<number | null>(null);
+  const [localStatuses, setLocalStatuses] = useState<Record<number, string>>({});
   const [localProducts, setLocalProducts] = useState<ProductRow[]>(products);
 
   const productOptions = useMemo<ComboOption[]>(() => [
@@ -225,6 +227,28 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
     }
   }, [router]);
 
+  const handleStatusChange = useCallback(async (r: OrderRow, newStatus: string) => {
+    if (newStatus === (localStatuses[r.id] ?? r.status)) return;
+    setLocalStatuses((prev) => ({ ...prev, [r.id]: newStatus }));
+    setChangingStatusId(r.id);
+    try {
+      const res = await fetch(`/api/orders/${r.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        setLocalStatuses((prev) => ({ ...prev, [r.id]: r.status }));
+      } else {
+        router.refresh();
+      }
+    } catch {
+      setLocalStatuses((prev) => ({ ...prev, [r.id]: r.status }));
+    } finally {
+      setChangingStatusId(null);
+    }
+  }, [localStatuses, router]);
+
   const handleDelete = useCallback(async () => {
     if (!deleteRow) return;
     setDeleting(true);
@@ -323,7 +347,19 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
                   <TableCell className="font-mono text-xs text-muted-foreground">{r.oemCode ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(r.quantityNeeded)}</TableCell>
                   <TableCell>{priorityBadge(r.priority)}</TableCell>
-                  <TableCell>{statusBadge(r.status)}</TableCell>
+                  <TableCell>
+                    <select
+                      value={localStatuses[r.id] ?? r.status}
+                      disabled={changingStatusId === r.id}
+                      onChange={(e) => handleStatusChange(r, e.target.value)}
+                      aria-label="სტატუსის შეცვლა"
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer disabled:opacity-50"
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{formatDate(r.createdAt)}</TableCell>
                   <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{r.notes ?? "—"}</TableCell>
                   <TableCell className="text-right">
