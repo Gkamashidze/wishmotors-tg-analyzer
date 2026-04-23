@@ -602,7 +602,10 @@ export function FixUnknownsPanel() {
       ]);
       if (unknownsRes.ok) setData((await unknownsRes.json()) as UnknownsData);
       if (productsRes.ok) {
-        const prods = (await productsRes.json()) as { id: number; name: string; oemCode: string | null }[];
+        const json = (await productsRes.json()) as
+          | { data: { id: number; name: string; oemCode: string | null }[] }
+          | { id: number; name: string; oemCode: string | null }[];
+        const prods = Array.isArray(json) ? json : json.data;
         setProducts(prods);
       }
     } finally {
