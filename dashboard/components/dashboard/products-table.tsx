@@ -607,74 +607,156 @@ export function ProductsTable({
         </div>
       )}
 
-      {/* ── Add Product Modal ────────────────────────────────────────────────── */}
+      {/* ── Add Product Wizard ───────────────────────────────────────────────── */}
       <Dialog open={isAdding} onClose={closeAdd} title="ახალი პროდუქტის დამატება">
-        <div className="space-y-3">
-          <Input
-            id="add-name"
-            label="დასახელება *"
-            type="text"
-            value={addState.name}
-            onChange={setAdd("name")}
-            placeholder="მაგ: ზეთის ფილტრი"
-          />
-          <Input
-            id="add-oem"
-            label="OEM კოდი"
-            type="text"
-            value={addState.oem_code}
-            onChange={setAdd("oem_code")}
-            placeholder="სურვილისამებრ"
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              id="add-stock"
-              label="რაოდენობა"
-              type="number"
-              min="0"
-              value={addState.current_stock}
-              onChange={setAdd("current_stock")}
-            />
-            <Input
-              id="add-unit"
-              label="ერთეული"
-              type="text"
-              value={addState.unit}
-              onChange={setAdd("unit")}
-              placeholder="ცალი"
-            />
+        <div className="space-y-4">
+          {/* Progress bar */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              {([1, 2, 3, 4] as WizardStep[]).map((s) => (
+                <span
+                  key={s}
+                  className={cn(
+                    "font-medium transition-colors",
+                    s === wizardStep ? "text-primary" :
+                    s < wizardStep ? "text-[hsl(var(--success))]" : ""
+                  )}
+                >
+                  {WIZARD_STEPS[s]}
+                </span>
+              ))}
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${(wizardStep / 4) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-right">
+              ნაბიჯი {wizardStep} / 4
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              id="add-price"
-              label="ერთ. ფასი (₾)"
-              type="number"
-              min="0"
-              step="0.01"
-              value={addState.unit_price}
-              onChange={setAdd("unit_price")}
-            />
-            <Input
-              id="add-min"
-              label="მინ. მარაგი"
-              type="number"
-              min="0"
-              value={addState.min_stock}
-              onChange={setAdd("min_stock")}
-            />
-          </div>
+
+          {/* Step 1 — Product name */}
+          {wizardStep === 1 && (
+            <div className="space-y-2 min-h-[80px]">
+              <p className="text-sm font-medium">პროდუქტის სახელი რა არის?</p>
+              <Input
+                id="add-name"
+                label="დასახელება *"
+                type="text"
+                value={addState.name}
+                onChange={setAdd("name")}
+                placeholder="მაგ: ზეთის ფილტრი, მარჯვენა სარკე..."
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && wizardNext()}
+              />
+            </div>
+          )}
+
+          {/* Step 2 — OEM code */}
+          {wizardStep === 2 && (
+            <div className="space-y-2 min-h-[80px]">
+              <p className="text-sm font-medium">OEM კოდი გაქვთ? <span className="text-muted-foreground font-normal">(სურვილისამებრ)</span></p>
+              <Input
+                id="add-oem"
+                label="OEM კოდი"
+                type="text"
+                value={addState.oem_code}
+                onChange={setAdd("oem_code")}
+                placeholder="მაგ: 8390132500 ან გამოტოვეთ"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && wizardNext()}
+              />
+            </div>
+          )}
+
+          {/* Step 3 — Stock & unit */}
+          {wizardStep === 3 && (
+            <div className="space-y-2 min-h-[80px]">
+              <p className="text-sm font-medium">ამჟამად რამდენია მარაგში?</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  id="add-stock"
+                  label="რაოდენობა"
+                  type="number"
+                  min="0"
+                  value={addState.current_stock}
+                  onChange={setAdd("current_stock")}
+                  autoFocus
+                />
+                <Input
+                  id="add-unit"
+                  label="ერთეული"
+                  type="text"
+                  value={addState.unit}
+                  onChange={setAdd("unit")}
+                  placeholder="ცალი"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 4 — Price & min stock + summary */}
+          {wizardStep === 4 && (
+            <div className="space-y-3 min-h-[80px]">
+              <p className="text-sm font-medium">ფასი და მინიმალური მარაგი</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  id="add-price"
+                  label="ერთ. ფასი (₾)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={addState.unit_price}
+                  onChange={setAdd("unit_price")}
+                  autoFocus
+                />
+                <Input
+                  id="add-min"
+                  label="მინ. მარაგი"
+                  type="number"
+                  min="0"
+                  value={addState.min_stock}
+                  onChange={setAdd("min_stock")}
+                />
+              </div>
+              {/* Summary */}
+              <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-1 text-sm">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">შეჯამება</p>
+                <div className="flex justify-between"><span className="text-muted-foreground">სახელი</span><span className="font-medium">{addState.name}</span></div>
+                {addState.oem_code && <div className="flex justify-between"><span className="text-muted-foreground">OEM</span><span className="font-mono text-xs">{addState.oem_code}</span></div>}
+                <div className="flex justify-between"><span className="text-muted-foreground">მარაგი</span><span>{addState.current_stock} {addState.unit}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">ფასი</span><span>{Number(addState.unit_price).toFixed(2)}₾</span></div>
+              </div>
+            </div>
+          )}
+
           {addError && (
             <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
               {addError}
             </p>
           )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={closeAdd} disabled={addSaving} className="cursor-pointer">
-              გაუქმება
+
+          {/* Navigation */}
+          <div className="flex justify-between gap-2 pt-1">
+            <Button
+              variant="outline"
+              onClick={wizardStep === 1 ? closeAdd : wizardBack}
+              disabled={addSaving}
+              className="cursor-pointer"
+            >
+              {wizardStep === 1 ? "გაუქმება" : "← უკან"}
             </Button>
-            <Button onClick={handleAdd} disabled={addSaving} className="cursor-pointer">
-              {addSaving ? "ემატება..." : "დამატება"}
-            </Button>
+            {wizardStep < 4 ? (
+              <Button onClick={wizardNext} className="cursor-pointer">
+                შემდეგი →
+              </Button>
+            ) : (
+              <Button onClick={handleAdd} disabled={addSaving} className="cursor-pointer">
+                {addSaving ? "ემატება..." : "✓ დამატება"}
+              </Button>
+            )}
           </div>
         </div>
       </Dialog>
