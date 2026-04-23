@@ -133,29 +133,33 @@ def _expense_action_kb(expense_id: int) -> InlineKeyboardMarkup:
 # ─── State groups ──────────────────────────────────────────────────────────────
 
 class SaleWizard(StatesGroup):
-    oem         = State()   # OEM code (collected first, separate step)
-    product     = State()   # product name search
-    select      = State()   # choose from list (if multiple matches)
-    quantity    = State()   # how many units
-    price_type  = State()   # unit price or total amount
-    price       = State()   # numeric input
-    payment     = State()   # ხელზე / დარიცხა / ნისია
-    seller_type = State()   # შპს / ფზ პირი
-    vat         = State()   # is VAT (18%) included?
-    confirm     = State()   # final review
+    oem              = State()   # OEM code (collected first, separate step)
+    product          = State()   # product name search
+    select           = State()   # choose from list (if multiple matches)
+    new_product_name = State()   # new product name when not found in DB
+    new_product_price = State()  # new product price when not found in DB
+    quantity         = State()   # how many units
+    price_type       = State()   # unit price or total amount
+    price            = State()   # numeric input
+    payment          = State()   # ხელზე / დარიცხა / ნისია
+    seller_type      = State()   # შპს / ფზ პირი
+    vat              = State()   # is VAT (18%) included?
+    confirm          = State()   # final review
 
 
 class NisiaWizard(StatesGroup):
-    customer    = State()   # name / phone / both
-    oem         = State()   # OEM code (collected before product name)
-    product     = State()
-    select      = State()
-    quantity    = State()
-    price_type  = State()
-    price       = State()
-    seller_type = State()   # შპს / ფზ პირი
-    vat         = State()   # is VAT (18%) included?
-    confirm     = State()
+    customer         = State()   # name / phone / both
+    oem              = State()   # OEM code (collected before product name)
+    product          = State()
+    select           = State()
+    new_product_name = State()   # new product name when not found in DB
+    new_product_price = State()  # new product price when not found in DB
+    quantity         = State()
+    price_type       = State()
+    price            = State()
+    seller_type      = State()   # შპს / ფზ პირი
+    vat              = State()   # is VAT (18%) included?
+    confirm          = State()
 
 
 class ExpenseWizard(StatesGroup):
@@ -315,6 +319,16 @@ async def sale_product_input(message: Message, state: FSMContext, db: Database) 
 async def sale_product_selected(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
     await _handle_product_selected(callback, state, db, wizard="sale")
+
+
+@wizard_router.message(SaleWizard.new_product_name, IsAdmin(), _PRIVATE)
+async def sale_new_product_name(message: Message, state: FSMContext) -> None:
+    await _handle_new_product_name(message, state, wizard="sale")
+
+
+@wizard_router.message(SaleWizard.new_product_price, IsAdmin(), _PRIVATE)
+async def sale_new_product_price(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_new_product_price(message, state, db, wizard="sale")
 
 
 @wizard_router.message(SaleWizard.quantity, IsAdmin(), _PRIVATE)
@@ -528,6 +542,16 @@ async def nisia_product_input(message: Message, state: FSMContext, db: Database)
 async def nisia_product_selected(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
     await _handle_product_selected(callback, state, db, wizard="nisia")
+
+
+@wizard_router.message(NisiaWizard.new_product_name, IsAdmin(), _PRIVATE)
+async def nisia_new_product_name(message: Message, state: FSMContext) -> None:
+    await _handle_new_product_name(message, state, wizard="nisia")
+
+
+@wizard_router.message(NisiaWizard.new_product_price, IsAdmin(), _PRIVATE)
+async def nisia_new_product_price(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_new_product_price(message, state, db, wizard="nisia")
 
 
 @wizard_router.message(NisiaWizard.quantity, IsAdmin(), _PRIVATE)
@@ -1940,10 +1964,15 @@ async def _handle_product_selected(
     choice = callback.data.split(":", 2)[2]  # product id or "free"
 
     if choice == "free":
-        d = await state.get_data()
-        name = d.get("product_name") or "უცნობი"
-        await state.update_data(product_id=None, product_name=name, is_freeform=True)
-        await _goto_quantity(callback.message, state, wizard, name, send=False)
+        new_name_state = SaleWizard.new_product_name if wizard == "sale" else NisiaWizard.new_product_name
+        await state.update_data(product_id=None, is_freeform=True)
+        await state.set_state(new_name_state)
+        await callback.message.edit_text(
+            "➕ <b>ახალი ნაწილის დამატება</b>\n\n"
+            "✏️ შეიყვანეთ ახალი ნაწილის <b>დასახელება</b>:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
         return
 
     product_id = int(choice)
@@ -1959,6 +1988,58 @@ async def _handle_product_selected(
         is_freeform=False,
     )
     await _goto_quantity(callback.message, state, wizard, product["name"], send=False)
+
+
+async def _handle_new_product_name(
+    message: Message, state: FSMContext, wizard: str
+) -> None:
+    name = (message.text or "").strip()
+    if not name:
+        await message.answer("⚠️ დასახელება ვერ იქნება ცარიელი. სცადე თავიდან:", parse_mode=_PARSE)
+        return
+
+    await state.update_data(product_name=name)
+    price_state = SaleWizard.new_product_price if wizard == "sale" else NisiaWizard.new_product_price
+    await state.set_state(price_state)
+    await message.answer(
+        f"✅ <b>{_e(name)}</b>\n\n"
+        "💰 შეიყვანეთ ნაწილის <b>ერთეულის ფასი</b> (₾):",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+
+
+async def _handle_new_product_price(
+    message: Message, state: FSMContext, db: Database, wizard: str
+) -> None:
+    try:
+        price = float((message.text or "").strip().replace(",", "."))
+        if price < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ ჩაწერე სწორი ფასი, მაგ: <code>25.50</code>", parse_mode=_PARSE)
+        return
+
+    d = await state.get_data()
+    name = d.get("product_name") or "უცნობი"
+    oem = d.get("entered_oem")
+
+    new_id = await db.create_product(
+        name=name,
+        oem_code=oem,
+        stock=0,
+        min_stock=0,
+        price=price,
+    )
+    await state.update_data(product_id=new_id, is_freeform=False)
+
+    oem_line = f"\nOEM: <code>{_e(oem)}</code>" if oem else ""
+    await message.answer(
+        f"✅ <b>{_e(name)}</b> დაემატა ბაზაში!{oem_line}\n"
+        f"ფასი: <b>{price:.2f} ₾</b>",
+        parse_mode=_PARSE,
+    )
+    await _goto_quantity(message, state, wizard, name, send=True)
 
 
 async def _goto_quantity(
