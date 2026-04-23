@@ -7,7 +7,6 @@ Database to avoid any real network or DB connections.
 """
 
 import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Minimal env so config.py loads without errors
@@ -29,7 +28,6 @@ from bot.handlers.commands import (  # noqa: E402
 )
 from bot.handlers.orders import handle_expense_message, handle_order_message  # noqa: E402
 
-pytestmark = pytest.mark.asyncio
 
 _USER_ID = 12345
 
