@@ -124,6 +124,16 @@ function fmt(n: number, digits = 2): string {
 let _keyCounter = 0;
 function newKey(): string { return String(++_keyCounter); }
 
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+]);
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ErpImportForm({ importId: initialId, initialData, products: initialProducts }: Props) {
@@ -318,6 +328,10 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
 
   // ── File upload ───────────────────────────────────────────────────────────
   const handleFile = useCallback((file: File) => {
+    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+      setErrors(["დაუშვებელი ფაილის ტიპი. მიღებულია: PDF, სურათი, Excel (.xlsx, .xls), CSV"]);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       setDocumentUrl(e.target?.result as string);
@@ -455,13 +469,13 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   className="h-9 flex items-center gap-2 rounded-lg border border-dashed border-input bg-background px-3 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer"
                 >
                   <Upload className="h-4 w-4" />
-                  <span>ფაილის ატვირთვა (PDF/სურათი)</span>
+                  <span>ფაილის ატვირთვა (PDF / სურათი / Excel / CSV)</span>
                 </button>
               )}
               <input
                 ref={fileRef}
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv"
                 className="sr-only"
                 onChange={(e) => {
                   const f = e.target.files?.[0];

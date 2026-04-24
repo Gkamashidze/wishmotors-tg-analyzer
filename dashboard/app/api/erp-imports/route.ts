@@ -99,6 +99,23 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// ── Allowed document MIME types (base64 data URL prefix check) ───────────────
+
+const ALLOWED_DOC_PREFIXES = [
+  "data:application/pdf;base64,",
+  "data:image/jpeg;base64,",
+  "data:image/png;base64,",
+  "data:image/webp;base64,",
+  "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,",
+  "data:application/vnd.ms-excel;base64,",
+  "data:text/csv;base64,",
+] as const;
+
+function isAllowedDocumentUrl(url: string | undefined | null): boolean {
+  if (!url) return true;
+  return ALLOWED_DOC_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
 // ── POST /api/erp-imports — create new draft ──────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -116,6 +133,10 @@ export async function POST(req: NextRequest) {
       documentName?: string;
       items: ImportItemPayload[];
     };
+
+    if (!isAllowedDocumentUrl(body.documentUrl)) {
+      return NextResponse.json({ error: "დაუშვებელი ფაილის ტიპი" }, { status: 400 });
+    }
 
     const row = await queryOne<{ id: number }>(
       `INSERT INTO imports

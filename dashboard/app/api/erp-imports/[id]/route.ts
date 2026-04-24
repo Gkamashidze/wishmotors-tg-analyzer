@@ -108,6 +108,23 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }
 }
 
+// ── Allowed document MIME types ───────────────────────────────────────────────
+
+const ALLOWED_DOC_PREFIXES = [
+  "data:application/pdf;base64,",
+  "data:image/jpeg;base64,",
+  "data:image/png;base64,",
+  "data:image/webp;base64,",
+  "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,",
+  "data:application/vnd.ms-excel;base64,",
+  "data:text/csv;base64,",
+] as const;
+
+function isAllowedDocumentUrl(url: string | undefined | null): boolean {
+  if (!url) return true;
+  return ALLOWED_DOC_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
 // ── PATCH /api/erp-imports/[id] — update draft ────────────────────────────────
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -129,6 +146,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       documentName?: string | null;
       items?: ImportItemPayload[];
     };
+
+    if (!isAllowedDocumentUrl(body.documentUrl)) {
+      return NextResponse.json({ error: "დაუშვებელი ფაილის ტიპი" }, { status: 400 });
+    }
 
     await query(
       `UPDATE imports SET
