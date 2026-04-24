@@ -55,13 +55,15 @@ export async function GET(_req: NextRequest, { params }: Params) {
       allocated_agency_cost: string;
       allocated_vat_cost: string;
       landed_cost_per_unit_gel: string;
+      item_type: string;
     }>(
       `SELECT ii.id, ii.product_id, p.name AS product_name, p.oem_code,
               ii.quantity, ii.unit, ii.unit_price_usd, ii.weight,
               ii.total_price_usd, ii.total_price_gel,
               ii.allocated_transport_cost, ii.allocated_terminal_cost,
               ii.allocated_agency_cost, ii.allocated_vat_cost,
-              ii.landed_cost_per_unit_gel
+              ii.landed_cost_per_unit_gel,
+              COALESCE(ii.item_type, 'inventory') AS item_type
        FROM import_items ii
        JOIN products p ON p.id = ii.product_id
        WHERE ii.import_id = $1
@@ -100,6 +102,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         allocatedAgencyCost:    Number(it.allocated_agency_cost),
         allocatedVatCost:       Number(it.allocated_vat_cost),
         landedCostPerUnitGel:   Number(it.landed_cost_per_unit_gel),
+        itemType:               it.item_type,
       })),
     });
   } catch (err) {

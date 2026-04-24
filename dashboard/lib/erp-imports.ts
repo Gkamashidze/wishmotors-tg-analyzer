@@ -1,6 +1,8 @@
 import "server-only";
 import { query } from "@/lib/db";
 
+export type ItemType = "inventory" | "fixed_asset" | "consumable";
+
 export type ImportItemPayload = {
   productId:              number;
   quantity:               number;
@@ -14,6 +16,7 @@ export type ImportItemPayload = {
   allocatedAgencyCost:    number;
   allocatedVatCost:       number;
   landedCostPerUnitGel:   number;
+  itemType:               ItemType;
 };
 
 export async function upsertItems(
@@ -28,8 +31,8 @@ export async function upsertItems(
           total_price_usd, total_price_gel,
           allocated_transport_cost, allocated_terminal_cost,
           allocated_agency_cost, allocated_vat_cost,
-          landed_cost_per_unit_gel)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          landed_cost_per_unit_gel, item_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         importId,
         it.productId,
@@ -44,6 +47,7 @@ export async function upsertItems(
         it.allocatedAgencyCost,
         it.allocatedVatCost,
         it.landedCostPerUnitGel,
+        it.itemType || "inventory",
       ],
     );
   }

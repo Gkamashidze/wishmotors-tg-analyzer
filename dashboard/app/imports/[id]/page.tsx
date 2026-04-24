@@ -74,6 +74,7 @@ export default async function ImportDetailPage({ params }: Params) {
                   unit:         it.unit,
                   unitPriceUsd: it.unitPriceUsd,
                   weight:       it.weight,
+                  itemType:     it.itemType,
                 })),
               }}
             />
@@ -105,6 +106,7 @@ type DbImport = {
     unit: string;
     unitPriceUsd: number;
     weight: number;
+    itemType?: string;
   }>;
 };
 
@@ -138,8 +140,10 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       unit: string;
       unit_price_usd: string;
       weight: string;
+      item_type: string;
     }>(
-      `SELECT product_id, quantity, unit, unit_price_usd, weight
+      `SELECT product_id, quantity, unit, unit_price_usd, weight,
+              COALESCE(item_type, 'inventory') AS item_type
        FROM import_items WHERE import_id = $1 ORDER BY id`,
       [importId],
     );
@@ -163,6 +167,7 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
         unit:         it.unit,
         unitPriceUsd: Number(it.unit_price_usd),
         weight:       Number(it.weight),
+        itemType:     it.item_type,
       })),
     };
   } catch {

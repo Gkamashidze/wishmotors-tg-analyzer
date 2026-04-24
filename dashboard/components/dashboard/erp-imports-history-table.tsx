@@ -36,6 +36,20 @@ type ImportRow = {
   totalValueGel:      number;
 };
 
+type ItemType = "inventory" | "fixed_asset" | "consumable";
+
+const ITEM_TYPE_LABELS: Record<ItemType, string> = {
+  inventory:   "საქონელი",
+  fixed_asset: "ძირ. საშ.",
+  consumable:  "სახარჯი",
+};
+
+const ITEM_TYPE_COLORS: Record<ItemType, string> = {
+  inventory:   "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+  fixed_asset: "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300",
+  consumable:  "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+};
+
 type ItemRow = {
   id:                     number;
   productId:              number;
@@ -52,6 +66,7 @@ type ItemRow = {
   allocatedAgencyCost:    number;
   allocatedVatCost:       number;
   landedCostPerUnitGel:   number;
+  itemType?:              string;
 };
 
 type FullImport = ImportRow & { items: ItemRow[] };

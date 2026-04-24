@@ -26,6 +26,7 @@ import { Input }        from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductCombobox }    from "@/components/ui/product-combobox";
 import type { ProductRow }    from "@/lib/queries";
+import type { ItemType }      from "@/lib/erp-imports";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,19 @@ type LineItem = {
   unit:         string;
   unitPriceUsd: string;
   weight:       string;
+  itemType:     ItemType;
+};
+
+const ITEM_TYPE_LABELS: Record<ItemType, string> = {
+  inventory:   "საქონელი",
+  fixed_asset: "ძირითადი საშ.",
+  consumable:  "სახარჯი",
+};
+
+const ITEM_TYPE_COLORS: Record<ItemType, string> = {
+  inventory:   "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-800",
+  fixed_asset: "text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-300 dark:bg-purple-950/30 dark:border-purple-800",
+  consumable:  "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-800",
 };
 
 type CalcLine = {
@@ -68,6 +82,7 @@ interface Props {
       unit: string;
       unitPriceUsd: number;
       weight: number;
+      itemType?: string;
     }>;
   };
   products: ProductRow[];
@@ -163,9 +178,10 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
         unit:         it.unit,
         unitPriceUsd: String(it.unitPriceUsd),
         weight:       String(it.weight),
+        itemType:     (it.itemType as ItemType) || "inventory",
       }));
     }
-    return [{ _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "" }];
+    return [{ _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" }];
   });
 
   // ── Products list (can grow if user adds new) ─────────────────────────────
@@ -215,6 +231,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
         allocatedAgencyCost:    calcLines[idx]?.allocatedAgency        ?? 0,
         allocatedVatCost:       calcLines[idx]?.allocatedVat           ?? 0,
         landedCostPerUnitGel:   calcLines[idx]?.landedCostPerUnit      ?? 0,
+        itemType:               it.itemType || "inventory",
       }))
       .filter((it) => it.productId > 0 && it.quantity > 0);
 
@@ -344,7 +361,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const addItem = () =>
     setItems((prev) => [
       ...prev,
-      { _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "" },
+      { _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" },
     ]);
 
   const removeItem = (key: string) =>
@@ -502,6 +519,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
               <thead>
                 <tr className="text-left">
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[200px]">პროდუქტი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">ტიპი</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">რაოდ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">ერთ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ფასი ($)</th>
@@ -526,6 +544,18 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           onProductAdded={(p) => setProducts((prev) => [...prev, p])}
                           placeholder="OEM / დასახელება..."
                         />
+                      </td>
+                      {/* Item Type */}
+                      <td className="pb-2 pr-2 align-top">
+                        <select
+                          value={item.itemType}
+                          onChange={(e) => updateItem(item._key, "itemType", e.target.value)}
+                          className={`h-9 w-full rounded-lg border px-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer ${ITEM_TYPE_COLORS[item.itemType]}`}
+                        >
+                          <option value="inventory">საქონელი</option>
+                          <option value="fixed_asset">ძირ. საშ.</option>
+                          <option value="consumable">სახარჯი</option>
+                        </select>
                       </td>
                       {/* Quantity */}
                       <td className="pb-2 pr-2 align-top">
