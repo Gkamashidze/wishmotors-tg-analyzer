@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
       const itemsRes = await client.query(
         `SELECT ii.product_id, p.name AS product_name, p.oem_code,
                 ii.quantity, ii.unit, ii.landed_cost_per_unit_gel, ii.total_price_gel,
-                ii.item_type
+                ii.item_type, ii.recommended_price
          FROM import_items ii
          JOIN products p ON p.id = ii.product_id
          WHERE ii.import_id = $1`,
@@ -84,6 +84,15 @@ export async function POST(_req: NextRequest, { params }: Params) {
             "UPDATE products SET unit_price = $1 WHERE id = $2",
             [wac, it.product_id],
           );
+
+          // ── Recommended price (only when set by the import form) ─────────────
+          const recPrice = it.recommended_price != null ? Number(it.recommended_price) : null;
+          if (recPrice !== null && recPrice > 0) {
+            await client.query(
+              "UPDATE products SET recommended_price = $1 WHERE id = $2",
+              [recPrice, it.product_id],
+            );
+          }
 
           // ── Ledger: DR 1300 Inventory / CR 2100 Accounts Payable ─────────────
           const ledgerDesc = `Import receipt — ${desc}`;

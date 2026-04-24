@@ -1889,11 +1889,19 @@ async def _handle_wizard_oem_input(
                 oem_code=product.get("oem_code"),
                 is_freeform=False,
             )
-            await message.answer(
-                f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
-                f"📦 <b>{_e(product['name'])}</b>",
-                parse_mode=_PARSE,
-            )
+            rec_price = product.get("recommended_price")
+            if rec_price is not None and float(rec_price) > 0:
+                found_text = (
+                    f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
+                    f"📦 <b>{_e(product['name'])}</b>\n\n"
+                    f"💡 რეკომენდებული გასაყიდი ფასია: <b>{float(rec_price):.2f} ₾</b>"
+                )
+            else:
+                found_text = (
+                    f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
+                    f"📦 <b>{_e(product['name'])}</b>"
+                )
+            await message.answer(found_text, parse_mode=_PARSE)
             await _goto_quantity(message, state, wizard, product["name"], send=True)
             return
 

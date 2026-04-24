@@ -19,6 +19,7 @@ export type ImportItemPayload = {
   allocatedVatCost:       number;
   landedCostPerUnitGel:   number;
   itemType:               ItemType;
+  recommendedPrice?:      number;
 };
 
 export async function upsertItems(
@@ -49,8 +50,8 @@ export async function upsertItems(
           total_price_usd, total_price_gel,
           allocated_transport_cost, allocated_terminal_cost,
           allocated_agency_cost, allocated_vat_cost,
-          landed_cost_per_unit_gel, item_type)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          landed_cost_per_unit_gel, item_type, recommended_price)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         importId,
         productId,
@@ -66,6 +67,7 @@ export async function upsertItems(
         it.allocatedVatCost,
         it.landedCostPerUnitGel,
         it.itemType || "inventory",
+        it.recommendedPrice ?? null,
       ],
     );
   }

@@ -340,6 +340,10 @@ DO $$ BEGIN
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Recommended selling price set by the Import module (landed cost × margin).
+-- NULL means no price has been set yet via the import calculator.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2);
 """
 
 
@@ -362,6 +366,7 @@ class ProductRow(TypedDict):
     min_stock: int
     unit_price: float
     unit: str
+    recommended_price: Optional[float]
     created_at: object  # datetime in practice
 
 

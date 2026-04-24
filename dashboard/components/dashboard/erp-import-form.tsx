@@ -41,6 +41,7 @@ type LineItem = {
   unitPriceUsd: string;
   weight:       string;
   itemType:     ItemType;
+  margin:       string;
 };
 
 const ITEM_TYPE_LABELS: Record<ItemType, string> = {
@@ -187,9 +188,10 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
         unitPriceUsd: String(it.unitPriceUsd),
         weight:       String(it.weight),
         itemType:     (it.itemType as ItemType) || "inventory",
+        margin:       "30",
       }));
     }
-    return [{ _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" }];
+    return [{ _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", margin: "30" }];
   });
 
   // ── Products list (can grow if user adds new) ─────────────────────────────
@@ -226,23 +228,31 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   // ── Build payload ─────────────────────────────────────────────────────────
   const buildPayload = useCallback(() => {
     const validItems = items
-      .map((it, idx) => ({
-        productId:              Number(it.productId) || 0,
-        newProductOem:          it.isNew ? it.oemCode.trim()       : undefined,
-        newProductName:         it.isNew ? it.productName.trim()   : undefined,
-        quantity:               parseFloat(it.quantity)     || 0,
-        unit:                   it.unit || "ცალი",
-        unitPriceUsd:           parseFloat(it.unitPriceUsd) || 0,
-        weight:                 parseFloat(it.weight)       || 0,
-        totalPriceUsd:          calcLines[idx]?.totalPriceUsd          ?? 0,
-        totalPriceGel:          calcLines[idx]?.totalPriceGel          ?? 0,
-        allocatedTransportCost: calcLines[idx]?.allocatedTransport     ?? 0,
-        allocatedTerminalCost:  calcLines[idx]?.allocatedTerminal      ?? 0,
-        allocatedAgencyCost:    calcLines[idx]?.allocatedAgency        ?? 0,
-        allocatedVatCost:       calcLines[idx]?.allocatedVat           ?? 0,
-        landedCostPerUnitGel:   calcLines[idx]?.landedCostPerUnit      ?? 0,
-        itemType:               it.itemType || "inventory",
-      }))
+      .map((it, idx) => {
+        const landed  = calcLines[idx]?.landedCostPerUnit ?? 0;
+        const margin  = parseFloat(it.margin) || 0;
+        const recPrice = it.itemType === "inventory" && landed > 0
+          ? parseFloat((landed * (1 + margin / 100)).toFixed(2))
+          : undefined;
+        return {
+          productId:              Number(it.productId) || 0,
+          newProductOem:          it.isNew ? it.oemCode.trim()       : undefined,
+          newProductName:         it.isNew ? it.productName.trim()   : undefined,
+          quantity:               parseFloat(it.quantity)     || 0,
+          unit:                   it.unit || "ცალი",
+          unitPriceUsd:           parseFloat(it.unitPriceUsd) || 0,
+          weight:                 parseFloat(it.weight)       || 0,
+          totalPriceUsd:          calcLines[idx]?.totalPriceUsd          ?? 0,
+          totalPriceGel:          calcLines[idx]?.totalPriceGel          ?? 0,
+          allocatedTransportCost: calcLines[idx]?.allocatedTransport     ?? 0,
+          allocatedTerminalCost:  calcLines[idx]?.allocatedTerminal      ?? 0,
+          allocatedAgencyCost:    calcLines[idx]?.allocatedAgency        ?? 0,
+          allocatedVatCost:       calcLines[idx]?.allocatedVat           ?? 0,
+          landedCostPerUnitGel:   landed,
+          itemType:               it.itemType || "inventory",
+          recommendedPrice:       recPrice,
+        };
+      })
       .filter((mapped, idx) => {
         const orig = items[idx];
         const qty  = mapped.quantity;
@@ -385,7 +395,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const addItem = () =>
     setItems((prev) => [
       ...prev,
-      { _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" },
+      { _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", margin: "30" },
     ]);
 
   const handleNewOem = (key: string, oem: string) =>
@@ -568,6 +578,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ ($)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ (₾)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">თვითღირებულება (₾/ც)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">მარჟა (%)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">გასაყ. ფასი (₾)</th>
                   <th className="pb-3 font-medium text-muted-foreground w-10"></th>
                 </tr>
               </thead>
@@ -687,6 +699,32 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                         <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                           {fmt(calc?.landedCostPerUnit ?? 0)}
                         </div>
+                      </td>
+                      {/* Margin — only meaningful for inventory items */}
+                      <td className="pb-2 pr-2 align-top">
+                        {item.itemType === "inventory" ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="30"
+                            value={item.margin}
+                            onChange={(e) => updateItem(item._key, "margin", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        ) : (
+                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
+                        )}
+                      </td>
+                      {/* Recommended selling price (calculated, read-only) */}
+                      <td className="pb-2 pr-2 align-top">
+                        {item.itemType === "inventory" && (calc?.landedCostPerUnit ?? 0) > 0 ? (
+                          <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-sm font-semibold text-orange-700 dark:text-orange-300">
+                            {fmt((calc?.landedCostPerUnit ?? 0) * (1 + (parseFloat(item.margin) || 0) / 100))}
+                          </div>
+                        ) : (
+                          <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
+                        )}
                       </td>
                       {/* Remove */}
                       <td className="pb-2 align-top">

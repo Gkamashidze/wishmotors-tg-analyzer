@@ -86,6 +86,16 @@ export async function POST() {
     `);
     await query(`CREATE INDEX IF NOT EXISTS idx_imports_declaration ON imports(declaration_number)`);
 
+    // v4: recommended selling price per import line item and on the product master
+    await query(`
+      ALTER TABLE import_items
+        ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2)
+    `);
+    await query(`
+      ALTER TABLE products
+        ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2)
+    `);
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[migrate-erp]", err);
