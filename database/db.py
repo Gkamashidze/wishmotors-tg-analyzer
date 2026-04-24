@@ -1667,9 +1667,19 @@ class Database:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
-                   WHERE created_at >= $1
+                   WHERE created_at >= $1 AND is_paid = TRUE
                    ORDER BY created_at DESC""",
                 self._week_ago(),
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
+    async def get_weekly_unpaid_expenses(self) -> List[ExpenseRow]:
+        """Return unpaid (accrued) expenses from the last 7 days."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM expenses
+                   WHERE is_paid = FALSE
+                   ORDER BY created_at DESC""",
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -1702,7 +1712,7 @@ class Database:
                   ),
                   cash_e AS (
                     SELECT COALESCE(SUM(amount), 0) AS total
-                    FROM expenses WHERE payment_method = 'cash'
+                    FROM expenses WHERE payment_method = 'cash' AND is_paid = TRUE
                   ),
                   deps AS (
                     SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits
@@ -1856,9 +1866,32 @@ class Database:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
-                   WHERE created_at >= $1 AND created_at <= $2
+                   WHERE created_at >= $1 AND created_at <= $2 AND is_paid = TRUE
                    ORDER BY created_at DESC""",
                 date_from, date_to,
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
+    async def get_unpaid_expenses_by_period(
+        self, date_from: datetime, date_to: datetime
+    ) -> List[ExpenseRow]:
+        """Return accrued liabilities (unpaid import consumables) for a period."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM expenses
+                   WHERE created_at >= $1 AND created_at <= $2 AND is_paid = FALSE
+                   ORDER BY created_at DESC""",
+                date_from, date_to,
+            )
+            return self._rows(rows)  # type: ignore[return-value]
+
+    async def get_all_unpaid_expenses(self) -> List[ExpenseRow]:
+        """Return all accrued liabilities across all time."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM expenses
+                   WHERE is_paid = FALSE
+                   ORDER BY created_at DESC""",
             )
             return self._rows(rows)  # type: ignore[return-value]
 

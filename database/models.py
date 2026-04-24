@@ -344,6 +344,12 @@ END $$;
 -- Recommended selling price set by the Import module (landed cost × margin).
 -- NULL means no price has been set yet via the import calculator.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2);
+
+-- Accrued liability tracking: is_paid=true means cash already left the account.
+-- Import consumables are inserted with is_paid=false (unpaid supplier invoice).
+-- Only paid expenses should be deducted from cash/bank balances.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_paid BOOLEAN NOT NULL DEFAULT TRUE;
+CREATE INDEX IF NOT EXISTS idx_expenses_is_paid ON expenses(is_paid) WHERE is_paid = FALSE;
 """
 
 
@@ -425,6 +431,7 @@ class ExpenseRow(TypedDict):
     created_at: object  # datetime
     vat_amount: float
     is_vat_included: bool
+    is_paid: bool
 
 
 class ParseFailureRow(TypedDict):

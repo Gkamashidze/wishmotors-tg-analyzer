@@ -131,13 +131,13 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
         } else {
           // itemType === "consumable"
-          // ── Expense record ───────────────────────────────────────────────────
+          // ── Expense record (is_paid=false — accrued AP, cash not yet out) ──────
           const expDesc = `სახარჯი: ${desc} — ინვოისი: ${invoiceNum}`;
           await client.query(
             `INSERT INTO expenses
                (amount, description, category, payment_method,
-                vat_amount, is_vat_included, source_reference)
-             VALUES ($1, $2, 'იმპორტი — სახარჯი', 'transfer', 0, false, $3)`,
+                vat_amount, is_vat_included, source_reference, is_paid)
+             VALUES ($1, $2, 'იმპორტი — სახარჯი', 'transfer', 0, false, $3, false)`,
             [totalLanded, expDesc, itemRef],
           );
 

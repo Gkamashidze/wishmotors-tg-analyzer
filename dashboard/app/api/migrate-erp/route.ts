@@ -96,6 +96,18 @@ export async function POST() {
         ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2)
     `);
 
+    // v5: is_paid flag — false = accrued liability (unpaid supplier invoice).
+    // Default true so all existing manual expenses are treated as already paid.
+    // Import consumables are inserted with is_paid = false.
+    await query(`
+      ALTER TABLE expenses
+        ADD COLUMN IF NOT EXISTS is_paid BOOLEAN NOT NULL DEFAULT TRUE
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_expenses_is_paid
+        ON expenses(is_paid) WHERE is_paid = FALSE
+    `);
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[migrate-erp]", err);

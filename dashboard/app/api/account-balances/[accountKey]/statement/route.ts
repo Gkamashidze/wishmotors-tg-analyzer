@@ -86,7 +86,7 @@ export async function GET(
            0::numeric AS credit,
            amount::numeric AS debit
          FROM expenses
-         WHERE payment_method = $1
+         WHERE payment_method = $1 AND is_paid = true
 
          UNION ALL
 

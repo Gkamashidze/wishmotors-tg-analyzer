@@ -289,6 +289,7 @@ def _build_report_body(
     expenses: Sequence[Any],
     no_sales_label: str,
     cash_on_hand: Optional[Dict[str, float]] = None,
+    pending_liabilities: Optional[Sequence[Any]] = None,
 ) -> List[str]:
     """Build the common body lines (metrics + returns + expenses)."""
     lines: List[str] = [
@@ -298,10 +299,21 @@ def _build_report_body(
         f"   🏦 დარიცხა: {m['transfer_revenue']:.2f}₾",
         f"   📋 ნისია: {m['credit_revenue']:.2f}₾",
         f"↩️ დაბრუნებები: {m['total_returns']:.2f}₾",
-        f"🧾 ხარჯები: {m['total_expenses']:.2f}₾",
+        f"🧾 გადახდილი ხარჯები: {m['total_expenses']:.2f}₾",
         f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
+    if pending_liabilities:
+        total_pending = sum(float(e["amount"]) for e in pending_liabilities)
+        lines += [
+            "",
+            f"⏳ <b>გადაუხდელი ვალდებულებები ({total_pending:.2f}₾):</b>",
+        ]
+        for e in pending_liabilities:
+            desc = e.get("description") or "—"
+            lines.append(f"  • {_e(desc)}: {float(e['amount']):.2f}₾")
+        lines.append("<i>(არ ამოღებულა ბალანსიდან — ინვოისი გადაუხდელია)</i>")
+
     if cash_on_hand is not None:
         lines += [
             "",
@@ -323,7 +335,7 @@ def _build_report_body(
             )
 
     if expenses:
-        lines += ["", "🧾 <b>ხარჯები:</b>"]
+        lines += ["", "🧾 <b>გადახდილი ხარჯები:</b>"]
         for e in expenses:
             desc = e.get("description") or "—"
             lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
@@ -340,6 +352,7 @@ def format_weekly_report(
     products: Sequence[Any],
     cash_on_hand: Optional[Dict[str, float]] = None,
     ai_advice: Optional[str] = None,
+    pending_liabilities: Optional[Sequence[Any]] = None,
 ) -> str:
     now = _now()
     week_start = now - timedelta(days=7)
@@ -351,7 +364,7 @@ def format_weekly_report(
         f"📅 {week_start.strftime('%d.%m.%Y')} — {now.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.", cash_on_hand)
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.", cash_on_hand, pending_liabilities)
     lines.append("")
 
     if low_stock:
@@ -471,8 +484,9 @@ def format_period_report(
     date_from: datetime,
     date_to: datetime,
     cash_on_hand: Optional[Dict[str, float]] = None,
+    pending_liabilities: Optional[Sequence[Any]] = None,
 ) -> str:
-    if not sales and not returns and not expenses:
+    if not sales and not returns and not expenses and not pending_liabilities:
         return "📭 არჩეულ პერიოდში გაყიდვები არ დაფიქსირებულა"
 
     m = _calculate_report_metrics(sales, returns, expenses)
@@ -483,7 +497,7 @@ def format_period_report(
         f"📅 {date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.", cash_on_hand)
+    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.", cash_on_hand, pending_liabilities)
     lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
     return _truncate("\n".join(lines))
 

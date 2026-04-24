@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Tag } from "lucide-react";
+import { Eye, Pencil, Trash2, Tag, CheckCircle } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -66,6 +66,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
   const [deleteRow, setDeleteRow] = useState<ExpenseRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
   const [apiCategories, setApiCategories] = useState<string[]>([]);
 
   useEffect(() => {
@@ -151,6 +152,30 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
     }
   }, [deleteRow, router]);
 
+  const handleMarkPaid = useCallback(async (r: ExpenseRow) => {
+    setMarkingPaidId(r.id);
+    try {
+      const res = await fetch(`/api/expenses/${r.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: r.amount,
+          description: r.description,
+          category: r.category,
+          payment_method: r.paymentMethod,
+          created_at: r.createdAt,
+          vat_amount: r.vatAmount,
+          is_vat_included: r.isVatIncluded,
+          is_paid: true,
+        }),
+      });
+      if (!res.ok) throw new Error("server error");
+      router.refresh();
+    } finally {
+      setMarkingPaidId(null);
+    }
+  }, [router]);
+
   const set = (key: keyof EditState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
       setEditState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
@@ -224,20 +249,21 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
               <TableHead>კატეგორია</TableHead>
               <TableHead>აღწერა</TableHead>
               <TableHead>გადახდა</TableHead>
+              <TableHead>სტატუსი</TableHead>
               <TableHead>თარიღი</TableHead>
-              <TableHead className="w-24 text-right">მოქ.</TableHead>
+              <TableHead className="w-28 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
             ) : (
               filtered.map((r, idx) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} className={!r.isPaid ? "bg-amber-50/40 dark:bg-amber-950/20" : undefined}>
                   <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-destructive">
                     {formatGEL(r.amount)}
@@ -268,11 +294,35 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   <TableCell>
                     <Badge variant="outline">{paymentLabel(r.paymentMethod)}</Badge>
                   </TableCell>
+                  <TableCell>
+                    {r.isPaid ? (
+                      <Badge variant="secondary" className="text-green-700 bg-green-100 dark:bg-green-950 dark:text-green-300">
+                        ✓ გადახდილია
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-amber-700 bg-amber-100 dark:bg-amber-950 dark:text-amber-300">
+                        ⏳ გადაუხდელია
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                     {formatDate(r.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      {!r.isPaid && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 cursor-pointer text-green-600 hover:text-green-700"
+                          onClick={() => handleMarkPaid(r)}
+                          disabled={markingPaidId === r.id}
+                          aria-label="გადახდილად მონიშვნა"
+                          title="გადახდილად მონიშვნა"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -329,6 +379,14 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
               <ViewField label="კატეგორია" value={viewRow.category} />
               <ViewField label="აღწერა" value={viewRow.description} className="sm:col-span-2" />
               <ViewField label="გადახდის მეთოდი" value={paymentLabel(viewRow.paymentMethod)} />
+              <ViewField
+                label="სტატუსი"
+                value={
+                  viewRow.isPaid
+                    ? <span className="text-green-700 font-medium">✓ გადახდილია</span>
+                    : <span className="text-amber-600 font-medium">⏳ გადაუხდელია (მოლოდინში)</span>
+                }
+              />
               <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />
             </ViewFieldGrid>
             <div className="flex justify-end pt-2">

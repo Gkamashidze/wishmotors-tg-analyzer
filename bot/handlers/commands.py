@@ -137,12 +137,13 @@ async def cmd_report(message: Message, db: Database) -> None:
         parse_mode=_PARSE,
     )
 
-    sales, returns, expenses, products, cash = await asyncio.gather(
+    sales, returns, expenses, products, cash, pending = await asyncio.gather(
         db.get_weekly_sales(),
         db.get_weekly_returns(),
         db.get_weekly_expenses(),
         db.get_all_products(),
         db.get_cash_on_hand(),
+        db.get_all_unpaid_expenses(),
     )
 
     tz = pytz.timezone(config.TIMEZONE)
@@ -151,7 +152,7 @@ async def cmd_report(message: Message, db: Database) -> None:
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice),
+        text=format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice, pending_liabilities=pending),
         parse_mode=_PARSE,
     )
 
