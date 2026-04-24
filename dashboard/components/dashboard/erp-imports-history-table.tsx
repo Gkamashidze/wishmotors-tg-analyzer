@@ -359,7 +359,7 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">ტერმ. (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">სააგ. (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">საბ.დღგ (₾)</th>
-                <th className="px-3 py-2 font-medium text-muted-foreground text-right">ჩასვ.ღირ./ც (₾)</th>
+                <th className="px-3 py-2 font-medium text-muted-foreground text-right">თვითღირ./ც (₾)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

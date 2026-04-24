@@ -567,7 +567,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">წონა (კგ)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ ($)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ (₾)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">ჩასვ.ღირ. (₾/ც)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">თვითღირებულება (₾/ც)</th>
                   <th className="pb-3 font-medium text-muted-foreground w-10"></th>
                 </tr>
               </thead>
@@ -723,7 +723,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                 <p className="text-base font-semibold text-amber-700 dark:text-amber-300">{fmt(totalOverhead)}</p>
               </div>
               <div className="rounded-lg border border-border bg-emerald-50 dark:bg-emerald-950/30 p-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">სულ ჩასვ. ღირ. (₾)</p>
+                <p className="text-xs text-muted-foreground mb-1">სულ თვითღირებულება (₾)</p>
                 <p className="text-base font-semibold text-emerald-700 dark:text-emerald-300">{fmt(grandLandedGel)}</p>
               </div>
             </div>
@@ -744,7 +744,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       <th className="pb-2 pr-3 font-medium text-right">ტერმ. (₾)</th>
                       <th className="pb-2 pr-3 font-medium text-right">სააგ. (₾)</th>
                       <th className="pb-2 pr-3 font-medium text-right">საბ.დღგ (₾)</th>
-                      <th className="pb-2 font-medium text-right">ჩასვ.ღირ./ც (₾)</th>
+                      <th className="pb-2 font-medium text-right">თვითღირ./ც (₾)</th>
                     </tr>
                   </thead>
                   <tbody>
