@@ -471,9 +471,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <Input
               id={`${formIdBase}-rate`}
               label="კურსი (USD→GEL) *"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="2.70"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(e.target.value)}
@@ -481,9 +480,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <Input
               id={`${formIdBase}-transport`}
               label="ტრანსპორტი (₾)"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
               value={totalTransportCost}
               onChange={(e) => setTotalTransportCost(e.target.value)}
@@ -491,9 +489,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <Input
               id={`${formIdBase}-terminal`}
               label="ტერმინალი (₾)"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
               value={totalTerminalCost}
               onChange={(e) => setTotalTerminalCost(e.target.value)}
@@ -501,9 +498,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <Input
               id={`${formIdBase}-agency`}
               label="სააგენტო (₾)"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
               value={totalAgencyCost}
               onChange={(e) => setTotalAgencyCost(e.target.value)}
@@ -511,9 +507,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <Input
               id={`${formIdBase}-vat`}
               label="საბაჟო დღგ (₾)"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               placeholder="0.00"
               value={totalVatCost}
               onChange={(e) => setTotalVatCost(e.target.value)}
@@ -658,9 +653,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       {/* Quantity */}
                       <td className="pb-2 pr-2 align-top">
                         <input
-                          type="number"
-                          min="0"
-                          step="any"
+                          type="text"
+                          inputMode="decimal"
                           placeholder="0"
                           value={item.quantity}
                           onChange={(e) => updateItem(item._key, "quantity", e.target.value)}
@@ -680,9 +674,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       {/* Price USD */}
                       <td className="pb-2 pr-2 align-top">
                         <input
-                          type="number"
-                          min="0"
-                          step="any"
+                          type="text"
+                          inputMode="decimal"
                           placeholder="0.00"
                           value={item.unitPriceUsd}
                           onChange={(e) => updateItem(item._key, "unitPriceUsd", e.target.value)}
@@ -692,9 +685,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       {/* Weight */}
                       <td className="pb-2 pr-2 align-top">
                         <input
-                          type="number"
-                          min="0"
-                          step="any"
+                          type="text"
+                          inputMode="decimal"
                           placeholder="0.0"
                           value={item.weight}
                           onChange={(e) => updateItem(item._key, "weight", e.target.value)}
