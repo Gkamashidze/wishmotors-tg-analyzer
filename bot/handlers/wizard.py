@@ -306,8 +306,8 @@ async def sale_start(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @wizard_router.message(SaleWizard.oem, IsAdmin(), _PRIVATE)
-async def sale_oem_input(message: Message, state: FSMContext) -> None:
-    await _handle_wizard_oem_input(message, state, wizard="sale")
+async def sale_oem_input(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_wizard_oem_input(message, state, db, wizard="sale")
 
 
 @wizard_router.message(SaleWizard.product, IsAdmin(), _PRIVATE)
@@ -322,8 +322,8 @@ async def sale_product_selected(callback: CallbackQuery, state: FSMContext, db: 
 
 
 @wizard_router.message(SaleWizard.new_product_name, IsAdmin(), _PRIVATE)
-async def sale_new_product_name(message: Message, state: FSMContext) -> None:
-    await _handle_new_product_name(message, state, wizard="sale")
+async def sale_new_product_name(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_new_product_name(message, state, db, wizard="sale")
 
 
 @wizard_router.message(SaleWizard.new_product_price, IsAdmin(), _PRIVATE)
@@ -529,8 +529,8 @@ async def nisia_customer_input(message: Message, state: FSMContext, db: Database
 
 
 @wizard_router.message(NisiaWizard.oem, IsAdmin(), _PRIVATE)
-async def nisia_oem_input(message: Message, state: FSMContext) -> None:
-    await _handle_wizard_oem_input(message, state, wizard="nisia")
+async def nisia_oem_input(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_wizard_oem_input(message, state, db, wizard="nisia")
 
 
 @wizard_router.message(NisiaWizard.product, IsAdmin(), _PRIVATE)
@@ -545,8 +545,8 @@ async def nisia_product_selected(callback: CallbackQuery, state: FSMContext, db:
 
 
 @wizard_router.message(NisiaWizard.new_product_name, IsAdmin(), _PRIVATE)
-async def nisia_new_product_name(message: Message, state: FSMContext) -> None:
-    await _handle_new_product_name(message, state, wizard="nisia")
+async def nisia_new_product_name(message: Message, state: FSMContext, db: Database) -> None:
+    await _handle_new_product_name(message, state, db, wizard="nisia")
 
 
 @wizard_router.message(NisiaWizard.new_product_price, IsAdmin(), _PRIVATE)
@@ -1865,20 +1865,56 @@ async def expense_edit_cancel(callback: CallbackQuery, state: FSMContext) -> Non
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _handle_wizard_oem_input(
-    message: Message, state: FSMContext, wizard: str
+    message: Message, state: FSMContext, db: Database, wizard: str
 ) -> None:
-    """Step 1 of product entry: collect OEM code, then ask for product name."""
+    """Step 1 of product entry: collect OEM code, then query the DB.
+
+    - OEM found in DB  → store product details, skip product-name step, go to quantity.
+    - OEM not in DB    → store oem, go directly to new-product-name (skip search step).
+    - No OEM given ("-") → fall back to the product-name search step as before.
+    """
     raw = (message.text or "").strip()
     oem = None if raw == "-" else (raw or None)
     await state.update_data(entered_oem=oem)
 
+    step = "2" if wizard == "sale" else "3"
+
+    if oem:
+        product = await db.get_product_by_oem(oem)
+        if product:
+            # OEM found — skip product-name step entirely
+            await state.update_data(
+                product_id=product["id"],
+                product_name=product["name"],
+                oem_code=product.get("oem_code"),
+                is_freeform=False,
+            )
+            await message.answer(
+                f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
+                f"📦 <b>{_e(product['name'])}</b>",
+                parse_mode=_PARSE,
+            )
+            await _goto_quantity(message, state, wizard, product["name"], send=True)
+            return
+
+        # OEM not in DB — skip search step, go straight to new-product-name input
+        new_name_state = (
+            SaleWizard.new_product_name if wizard == "sale" else NisiaWizard.new_product_name
+        )
+        await state.set_state(new_name_state)
+        await message.answer(
+            f"⚠️ OEM <code>{_e(oem)}</code> ბაზაში ვერ მოიძებნა.\n\n"
+            f"➕ <b>ნაბიჯი {step}/6</b> — შეიყვანე ნაწილის <b>დასახელება</b>\n"
+            "<i>(ახალი პროდუქტი ავტომატურად შეიქმნება)</i>:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+        return
+
+    # No OEM provided — fall back to product-name search as before
     product_state = SaleWizard.product if wizard == "sale" else NisiaWizard.product
     await state.set_state(product_state)
-
-    step = "2" if wizard == "sale" else "3"
-    oem_line = f"✅ OEM: <code>{_e(oem)}</code>\n\n" if oem else ""
     await message.answer(
-        f"{oem_line}"
         f"➕ <b>ნაბიჯი {step}/6</b>\n\n"
         "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b>:",
         parse_mode=_PARSE,
@@ -1991,7 +2027,7 @@ async def _handle_product_selected(
 
 
 async def _handle_new_product_name(
-    message: Message, state: FSMContext, wizard: str
+    message: Message, state: FSMContext, db: Database, wizard: str
 ) -> None:
     name = (message.text or "").strip()
     if not name:
@@ -1999,6 +2035,29 @@ async def _handle_new_product_name(
         return
 
     await state.update_data(product_name=name)
+    d = await state.get_data()
+    entered_oem: Optional[str] = d.get("entered_oem")
+
+    # When we arrived here via OEM-not-found path, auto-create the product and
+    # move straight to quantity (unit_price starts at 0, updated on next import).
+    if entered_oem:
+        new_id = await db.create_product(
+            name=name,
+            oem_code=entered_oem,
+            stock=0,
+            min_stock=0,
+            price=0.0,
+        )
+        await state.update_data(product_id=new_id, is_freeform=False)
+        await message.answer(
+            f"✅ <b>{_e(name)}</b> ბაზაში დაემატა!\n"
+            f"OEM: <code>{_e(entered_oem)}</code>",
+            parse_mode=_PARSE,
+        )
+        await _goto_quantity(message, state, wizard, name, send=True)
+        return
+
+    # No OEM context (came from free-text search path) — ask for catalog price
     price_state = SaleWizard.new_product_price if wizard == "sale" else NisiaWizard.new_product_price
     await state.set_state(price_state)
     await message.answer(
