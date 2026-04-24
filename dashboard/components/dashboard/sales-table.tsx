@@ -47,6 +47,8 @@ function toDatetimeLocal(iso: string) {
 
 interface EditState {
   product_id: string;
+  oem_code: string;
+  product_name: string;
   quantity: string;
   unit_price: string;
   cost_amount: string;
@@ -62,6 +64,8 @@ interface EditState {
 function rowToEdit(r: SaleRow): EditState {
   return {
     product_id: String(r.productId ?? ""),
+    oem_code: r.oemCode ?? "",
+    product_name: r.productName ?? "",
     quantity: String(r.quantity),
     unit_price: String(r.unitPrice),
     cost_amount: String(r.costAmount),
@@ -139,6 +143,8 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           product_id: editState.product_id ? Number(editState.product_id) : null,
+          oem_code: editState.oem_code.trim() || null,
+          product_name: editState.product_name.trim() || null,
           quantity: Number(editState.quantity),
           unit_price: Number(editState.unit_price),
           cost_amount: Number(editState.cost_amount),
@@ -332,6 +338,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
             <div className="space-y-3">
               <ViewFieldGrid>
                 <ViewField label="პროდუქტი" value={viewRow.productName} className="sm:col-span-2" />
+                <ViewField label="OEM კოდი" value={viewRow.oemCode} />
                 <ViewField label="რაოდენობა" value={formatNumber(viewRow.quantity)} />
                 <ViewField label="ერთ. ფასი" value={formatGEL(viewRow.unitPrice)} />
                 <ViewField label="ჯამი" value={formatGEL(total)} />
@@ -355,14 +362,44 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
       <Dialog open={!!editRow} onClose={closeEdit} title={`გაყიდვის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
+            {/* Product selector — auto-fills OEM and Name below */}
             <ProductCombobox
               id="sale-product"
-              label="პროდუქტი"
+              label="პროდუქტი (სიიდან)"
               products={localProducts}
               value={editState.product_id}
-              onChange={(val) => setEditState((prev) => prev ? { ...prev, product_id: val } : prev)}
+              onChange={(val) => {
+                const prod = localProducts.find((p) => String(p.id) === val);
+                setEditState((prev) => prev ? {
+                  ...prev,
+                  product_id: val,
+                  oem_code: prod?.oemCode ?? "",
+                  product_name: prod?.name ?? "",
+                } : prev);
+              }}
               onProductAdded={(p) => setLocalProducts((prev) => [...prev, p].sort((a, b) => a.name.localeCompare(b.name)))}
             />
+
+            {/* OEM Code + Product Name — directly editable; backend uses these to find/create product */}
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                id="sale-oem"
+                label="OEM კოდი"
+                type="text"
+                value={editState.oem_code}
+                onChange={set("oem_code")}
+                placeholder="მაგ. 16400-0L010"
+              />
+              <Input
+                id="sale-product-name"
+                label="პროდუქტის სახელი"
+                type="text"
+                value={editState.product_name}
+                onChange={set("product_name")}
+                placeholder="პროდუქტის სახელი"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <Input id="sale-qty" label="რაოდენობა" type="number" min="1" value={editState.quantity} onChange={set("quantity")} />
               <Input id="sale-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />

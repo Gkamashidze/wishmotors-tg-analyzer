@@ -247,6 +247,7 @@ export type SaleRow = {
   id: number;
   productId: number | null;
   productName: string | null;
+  oemCode: string | null;
   quantity: number;
   unitPrice: number;
   costAmount: number;
@@ -266,6 +267,7 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
     id: number;
     product_id: number | null;
     product_name: string | null;
+    oem_code: string | null;
     quantity: number;
     unit_price: string;
     cost_amount: string;
@@ -284,6 +286,7 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
       s.id,
       s.product_id,
       p.name        AS product_name,
+      p.oem_code    AS oem_code,
       s.quantity,
       s.unit_price,
       s.cost_amount,
@@ -308,6 +311,7 @@ export async function getSales(limit: number = 500): Promise<SaleRow[]> {
     id: r.id,
     productId: r.product_id,
     productName: r.product_name,
+    oemCode: r.oem_code,
     quantity: r.quantity,
     unitPrice: Number(r.unit_price),
     costAmount: Number(r.cost_amount),
