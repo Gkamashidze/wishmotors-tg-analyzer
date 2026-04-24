@@ -5,6 +5,8 @@ export type ItemType = "inventory" | "fixed_asset" | "consumable";
 
 export type ImportItemPayload = {
   productId:              number;
+  newProductOem?:         string;
+  newProductName?:        string;
   quantity:               number;
   unit:                   string;
   unitPriceUsd:           number;
@@ -25,6 +27,22 @@ export async function upsertItems(
 ): Promise<void> {
   await query("DELETE FROM import_items WHERE import_id = $1", [importId]);
   for (const it of items) {
+    let productId = it.productId;
+
+    // Auto-create product when OEM not yet in DB (inline creation flow)
+    if (productId === 0 && it.newProductOem && it.newProductName) {
+      const created = await query<{ id: number }>(
+        `INSERT INTO products (name, oem_code, current_stock, min_stock, unit_price, unit)
+         VALUES ($1, $2, 0, 0, 0, 'ცალი')
+         ON CONFLICT (oem_code) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [it.newProductName.trim(), it.newProductOem.trim()],
+      );
+      productId = created[0]?.id ?? 0;
+    }
+
+    if (!productId) continue;
+
     await query(
       `INSERT INTO import_items
          (import_id, product_id, quantity, unit, unit_price_usd, weight,
@@ -35,7 +53,7 @@ export async function upsertItems(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         importId,
-        it.productId,
+        productId,
         it.quantity,
         it.unit || "ცალი",
         it.unitPriceUsd,

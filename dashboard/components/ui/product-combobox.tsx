@@ -10,6 +10,7 @@ interface ProductComboboxProps {
   value: string;
   onChange: (value: string) => void;
   onProductAdded?: (product: ProductRow) => void;
+  onNewOem?: (oem: string) => void;
   id?: string;
   label?: string;
   placeholder?: string;
@@ -21,6 +22,7 @@ export function ProductCombobox({
   value,
   onChange,
   onProductAdded,
+  onNewOem,
   id,
   label,
   placeholder = "პროდუქტი...",
@@ -68,13 +70,21 @@ export function ProductCombobox({
         onChange={onChange}
         placeholder={placeholder}
         disabled={disabled}
-        onAddNew={() => setShowAddModal(true)}
+        onAddNew={(typed) => {
+          if (onNewOem) {
+            onNewOem(typed);
+          } else {
+            setShowAddModal(true);
+          }
+        }}
       />
-      <AddProductModal
-        open={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSuccess={handleProductAdded}
-      />
+      {!onNewOem && (
+        <AddProductModal
+          open={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={handleProductAdded}
+        />
+      )}
     </>
   );
 }

@@ -18,7 +18,7 @@ interface CreatableComboboxProps {
   value: string;
   onChange: (value: string) => void;
   onCreateOption?: (inputValue: string) => Promise<ComboOption> | ComboOption;
-  onAddNew?: () => void;
+  onAddNew?: (inputValue: string) => void;
   addNewLabel?: string;
   placeholder?: string;
   createLabel?: string;
@@ -187,10 +187,11 @@ export function CreatableCombobox({
             className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground border-t border-border select-none"
             onMouseDown={(e) => {
               e.preventDefault();
+              const typed = inputValue.trim();
               setOpen(false);
               setFocused(false);
               setInputValue("");
-              onAddNew();
+              onAddNew(typed);
             }}
           >
             <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />

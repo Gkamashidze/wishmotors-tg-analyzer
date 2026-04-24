@@ -33,6 +33,9 @@ import type { ItemType }      from "@/lib/erp-imports";
 type LineItem = {
   _key:         string;
   productId:    string;
+  isNew:        boolean;
+  oemCode:      string;
+  productName:  string;
   quantity:     string;
   unit:         string;
   unitPriceUsd: string;
@@ -176,6 +179,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
       return initialData.items.map((it) => ({
         _key:         newKey(),
         productId:    String(it.productId),
+        isNew:        false,
+        oemCode:      "",
+        productName:  "",
         quantity:     String(it.quantity),
         unit:         it.unit,
         unitPriceUsd: String(it.unitPriceUsd),
@@ -183,7 +189,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
         itemType:     (it.itemType as ItemType) || "inventory",
       }));
     }
-    return [{ _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" }];
+    return [{ _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" }];
   });
 
   // ── Products list (can grow if user adds new) ─────────────────────────────
@@ -221,7 +227,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const buildPayload = useCallback(() => {
     const validItems = items
       .map((it, idx) => ({
-        productId:              Number(it.productId),
+        productId:              Number(it.productId) || 0,
+        newProductOem:          it.isNew ? it.oemCode.trim()       : undefined,
+        newProductName:         it.isNew ? it.productName.trim()   : undefined,
         quantity:               parseFloat(it.quantity)     || 0,
         unit:                   it.unit || "ცალი",
         unitPriceUsd:           parseFloat(it.unitPriceUsd) || 0,
@@ -235,7 +243,12 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
         landedCostPerUnitGel:   calcLines[idx]?.landedCostPerUnit      ?? 0,
         itemType:               it.itemType || "inventory",
       }))
-      .filter((it) => it.productId > 0 && it.quantity > 0);
+      .filter((mapped, idx) => {
+        const orig = items[idx];
+        const qty  = mapped.quantity;
+        if (orig.isNew) return !!orig.oemCode.trim() && !!orig.productName.trim() && qty > 0;
+        return mapped.productId > 0 && qty > 0;
+      });
 
     return {
       date,
@@ -260,13 +273,21 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   // ── Validate ──────────────────────────────────────────────────────────────
   const validate = useCallback((): string[] => {
     const errs: string[] = [];
-    if (!supplier.trim())          errs.push("მიმწოდებელი სავალდებულოა");
-    if (!date)                     errs.push("თარიღი სავალდებულოა");
-    if (rate <= 0)                 errs.push("კურსი უნდა იყოს > 0");
-    const validItems = items.filter((it) => it.productId && parseFloat(it.quantity) > 0);
-    if (validItems.length === 0)   errs.push("მინიმუმ ერთი პოზიცია სავალდებულოა");
+    if (!supplier.trim()) errs.push("მიმწოდებელი სავალდებულოა");
+    if (!date)            errs.push("თარიღი სავალდებულოა");
+    if (rate <= 0)        errs.push("კურსი უნდა იყოს > 0");
+    const validItems = items.filter((it) =>
+      (it.productId && parseFloat(it.quantity) > 0) ||
+      (it.isNew && it.oemCode.trim() && it.productName.trim() && parseFloat(it.quantity) > 0),
+    );
+    if (validItems.length === 0) errs.push("მინიმუმ ერთი პოზიცია სავალდებულოა");
     items.forEach((it, i) => {
-      if (it.productId && !parseFloat(it.quantity)) errs.push(`სტრიქონი ${i + 1}: რაოდენობა სავალდებულოა`);
+      if (it.isNew) {
+        if (!it.productName.trim())    errs.push(`სტრიქონი ${i + 1}: დასახელება სავალდებულოა`);
+        if (!parseFloat(it.quantity))  errs.push(`სტრიქონი ${i + 1}: რაოდენობა სავალდებულოა`);
+      } else if (it.productId && !parseFloat(it.quantity)) {
+        errs.push(`სტრიქონი ${i + 1}: რაოდენობა სავალდებულოა`);
+      }
     });
     return errs;
   }, [supplier, date, rate, items]);
@@ -364,8 +385,18 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const addItem = () =>
     setItems((prev) => [
       ...prev,
-      { _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" },
+      { _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory" },
     ]);
+
+  const handleNewOem = (key: string, oem: string) =>
+    setItems((prev) =>
+      prev.map((it) => it._key === key ? { ...it, isNew: true, oemCode: oem, productId: "" } : it),
+    );
+
+  const resetNewItem = (key: string) =>
+    setItems((prev) =>
+      prev.map((it) => it._key === key ? { ...it, isNew: false, oemCode: "", productName: "", productId: "" } : it),
+    );
 
   const removeItem = (key: string) =>
     setItems((prev) => prev.filter((it) => it._key !== key));
@@ -545,15 +576,41 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   const calc = calcLines[idx];
                   return (
                     <tr key={item._key} className="group">
-                      {/* Product Combobox */}
+                      {/* Product — combobox or inline new-product inputs */}
                       <td className="pb-2 pr-2 align-top">
-                        <ProductCombobox
-                          products={products}
-                          value={item.productId}
-                          onChange={(v) => updateItem(item._key, "productId", v)}
-                          onProductAdded={(p) => setProducts((prev) => [...prev, p])}
-                          placeholder="OEM / დასახელება..."
-                        />
+                        {item.isNew ? (
+                          <div className="flex flex-col gap-1">
+                            {/* Locked OEM badge with reset */}
+                            <div className="flex items-center gap-1.5 h-9 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-2.5 text-xs font-mono text-amber-700 dark:text-amber-300">
+                              <span className="flex-1 truncate">{item.oemCode}</span>
+                              <button
+                                type="button"
+                                title="გაუქმება"
+                                onClick={() => resetNewItem(item._key)}
+                                className="shrink-0 text-amber-500 hover:text-destructive cursor-pointer transition-colors"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                            {/* Inline product-name input */}
+                            <input
+                              type="text"
+                              placeholder="დასახელება *"
+                              value={item.productName}
+                              onChange={(e) => updateItem(item._key, "productName", e.target.value)}
+                              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                          </div>
+                        ) : (
+                          <ProductCombobox
+                            products={products}
+                            value={item.productId}
+                            onChange={(v) => updateItem(item._key, "productId", v)}
+                            onProductAdded={(p) => setProducts((prev) => [...prev, p])}
+                            onNewOem={(oem) => handleNewOem(item._key, oem)}
+                            placeholder="OEM / დასახელება..."
+                          />
+                        )}
                       </td>
                       {/* Item Type */}
                       <td className="pb-2 pr-2 align-top">
@@ -693,7 +750,11 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   <tbody>
                     {items.map((item, idx) => {
                       const prod = products.find((p) => String(p.id) === item.productId);
-                      const label = prod ? (prod.oemCode ? `${prod.oemCode} – ${prod.name}` : prod.name) : `სტრ. ${idx + 1}`;
+                      const label = item.isNew
+                        ? `${item.oemCode}${item.productName ? ` – ${item.productName}` : ""}`
+                        : prod
+                          ? (prod.oemCode ? `${prod.oemCode} – ${prod.name}` : prod.name)
+                          : `სტრ. ${idx + 1}`;
                       const calc = calcLines[idx];
                       return (
                         <tr key={item._key} className="border-b border-border/50">
