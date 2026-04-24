@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductCombobox }    from "@/components/ui/product-combobox";
 import type { ProductRow }    from "@/lib/queries";
 import type { ItemType }      from "@/lib/erp-imports";
+import { calcRecommendedPrice } from "@/lib/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -231,8 +232,11 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
       .map((it, idx) => {
         const landed  = calcLines[idx]?.landedCostPerUnit ?? 0;
         const margin  = parseFloat(it.margin) || 0;
-        const recPrice = it.itemType === "inventory" && landed > 0
-          ? parseFloat((landed * (1 + margin / 100)).toFixed(2))
+        const recPriceRaw = it.itemType === "inventory"
+          ? calcRecommendedPrice(landed, margin)
+          : null;
+        const recPrice = recPriceRaw != null
+          ? parseFloat(recPriceRaw.toFixed(2))
           : undefined;
         return {
           productId:              Number(it.productId) || 0,
@@ -721,6 +725,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           <input
                             type="number"
                             min="0"
+                            max="99"
                             step="1"
                             placeholder="30"
                             value={item.margin}
@@ -735,7 +740,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       <td className="pb-2 pr-2 align-top">
                         {item.itemType === "inventory" && (calc?.landedCostPerUnit ?? 0) > 0 ? (
                           <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-sm font-semibold text-orange-700 dark:text-orange-300">
-                            {fmt((calc?.landedCostPerUnit ?? 0) * (1 + (parseFloat(item.margin) || 0) / 100))}
+                            {fmt(calcRecommendedPrice(calc?.landedCostPerUnit ?? 0, parseFloat(item.margin) || 0) ?? 0)}
                           </div>
                         ) : (
                           <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
