@@ -424,7 +424,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             />
             <Input
               id={`${formIdBase}-vat`}
-              label="სატბო (₾)"
+              label="საბაჟო დღგ (₾)"
               type="number"
               min="0"
               step="0.01"
@@ -632,7 +632,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                       <th className="pb-2 pr-3 font-medium text-right">ტრანსპ. (₾)</th>
                       <th className="pb-2 pr-3 font-medium text-right">ტერმ. (₾)</th>
                       <th className="pb-2 pr-3 font-medium text-right">სააგ. (₾)</th>
-                      <th className="pb-2 pr-3 font-medium text-right">სატბო (₾)</th>
+                      <th className="pb-2 pr-3 font-medium text-right">საბ.დღგ (₾)</th>
                       <th className="pb-2 font-medium text-right">ჩასვ.ღირ./ც (₾)</th>
                     </tr>
                   </thead>

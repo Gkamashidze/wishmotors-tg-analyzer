@@ -314,7 +314,7 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
           { label: "ტრანსპორტი",  value: `${fmt(data.totalTransportCost)} ₾` },
           { label: "ტერმინალი",   value: `${fmt(data.totalTerminalCost)} ₾` },
           { label: "სააგენტო",    value: `${fmt(data.totalAgencyCost)} ₾` },
-          { label: "სატბო",       value: `${fmt(data.totalVatCost)} ₾` },
+          { label: "საბაჟო დღგ",   value: `${fmt(data.totalVatCost)} ₾` },
           { label: "ჯამი დანახ.", value: `${fmt(totalOverhead)} ₾` },
           { label: "ფაილი",       value: data.documentName ?? "—" },
           { label: "განახლდა",    value: data.updatedAt.slice(0, 16).replace("T", " ") },
@@ -339,7 +339,7 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">ტრანსპ. (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">ტერმ. (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">სააგ. (₾)</th>
-                <th className="px-3 py-2 font-medium text-muted-foreground text-right">სატბო (₾)</th>
+                <th className="px-3 py-2 font-medium text-muted-foreground text-right">საბ.დღგ (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">ჩასვ.ღირ./ც (₾)</th>
               </tr>
             </thead>
