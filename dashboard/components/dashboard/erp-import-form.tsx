@@ -527,7 +527,6 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ (₾)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">თვითღირებულება (₾/ც)</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">მარჟა (%)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">გასაყ. ფასი (₾)</th>
                   <th className="pb-3 font-medium text-muted-foreground w-10"></th>
                 </tr>
               </thead>
@@ -674,16 +673,6 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           />
                         ) : (
                           <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
-                        )}
-                      </td>
-                      {/* Recommended selling price (calculated, read-only) */}
-                      <td className="pb-2 pr-2 align-top">
-                        {item.itemType === "inventory" && (calc?.landedCostPerUnit ?? 0) > 0 ? (
-                          <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-sm font-semibold text-orange-700 dark:text-orange-300">
-                            {fmt(calcRecommendedPrice(calc?.landedCostPerUnit ?? 0, parseFloat(item.margin) || 0) ?? 0)}
-                          </div>
-                        ) : (
-                          <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
                         )}
                       </td>
                       {/* Remove */}

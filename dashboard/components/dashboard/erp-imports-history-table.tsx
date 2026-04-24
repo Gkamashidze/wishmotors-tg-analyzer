@@ -68,6 +68,7 @@ type ItemRow = {
   allocatedVatCost:       number;
   landedCostPerUnitGel:   number;
   itemType?:              string;
+  recommendedPrice?:      number | null;
 };
 
 type FullImport = ImportRow & { items: ItemRow[] };
@@ -360,6 +361,7 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">სააგ. (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">საბ.დღგ (₾)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">თვითღირ./ც (₾)</th>
+                <th className="px-3 py-2 font-medium text-muted-foreground text-right">გასაყ. ფასი (₾)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -385,6 +387,12 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
                     <td className="px-3 py-2 text-right">{fmt(it.allocatedVatCost)}</td>
                     <td className="px-3 py-2 text-right font-semibold text-emerald-700 dark:text-emerald-300">
                       {fmt(it.landedCostPerUnitGel)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-orange-700 dark:text-orange-300">
+                      {iType === "inventory" && it.recommendedPrice != null && it.recommendedPrice > 0
+                        ? fmt(it.recommendedPrice)
+                        : <span className="text-muted-foreground font-normal">—</span>
+                      }
                     </td>
                   </tr>
                 );
