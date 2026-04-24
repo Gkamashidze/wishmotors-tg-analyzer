@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   let   p = 1;
 
   if (search) {
-    conditions.push(`(i.supplier ILIKE $${p} OR i.invoice_number ILIKE $${p})`);
+    conditions.push(`(i.supplier ILIKE $${p} OR i.invoice_number ILIKE $${p} OR i.declaration_number ILIKE $${p})`);
     params.push(`%${search}%`);
     p++;
   }
@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
       date: Date;
       supplier: string;
       invoice_number: string | null;
+      declaration_number: string | null;
       exchange_rate: string;
       total_transport_cost: string;
       total_terminal_cost: string;
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
       total_value_gel: string;
     }>(
       `SELECT
-         i.id, i.date, i.supplier, i.invoice_number, i.exchange_rate,
+         i.id, i.date, i.supplier, i.invoice_number, i.declaration_number, i.exchange_rate,
          i.total_transport_cost, i.total_terminal_cost,
          i.total_agency_cost, i.total_vat_cost,
          i.document_name, i.status, i.created_at, i.updated_at,
@@ -80,6 +81,7 @@ export async function GET(req: NextRequest) {
         date:               toDateStr(r.date),
         supplier:           r.supplier,
         invoiceNumber:      r.invoice_number,
+        declarationNumber:  r.declaration_number,
         exchangeRate:       Number(r.exchange_rate),
         totalTransportCost: Number(r.total_transport_cost),
         totalTerminalCost:  Number(r.total_terminal_cost),
@@ -124,6 +126,7 @@ export async function POST(req: NextRequest) {
       date: string;
       supplier: string;
       invoiceNumber?: string;
+      declarationNumber?: string;
       exchangeRate: number;
       totalTransportCost: number;
       totalTerminalCost: number;
@@ -140,21 +143,22 @@ export async function POST(req: NextRequest) {
 
     const row = await queryOne<{ id: number }>(
       `INSERT INTO imports
-         (date, supplier, invoice_number, exchange_rate,
+         (date, supplier, invoice_number, declaration_number, exchange_rate,
           total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
           document_url, document_name, status)
-       VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft')
+       VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft')
        RETURNING id`,
       [
         body.date,
         body.supplier,
-        body.invoiceNumber || null,
+        body.invoiceNumber    || null,
+        body.declarationNumber || null,
         body.exchangeRate,
         body.totalTransportCost,
         body.totalTerminalCost,
         body.totalAgencyCost,
         body.totalVatCost,
-        body.documentUrl || null,
+        body.documentUrl  || null,
         body.documentName || null,
       ],
     );

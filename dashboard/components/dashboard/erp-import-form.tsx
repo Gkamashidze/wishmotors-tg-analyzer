@@ -70,6 +70,7 @@ interface Props {
     date: string;
     supplier: string;
     invoiceNumber: string;
+    declarationNumber: string;
     exchangeRate: string;
     totalTransportCost: string;
     totalTerminalCost: string;
@@ -160,6 +161,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const [date,               setDate]               = useState(initialData?.date               ?? today);
   const [supplier,           setSupplier]           = useState(initialData?.supplier           ?? "");
   const [invoiceNumber,      setInvoiceNumber]      = useState(initialData?.invoiceNumber      ?? "");
+  const [declarationNumber,  setDeclarationNumber]  = useState(initialData?.declarationNumber  ?? "");
   const [exchangeRate,       setExchangeRate]       = useState(initialData?.exchangeRate       ?? "");
   const [totalTransportCost, setTotalTransportCost] = useState(initialData?.totalTransportCost ?? "");
   const [totalTerminalCost,  setTotalTerminalCost]  = useState(initialData?.totalTerminalCost  ?? "");
@@ -238,7 +240,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
     return {
       date,
       supplier,
-      invoiceNumber:      invoiceNumber || undefined,
+      invoiceNumber:      invoiceNumber      || undefined,
+      declarationNumber:  declarationNumber  || undefined,
       exchangeRate:       rate,
       totalTransportCost: transport,
       totalTerminalCost:  terminal,
@@ -249,7 +252,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
       items:              validItems,
     };
   }, [
-    items, calcLines, date, supplier, invoiceNumber,
+    items, calcLines, date, supplier, invoiceNumber, declarationNumber,
     rate, transport, terminal, agency, vatCost,
     documentUrl, documentName,
   ]);
@@ -412,6 +415,13 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
               placeholder="INV-2024-001"
               value={invoiceNumber}
               onChange={(e) => setInvoiceNumber(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-declaration`}
+              label="შეფასების #"
+              placeholder="DC-2024-001"
+              value={declarationNumber}
+              onChange={(e) => setDeclarationNumber(e.target.value)}
             />
             <Input
               id={`${formIdBase}-rate`}

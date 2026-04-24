@@ -19,6 +19,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       date: Date;
       supplier: string;
       invoice_number: string | null;
+      declaration_number: string | null;
       exchange_rate: string;
       total_transport_cost: string;
       total_terminal_cost: string;
@@ -30,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       created_at: Date;
       updated_at: Date;
     }>(
-      `SELECT id, date, supplier, invoice_number, exchange_rate,
+      `SELECT id, date, supplier, invoice_number, declaration_number, exchange_rate,
               total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
               document_url, document_name, status, created_at, updated_at
        FROM imports WHERE id = $1`,
@@ -76,6 +77,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       date:               toDateStr(imp.date),
       supplier:           imp.supplier,
       invoiceNumber:      imp.invoice_number,
+      declarationNumber:  imp.declaration_number,
       exchangeRate:       Number(imp.exchange_rate),
       totalTransportCost: Number(imp.total_transport_cost),
       totalTerminalCost:  Number(imp.total_terminal_cost),
@@ -140,6 +142,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       date?: string;
       supplier?: string;
       invoiceNumber?: string | null;
+      declarationNumber?: string | null;
       exchangeRate?: number;
       totalTransportCost?: number;
       totalTerminalCost?: number;
@@ -159,19 +162,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
          date                 = COALESCE($1::date,  date),
          supplier             = COALESCE($2,        supplier),
          invoice_number       = $3,
-         exchange_rate        = COALESCE($4,        exchange_rate),
-         total_transport_cost = COALESCE($5,        total_transport_cost),
-         total_terminal_cost  = COALESCE($6,        total_terminal_cost),
-         total_agency_cost    = COALESCE($7,        total_agency_cost),
-         total_vat_cost       = COALESCE($8,        total_vat_cost),
-         document_url         = COALESCE($9,        document_url),
-         document_name        = COALESCE($10,       document_name),
+         declaration_number   = $4,
+         exchange_rate        = COALESCE($5,        exchange_rate),
+         total_transport_cost = COALESCE($6,        total_transport_cost),
+         total_terminal_cost  = COALESCE($7,        total_terminal_cost),
+         total_agency_cost    = COALESCE($8,        total_agency_cost),
+         total_vat_cost       = COALESCE($9,        total_vat_cost),
+         document_url         = COALESCE($10,       document_url),
+         document_name        = COALESCE($11,       document_name),
          updated_at           = NOW()
-       WHERE id = $11 AND status = 'draft'`,
+       WHERE id = $12 AND status = 'draft'`,
       [
         body.date               ?? null,
         body.supplier           ?? null,
         body.invoiceNumber      ?? null,
+        body.declarationNumber  ?? null,
         body.exchangeRate       ?? null,
         body.totalTransportCost ?? null,
         body.totalTerminalCost  ?? null,

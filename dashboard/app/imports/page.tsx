@@ -16,6 +16,7 @@ type ImportRow = {
   date:               string;
   supplier:           string;
   invoiceNumber:      string | null;
+  declarationNumber:  string | null;
   exchangeRate:       number;
   totalTransportCost: number;
   totalTerminalCost:  number;
@@ -37,6 +38,7 @@ async function getImports(): Promise<ImportRow[]> {
       date: Date;
       supplier: string;
       invoice_number: string | null;
+      declaration_number: string | null;
       exchange_rate: string;
       total_transport_cost: string;
       total_terminal_cost: string;
@@ -50,7 +52,7 @@ async function getImports(): Promise<ImportRow[]> {
       total_value_gel: string;
     }>(
       `SELECT
-         i.id, i.date, i.supplier, i.invoice_number, i.exchange_rate,
+         i.id, i.date, i.supplier, i.invoice_number, i.declaration_number, i.exchange_rate,
          i.total_transport_cost, i.total_terminal_cost,
          i.total_agency_cost, i.total_vat_cost,
          i.document_name, i.status, i.created_at, i.updated_at,
@@ -67,6 +69,7 @@ async function getImports(): Promise<ImportRow[]> {
       date:               (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(0, 10),
       supplier:           r.supplier,
       invoiceNumber:      r.invoice_number,
+      declarationNumber:  r.declaration_number,
       exchangeRate:       Number(r.exchange_rate),
       totalTransportCost: Number(r.total_transport_cost),
       totalTerminalCost:  Number(r.total_terminal_cost),

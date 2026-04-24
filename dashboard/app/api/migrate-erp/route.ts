@@ -79,6 +79,13 @@ export async function POST() {
     `);
     await query(`CREATE INDEX IF NOT EXISTS idx_expenses_source_ref ON expenses(source_reference)`);
 
+    // v3: customs declaration / assessment number
+    await query(`
+      ALTER TABLE imports
+        ADD COLUMN IF NOT EXISTS declaration_number VARCHAR(100)
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_imports_declaration ON imports(declaration_number)`);
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[migrate-erp]", err);

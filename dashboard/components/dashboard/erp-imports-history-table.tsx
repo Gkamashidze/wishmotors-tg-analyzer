@@ -23,6 +23,7 @@ type ImportRow = {
   date:               string;
   supplier:           string;
   invoiceNumber:      string | null;
+  declarationNumber:  string | null;
   exchangeRate:       number;
   totalTransportCost: number;
   totalTerminalCost:  number;
@@ -156,7 +157,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
             type="text"
-            placeholder="მიმწოდებელი, ინვოისი..."
+            placeholder="მიმწოდებელი, ინვოისი, შეფასება..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && fetchRows()}
@@ -217,6 +218,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
                 <th className="px-4 py-3 font-medium text-muted-foreground">თარიღი</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">მიმწოდებელი</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">ინვოისი</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground">შეფასების #</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground text-center">პოზ.</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground text-right">სულ (₾)</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground text-right">კურსი</th>
@@ -234,6 +236,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
                     <td className="px-4 py-3 whitespace-nowrap">{fmtDate(row.date)}</td>
                     <td className="px-4 py-3 font-medium">{row.supplier || "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{row.invoiceNumber || "—"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{row.declarationNumber || "—"}</td>
                     <td className="px-4 py-3 text-center">{row.itemsCount}</td>
                     <td className="px-4 py-3 text-right font-medium">{fmt(row.totalValueGel)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{fmt(row.exchangeRate, 4)}</td>
@@ -293,7 +296,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
                   {/* Expanded detail panel */}
                   {expandedId === row.id && (
                     <tr key={`exp-${row.id}`}>
-                      <td colSpan={8} className="bg-muted/20 px-4 py-4">
+                      <td colSpan={9} className="bg-muted/20 px-4 py-4">
                         {!expandedData[row.id] ? (
                           <p className="text-sm text-muted-foreground">იტვირთება...</p>
                         ) : (
@@ -348,6 +351,7 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
             <thead className="bg-muted/50">
               <tr className="text-left">
                 <th className="px-3 py-2 font-medium text-muted-foreground">პროდუქტი</th>
+                <th className="px-3 py-2 font-medium text-muted-foreground">ტიპი</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">რაოდ.</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">ფასი ($)</th>
                 <th className="px-3 py-2 font-medium text-muted-foreground text-right">სულ (₾)</th>
@@ -359,24 +363,32 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.items.map((it) => (
-                <tr key={it.id} className="hover:bg-muted/20">
-                  <td className="px-3 py-2">
-                    <p className="font-medium">{it.productName}</p>
-                    {it.oemCode && <p className="text-muted-foreground">{it.oemCode}</p>}
-                  </td>
-                  <td className="px-3 py-2 text-right">{fmt(it.quantity, 4)} {it.unit}</td>
-                  <td className="px-3 py-2 text-right">{fmt(it.unitPriceUsd, 4)}</td>
-                  <td className="px-3 py-2 text-right text-blue-700 dark:text-blue-300">{fmt(it.totalPriceGel)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(it.allocatedTransportCost)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(it.allocatedTerminalCost)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(it.allocatedAgencyCost)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(it.allocatedVatCost)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-emerald-700 dark:text-emerald-300">
-                    {fmt(it.landedCostPerUnitGel)}
-                  </td>
-                </tr>
-              ))}
+              {data.items.map((it) => {
+                const iType = (it.itemType || "inventory") as ItemType;
+                return (
+                  <tr key={it.id} className="hover:bg-muted/20">
+                    <td className="px-3 py-2">
+                      <p className="font-medium">{it.productName}</p>
+                      {it.oemCode && <p className="text-muted-foreground">{it.oemCode}</p>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${ITEM_TYPE_COLORS[iType]}`}>
+                        {ITEM_TYPE_LABELS[iType]}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">{fmt(it.quantity, 4)} {it.unit}</td>
+                    <td className="px-3 py-2 text-right">{fmt(it.unitPriceUsd, 4)}</td>
+                    <td className="px-3 py-2 text-right text-blue-700 dark:text-blue-300">{fmt(it.totalPriceGel)}</td>
+                    <td className="px-3 py-2 text-right">{fmt(it.allocatedTransportCost)}</td>
+                    <td className="px-3 py-2 text-right">{fmt(it.allocatedTerminalCost)}</td>
+                    <td className="px-3 py-2 text-right">{fmt(it.allocatedAgencyCost)}</td>
+                    <td className="px-3 py-2 text-right">{fmt(it.allocatedVatCost)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-emerald-700 dark:text-emerald-300">
+                      {fmt(it.landedCostPerUnitGel)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

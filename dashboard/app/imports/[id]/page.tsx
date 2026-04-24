@@ -62,6 +62,7 @@ export default async function ImportDetailPage({ params }: Params) {
                 date:               imp.date,
                 supplier:           imp.supplier,
                 invoiceNumber:      imp.invoiceNumber ?? "",
+                declarationNumber:  imp.declarationNumber ?? "",
                 exchangeRate:       String(imp.exchangeRate),
                 totalTransportCost: String(imp.totalTransportCost),
                 totalTerminalCost:  String(imp.totalTerminalCost),
@@ -92,6 +93,7 @@ type DbImport = {
   date: string;
   supplier: string;
   invoiceNumber: string | null;
+  declarationNumber: string | null;
   exchangeRate: number;
   totalTransportCost: number;
   totalTerminalCost: number;
@@ -117,6 +119,7 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       date: Date;
       supplier: string;
       invoice_number: string | null;
+      declaration_number: string | null;
       exchange_rate: string;
       total_transport_cost: string;
       total_terminal_cost: string;
@@ -126,7 +129,7 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       document_name: string | null;
       status: string;
     }>(
-      `SELECT id, date, supplier, invoice_number, exchange_rate,
+      `SELECT id, date, supplier, invoice_number, declaration_number, exchange_rate,
               total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
               document_url, document_name, status
        FROM imports WHERE id = $1`,
@@ -153,6 +156,7 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       date:               (imp.date instanceof Date ? imp.date.toISOString() : String(imp.date)).slice(0, 10),
       supplier:           imp.supplier,
       invoiceNumber:      imp.invoice_number,
+      declarationNumber:  imp.declaration_number,
       exchangeRate:       Number(imp.exchange_rate),
       totalTransportCost: Number(imp.total_transport_cost),
       totalTerminalCost:  Number(imp.total_terminal_cost),
