@@ -12,6 +12,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Download,
 } from "lucide-react";
 import { Button }    from "@/components/ui/button";
 import { RevertImportButton } from "@/components/dashboard/erp-import-form";
@@ -402,9 +403,23 @@ function ExpandedDetail({ data, onReverted }: { data: FullImport; onReverted: ()
         </div>
       )}
 
-      {/* Revert button for completed */}
+      {/* Actions for completed imports */}
       {data.status === "completed" && (
-        <div className="pt-1">
+        <div className="pt-1 flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const a = document.createElement("a");
+              a.href = `/api/erp-imports/${data.id}/export`;
+              a.download = "";
+              a.click();
+            }}
+          >
+            <Download className="h-4 w-4" />
+            ექსელში ჩამოტვირთვა
+          </Button>
           <RevertImportButton importId={data.id} onSuccess={onReverted} />
         </div>
       )}
