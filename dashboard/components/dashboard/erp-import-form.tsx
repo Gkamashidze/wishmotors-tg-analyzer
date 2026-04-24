@@ -569,7 +569,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead>
                 <tr className="text-left">
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[200px]">პროდუქტი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[140px]">OEM კოდი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[160px]">დასახელება</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">ტიპი</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">რაოდ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">ერთ.</th>
@@ -588,30 +589,25 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   const calc = calcLines[idx];
                   return (
                     <tr key={item._key} className="group">
-                      {/* Product — combobox or inline new-product inputs */}
+                      {/* OEM Code — combobox (existing) or editable OEM input (new product) */}
                       <td className="pb-2 pr-2 align-top">
                         {item.isNew ? (
-                          <div className="flex flex-col gap-1">
-                            {/* Locked OEM badge with reset */}
-                            <div className="flex items-center gap-1.5 h-9 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-2.5 text-xs font-mono text-amber-700 dark:text-amber-300">
-                              <span className="flex-1 truncate">{item.oemCode}</span>
-                              <button
-                                type="button"
-                                title="გაუქმება"
-                                onClick={() => resetNewItem(item._key)}
-                                className="shrink-0 text-amber-500 hover:text-destructive cursor-pointer transition-colors"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                            {/* Inline product-name input */}
+                          <div className="flex items-center gap-1">
                             <input
                               type="text"
-                              placeholder="დასახელება *"
-                              value={item.productName}
-                              onChange={(e) => updateItem(item._key, "productName", e.target.value)}
-                              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                              value={item.oemCode}
+                              onChange={(e) => updateItem(item._key, "oemCode", e.target.value)}
+                              className="h-9 flex-1 min-w-0 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-2.5 text-xs font-mono text-amber-700 dark:text-amber-300 placeholder:text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              placeholder="OEM კოდი"
                             />
+                            <button
+                              type="button"
+                              title="გაუქმება"
+                              onClick={() => resetNewItem(item._key)}
+                              className="shrink-0 text-amber-500 hover:text-destructive cursor-pointer transition-colors"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         ) : (
                           <ProductCombobox
@@ -620,8 +616,27 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                             onChange={(v) => updateItem(item._key, "productId", v)}
                             onProductAdded={(p) => setProducts((prev) => [...prev, p])}
                             onNewOem={(oem) => handleNewOem(item._key, oem)}
-                            placeholder="OEM / დასახელება..."
+                            placeholder="OEM / პროდ..."
                           />
+                        )}
+                      </td>
+                      {/* Product Name — editable (new product) or auto-filled read-only (existing) */}
+                      <td className="pb-2 pr-2 align-top">
+                        {item.isNew ? (
+                          <input
+                            type="text"
+                            placeholder="დასახელება *"
+                            value={item.productName}
+                            onChange={(e) => updateItem(item._key, "productName", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        ) : (
+                          <div className="h-9 flex items-center px-3 rounded-lg bg-muted/40 text-sm truncate">
+                            {item.productId
+                              ? <span className="truncate text-foreground">{products.find((p) => String(p.id) === item.productId)?.name ?? "—"}</span>
+                              : <span className="text-muted-foreground/40">—</span>
+                            }
+                          </div>
                         )}
                       </td>
                       {/* Item Type */}
