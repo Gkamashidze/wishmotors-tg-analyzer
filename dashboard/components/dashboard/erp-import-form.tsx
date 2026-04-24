@@ -1,0 +1,758 @@
+"use client";
+
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  useId,
+} from "react";
+import { useRouter } from "next/navigation";
+import {
+  Plus,
+  Trash2,
+  Save,
+  CheckCircle,
+  Upload,
+  FileText,
+  X,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
+import { Button }       from "@/components/ui/button";
+import { Input }        from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProductCombobox }    from "@/components/ui/product-combobox";
+import type { ProductRow }    from "@/lib/queries";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type LineItem = {
+  _key:         string;
+  productId:    string;
+  quantity:     string;
+  unit:         string;
+  unitPriceUsd: string;
+  weight:       string;
+};
+
+type CalcLine = {
+  totalPriceUsd:          number;
+  totalPriceGel:          number;
+  allocatedTransport:     number;
+  allocatedTerminal:      number;
+  allocatedAgency:        number;
+  allocatedVat:           number;
+  landedCostPerUnit:      number;
+};
+
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+interface Props {
+  importId?: number;
+  initialData?: {
+    date: string;
+    supplier: string;
+    invoiceNumber: string;
+    exchangeRate: string;
+    totalTransportCost: string;
+    totalTerminalCost: string;
+    totalAgencyCost: string;
+    totalVatCost: string;
+    documentName: string;
+    items: Array<{
+      productId: number;
+      quantity: number;
+      unit: string;
+      unitPriceUsd: number;
+      weight: number;
+    }>;
+  };
+  products: ProductRow[];
+}
+
+// ── Pure calculation ──────────────────────────────────────────────────────────
+
+function calcLanded(
+  items:     LineItem[],
+  rate:      number,
+  transport: number,
+  terminal:  number,
+  agency:    number,
+  vatCost:   number,
+): CalcLine[] {
+  const parsed = items.map((it) => ({
+    qty:      Math.max(0, parseFloat(it.quantity)     || 0),
+    priceUsd: Math.max(0, parseFloat(it.unitPriceUsd) || 0),
+    weight:   Math.max(0, parseFloat(it.weight)       || 0),
+  }));
+
+  const totalWeight = parsed.reduce((s, i) => s + i.weight, 0);
+  const gelValues   = parsed.map((i) => i.qty * i.priceUsd * rate);
+  const totalGel    = gelValues.reduce((s, v) => s + v, 0);
+  const n           = items.length || 1;
+
+  return parsed.map((it, idx) => {
+    const tShare = totalWeight > 0 ? it.weight / totalWeight : 1 / n;
+    const vShare = totalGel    > 0 ? gelValues[idx] / totalGel : 1 / n;
+
+    const aTransport = transport * tShare;
+    const aTerminal  = terminal  * vShare;
+    const aAgency    = agency    * vShare;
+    const aVat       = vatCost   * vShare;
+
+    const totalLanded = gelValues[idx] + aTransport + aTerminal + aAgency + aVat;
+
+    return {
+      totalPriceUsd:      it.qty * it.priceUsd,
+      totalPriceGel:      gelValues[idx],
+      allocatedTransport: aTransport,
+      allocatedTerminal:  aTerminal,
+      allocatedAgency:    aAgency,
+      allocatedVat:       aVat,
+      landedCostPerUnit:  it.qty > 0 ? totalLanded / it.qty : 0,
+    };
+  });
+}
+
+function fmt(n: number, digits = 2): string {
+  return n.toFixed(digits).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+let _keyCounter = 0;
+function newKey(): string { return String(++_keyCounter); }
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function ErpImportForm({ importId: initialId, initialData, products: initialProducts }: Props) {
+  const router    = useRouter();
+  const formIdBase = useId();
+
+  // ── Header state ────────────────────────────────────────────────────────────
+  const today = new Date().toISOString().slice(0, 10);
+  const [date,               setDate]               = useState(initialData?.date               ?? today);
+  const [supplier,           setSupplier]           = useState(initialData?.supplier           ?? "");
+  const [invoiceNumber,      setInvoiceNumber]      = useState(initialData?.invoiceNumber      ?? "");
+  const [exchangeRate,       setExchangeRate]       = useState(initialData?.exchangeRate       ?? "");
+  const [totalTransportCost, setTotalTransportCost] = useState(initialData?.totalTransportCost ?? "");
+  const [totalTerminalCost,  setTotalTerminalCost]  = useState(initialData?.totalTerminalCost  ?? "");
+  const [totalAgencyCost,    setTotalAgencyCost]    = useState(initialData?.totalAgencyCost    ?? "");
+  const [totalVatCost,       setTotalVatCost]       = useState(initialData?.totalVatCost       ?? "");
+  const [documentUrl,        setDocumentUrl]        = useState("");
+  const [documentName,       setDocumentName]       = useState(initialData?.documentName       ?? "");
+
+  // ── Line items ───────────────────────────────────────────────────────────────
+  const [items, setItems] = useState<LineItem[]>(() => {
+    if (initialData?.items?.length) {
+      return initialData.items.map((it) => ({
+        _key:         newKey(),
+        productId:    String(it.productId),
+        quantity:     String(it.quantity),
+        unit:         it.unit,
+        unitPriceUsd: String(it.unitPriceUsd),
+        weight:       String(it.weight),
+      }));
+    }
+    return [{ _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "" }];
+  });
+
+  // ── Products list (can grow if user adds new) ─────────────────────────────
+  const [products, setProducts] = useState<ProductRow[]>(initialProducts);
+
+  // ── Import id (set after first save) ─────────────────────────────────────
+  const [importId,  setImportId]  = useState<number | undefined>(initialId);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError,  setSaveError]  = useState("");
+  const [finalizing, setFinalizing] = useState(false);
+  const [errors,     setErrors]     = useState<string[]>([]);
+
+  // ── File upload ref ────────────────────────────────────────────────────────
+  const fileRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Derived calculations ──────────────────────────────────────────────────
+  const rate      = parseFloat(exchangeRate)       || 0;
+  const transport = parseFloat(totalTransportCost) || 0;
+  const terminal  = parseFloat(totalTerminalCost)  || 0;
+  const agency    = parseFloat(totalAgencyCost)    || 0;
+  const vatCost   = parseFloat(totalVatCost)       || 0;
+
+  const calcLines = useMemo(
+    () => calcLanded(items, rate, transport, terminal, agency, vatCost),
+    [items, rate, transport, terminal, agency, vatCost],
+  );
+
+  const grandTotalUsd  = calcLines.reduce((s, l) => s + l.totalPriceUsd,  0);
+  const grandTotalGel  = calcLines.reduce((s, l) => s + l.totalPriceGel,  0);
+  const totalOverhead  = transport + terminal + agency + vatCost;
+  const grandLandedGel = grandTotalGel + totalOverhead;
+
+  // ── Build payload ─────────────────────────────────────────────────────────
+  const buildPayload = useCallback(() => {
+    const validItems = items
+      .map((it, idx) => ({
+        productId:              Number(it.productId),
+        quantity:               parseFloat(it.quantity)     || 0,
+        unit:                   it.unit || "ცალი",
+        unitPriceUsd:           parseFloat(it.unitPriceUsd) || 0,
+        weight:                 parseFloat(it.weight)       || 0,
+        totalPriceUsd:          calcLines[idx]?.totalPriceUsd          ?? 0,
+        totalPriceGel:          calcLines[idx]?.totalPriceGel          ?? 0,
+        allocatedTransportCost: calcLines[idx]?.allocatedTransport     ?? 0,
+        allocatedTerminalCost:  calcLines[idx]?.allocatedTerminal      ?? 0,
+        allocatedAgencyCost:    calcLines[idx]?.allocatedAgency        ?? 0,
+        allocatedVatCost:       calcLines[idx]?.allocatedVat           ?? 0,
+        landedCostPerUnitGel:   calcLines[idx]?.landedCostPerUnit      ?? 0,
+      }))
+      .filter((it) => it.productId > 0 && it.quantity > 0);
+
+    return {
+      date,
+      supplier,
+      invoiceNumber:      invoiceNumber || undefined,
+      exchangeRate:       rate,
+      totalTransportCost: transport,
+      totalTerminalCost:  terminal,
+      totalAgencyCost:    agency,
+      totalVatCost:       vatCost,
+      documentUrl:        documentUrl   || undefined,
+      documentName:       documentName  || undefined,
+      items:              validItems,
+    };
+  }, [
+    items, calcLines, date, supplier, invoiceNumber,
+    rate, transport, terminal, agency, vatCost,
+    documentUrl, documentName,
+  ]);
+
+  // ── Validate ──────────────────────────────────────────────────────────────
+  const validate = useCallback((): string[] => {
+    const errs: string[] = [];
+    if (!supplier.trim())          errs.push("მიმწოდებელი სავალდებულოა");
+    if (!date)                     errs.push("თარიღი სავალდებულოა");
+    if (rate <= 0)                 errs.push("კურსი უნდა იყოს > 0");
+    const validItems = items.filter((it) => it.productId && parseFloat(it.quantity) > 0);
+    if (validItems.length === 0)   errs.push("მინიმუმ ერთი პოზიცია სავალდებულოა");
+    items.forEach((it, i) => {
+      if (it.productId && !parseFloat(it.quantity)) errs.push(`სტრიქონი ${i + 1}: რაოდენობა სავალდებულოა`);
+    });
+    return errs;
+  }, [supplier, date, rate, items]);
+
+  // ── Save draft ────────────────────────────────────────────────────────────
+  const saveDraft = useCallback(async (silent = false): Promise<number | null> => {
+    if (!silent) setSaveStatus("saving");
+    setSaveError("");
+    try {
+      const payload = buildPayload();
+      let id = importId;
+
+      if (!id) {
+        const res  = await fetch("/api/erp-imports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json() as { id: number };
+        id = data.id;
+        setImportId(id);
+        router.replace(`/imports/${id}`);
+      } else {
+        const res = await fetch(`/api/erp-imports/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }
+
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2500);
+      return id ?? null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveStatus("error");
+      setSaveError(msg);
+      return null;
+    }
+  }, [buildPayload, importId, router]);
+
+  // ── Auto-save every 2 minutes ────────────────────────────────────────────
+  useEffect(() => {
+    autoSaveTimerRef.current = setInterval(() => {
+      saveDraft(true);
+    }, 120_000);
+    return () => {
+      if (autoSaveTimerRef.current) clearInterval(autoSaveTimerRef.current);
+    };
+  }, [saveDraft]);
+
+  // ── Finalize ──────────────────────────────────────────────────────────────
+  const handleFinalize = useCallback(async () => {
+    const errs = validate();
+    setErrors(errs);
+    if (errs.length > 0) return;
+
+    setFinalizing(true);
+    try {
+      const id = await saveDraft(true);
+      if (!id) { setFinalizing(false); return; }
+
+      const res = await fetch(`/api/erp-imports/${id}/finalize`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json() as { error?: string };
+        throw new Error(body.error ?? "Finalize failed");
+      }
+      router.push("/imports");
+      router.refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrors([msg]);
+    } finally {
+      setFinalizing(false);
+    }
+  }, [validate, saveDraft, router]);
+
+  // ── File upload ───────────────────────────────────────────────────────────
+  const handleFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setDocumentUrl(e.target?.result as string);
+      setDocumentName(file.name);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  // ── Line item helpers ─────────────────────────────────────────────────────
+  const addItem = () =>
+    setItems((prev) => [
+      ...prev,
+      { _key: newKey(), productId: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "" },
+    ]);
+
+  const removeItem = (key: string) =>
+    setItems((prev) => prev.filter((it) => it._key !== key));
+
+  const updateItem = (key: string, field: keyof Omit<LineItem, "_key">, value: string) =>
+    setItems((prev) =>
+      prev.map((it) => (it._key === key ? { ...it, [field]: value } : it)),
+    );
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-6">
+      {/* ── Error Banner ── */}
+      {errors.length > 0 && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 flex gap-3">
+          <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+          <ul className="text-sm text-destructive space-y-0.5">
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Header Card ── */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base">სათაური</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Input
+              id={`${formIdBase}-date`}
+              label="თარიღი *"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-supplier`}
+              label="მიმწოდებელი *"
+              placeholder="კომპანიის დასახელება"
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-invoice`}
+              label="ინვოისის ნომერი"
+              placeholder="INV-2024-001"
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-rate`}
+              label="კურსი (USD→GEL) *"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="2.70"
+              value={exchangeRate}
+              onChange={(e) => setExchangeRate(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-transport`}
+              label="ტრანსპორტი (₾)"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={totalTransportCost}
+              onChange={(e) => setTotalTransportCost(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-terminal`}
+              label="ტერმინალი (₾)"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={totalTerminalCost}
+              onChange={(e) => setTotalTerminalCost(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-agency`}
+              label="სააგენტო (₾)"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={totalAgencyCost}
+              onChange={(e) => setTotalAgencyCost(e.target.value)}
+            />
+            <Input
+              id={`${formIdBase}-vat`}
+              label="სატბო (₾)"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={totalVatCost}
+              onChange={(e) => setTotalVatCost(e.target.value)}
+            />
+
+            {/* File Upload */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium">ინვოისის ფაილი</label>
+              {documentName ? (
+                <div className="flex items-center gap-2 h-9 rounded-lg border border-input bg-background px-3 text-sm">
+                  <FileText className="h-4 w-4 text-primary shrink-0" />
+                  <span className="truncate flex-1">{documentName}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setDocumentUrl(""); setDocumentName(""); }}
+                    className="text-muted-foreground hover:text-destructive cursor-pointer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="h-9 flex items-center gap-2 rounded-lg border border-dashed border-input bg-background px-3 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>ფაილის ატვირთვა (PDF/სურათი)</span>
+                </button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Line Items Card ── */}
+      <Card>
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <CardTitle className="text-base">პოზიციები</CardTitle>
+          <Button type="button" variant="outline" size="sm" onClick={addItem}>
+            <Plus className="h-4 w-4" />
+            პოზიციის დამატება
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto -mx-2 px-2">
+            <table className="w-full text-sm border-separate border-spacing-0">
+              <thead>
+                <tr className="text-left">
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[200px]">პროდუქტი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">რაოდ.</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">ერთ.</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ფასი ($)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">წონა (კგ)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ ($)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ (₾)</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">ჩასვ.ღირ. (₾/ც)</th>
+                  <th className="pb-3 font-medium text-muted-foreground w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => {
+                  const calc = calcLines[idx];
+                  return (
+                    <tr key={item._key} className="group">
+                      {/* Product Combobox */}
+                      <td className="pb-2 pr-2 align-top">
+                        <ProductCombobox
+                          products={products}
+                          value={item.productId}
+                          onChange={(v) => updateItem(item._key, "productId", v)}
+                          onProductAdded={(p) => setProducts((prev) => [...prev, p])}
+                          placeholder="OEM / დასახელება..."
+                        />
+                      </td>
+                      {/* Quantity */}
+                      <td className="pb-2 pr-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="0"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(item._key, "quantity", e.target.value)}
+                          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </td>
+                      {/* Unit */}
+                      <td className="pb-2 pr-2 align-top">
+                        <input
+                          type="text"
+                          placeholder="ცალი"
+                          value={item.unit}
+                          onChange={(e) => updateItem(item._key, "unit", e.target.value)}
+                          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </td>
+                      {/* Price USD */}
+                      <td className="pb-2 pr-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="0.00"
+                          value={item.unitPriceUsd}
+                          onChange={(e) => updateItem(item._key, "unitPriceUsd", e.target.value)}
+                          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </td>
+                      {/* Weight */}
+                      <td className="pb-2 pr-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="0.0"
+                          value={item.weight}
+                          onChange={(e) => updateItem(item._key, "weight", e.target.value)}
+                          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </td>
+                      {/* Total USD (calculated) */}
+                      <td className="pb-2 pr-2 align-top">
+                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-muted/50 text-sm font-medium">
+                          {fmt(calc?.totalPriceUsd ?? 0)}
+                        </div>
+                      </td>
+                      {/* Total GEL (calculated) */}
+                      <td className="pb-2 pr-2 align-top">
+                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm font-medium text-blue-700 dark:text-blue-300">
+                          {fmt(calc?.totalPriceGel ?? 0)}
+                        </div>
+                      </td>
+                      {/* Landed cost per unit (calculated) */}
+                      <td className="pb-2 pr-2 align-top">
+                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                          {fmt(calc?.landedCostPerUnit ?? 0)}
+                        </div>
+                      </td>
+                      {/* Remove */}
+                      <td className="pb-2 align-top">
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item._key)}
+                            className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Totals row */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-border bg-card p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">სულ ($)</p>
+                <p className="text-base font-semibold">{fmt(grandTotalUsd)}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-blue-50 dark:bg-blue-950/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">სულ (₾) ფასად</p>
+                <p className="text-base font-semibold text-blue-700 dark:text-blue-300">{fmt(grandTotalGel)}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-amber-50 dark:bg-amber-950/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">საერთო დანახარჯი (₾)</p>
+                <p className="text-base font-semibold text-amber-700 dark:text-amber-300">{fmt(totalOverhead)}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-emerald-50 dark:bg-emerald-950/30 p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-1">სულ ჩასვ. ღირ. (₾)</p>
+                <p className="text-base font-semibold text-emerald-700 dark:text-emerald-300">{fmt(grandLandedGel)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Overhead allocation breakdown */}
+          {(transport + terminal + agency + vatCost) > 0 && calcLines.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
+                განაწილების დეტალები
+              </summary>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-muted-foreground border-b border-border">
+                      <th className="pb-2 pr-3 font-medium">პოზიცია</th>
+                      <th className="pb-2 pr-3 font-medium text-right">ტრანსპ. (₾)</th>
+                      <th className="pb-2 pr-3 font-medium text-right">ტერმ. (₾)</th>
+                      <th className="pb-2 pr-3 font-medium text-right">სააგ. (₾)</th>
+                      <th className="pb-2 pr-3 font-medium text-right">სატბო (₾)</th>
+                      <th className="pb-2 font-medium text-right">ჩასვ.ღირ./ც (₾)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item, idx) => {
+                      const prod = products.find((p) => String(p.id) === item.productId);
+                      const label = prod ? (prod.oemCode ? `${prod.oemCode} – ${prod.name}` : prod.name) : `სტრ. ${idx + 1}`;
+                      const calc = calcLines[idx];
+                      return (
+                        <tr key={item._key} className="border-b border-border/50">
+                          <td className="py-1.5 pr-3 truncate max-w-[180px]">{label}</td>
+                          <td className="py-1.5 pr-3 text-right">{fmt(calc?.allocatedTransport ?? 0)}</td>
+                          <td className="py-1.5 pr-3 text-right">{fmt(calc?.allocatedTerminal  ?? 0)}</td>
+                          <td className="py-1.5 pr-3 text-right">{fmt(calc?.allocatedAgency    ?? 0)}</td>
+                          <td className="py-1.5 pr-3 text-right">{fmt(calc?.allocatedVat       ?? 0)}</td>
+                          <td className="py-1.5 text-right font-semibold text-emerald-700 dark:text-emerald-300">
+                            {fmt(calc?.landedCostPerUnit ?? 0)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Action Bar ── */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-8">
+        {/* Save status indicator */}
+        <div className="flex items-center gap-2 text-sm">
+          {saveStatus === "saving" && (
+            <><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /><span className="text-muted-foreground">ინახება...</span></>
+          )}
+          {saveStatus === "saved" && (
+            <><CheckCircle className="h-4 w-4 text-emerald-600" /><span className="text-emerald-600">შენახულია (draft)</span></>
+          )}
+          {saveStatus === "error" && (
+            <><AlertCircle className="h-4 w-4 text-destructive" /><span className="text-destructive text-xs truncate max-w-xs">{saveError}</span></>
+          )}
+          {saveStatus === "idle" && importId && (
+            <span className="text-xs text-muted-foreground">ავტო-შენახვა 2 წთ-ში</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => saveDraft(false)}
+            disabled={saveStatus === "saving" || finalizing}
+          >
+            <Save className="h-4 w-4" />
+            Draft-ის შენახვა
+          </Button>
+          <Button
+            type="button"
+            onClick={handleFinalize}
+            disabled={saveStatus === "saving" || finalizing}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {finalizing
+              ? <><Loader2 className="h-4 w-4 animate-spin" />მუშავდება...</>
+              : <><CheckCircle className="h-4 w-4" />დასრულება & მარაგის განახლება</>
+            }
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Revert button (separate component used in history) ────────────────────────
+
+interface RevertButtonProps {
+  importId: number;
+  onSuccess: () => void;
+}
+
+export function RevertImportButton({ importId, onSuccess }: RevertButtonProps) {
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+
+  const handleRevert = async () => {
+    if (!confirm("დარწმუნებული ხარ? ეს გამოაქვეყნებს ოპერაციას და სტოკი გამოაკლდება.")) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/erp-imports/${importId}/revert`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json() as { error?: string };
+        throw new Error(body.error ?? "Revert failed");
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleRevert}
+        disabled={loading}
+        className="border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-400"
+      >
+        {loading
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : <RefreshCw className="h-3.5 w-3.5" />
+        }
+        გაუქმება & რედაქტირება
+      </Button>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
