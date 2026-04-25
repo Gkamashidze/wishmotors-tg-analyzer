@@ -17,10 +17,13 @@ export async function GET(req: NextRequest) {
     min_stock: number;
     unit_price: string;
     unit: string;
+    category: string | null;
+    compatibility_notes: string | null;
     created_at: Date;
     total_count: string;
   }>(
-    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at,
+    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit,
+            category, compatibility_notes, created_at,
             COUNT(*) OVER() AS total_count
      FROM products
      ${negativeOnly ? "WHERE current_stock < 0" : ""}
@@ -40,6 +43,8 @@ export async function GET(req: NextRequest) {
       minStock: r.min_stock,
       unitPrice: Number(r.unit_price),
       unit: r.unit,
+      category: r.category,
+      compatibilityNotes: r.compatibility_notes,
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     })),
     total,
@@ -61,6 +66,8 @@ export async function POST(req: NextRequest) {
   const unitPrice = Number(body.unit_price ?? 0);
   const currentStock = Number(body.current_stock ?? 0);
   const minStock = Number(body.min_stock ?? 0);
+  const category = typeof body.category === "string" ? body.category.trim() || null : null;
+  const compatibilityNotes = typeof body.compatibility_notes === "string" ? body.compatibility_notes.trim() || null : null;
 
   if (oemCode) {
     const existing = await query<{ id: number }>(
@@ -76,10 +83,10 @@ export async function POST(req: NextRequest) {
   }
 
   const created = await query<{ id: number; name: string }>(
-    `INSERT INTO products (name, oem_code, unit, unit_price, current_stock, min_stock)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO products (name, oem_code, unit, unit_price, current_stock, min_stock, category, compatibility_notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, name`,
-    [name, oemCode, unit, unitPrice, currentStock, minStock],
+    [name, oemCode, unit, unitPrice, currentStock, minStock, category, compatibilityNotes],
   );
 
   return NextResponse.json({ id: created[0].id, name: created[0].name }, { status: 201 });

@@ -395,6 +395,8 @@ export type ProductRow = {
   minStock: number;
   unitPrice: number;
   unit: string;
+  category: string | null;
+  compatibilityNotes: string | null;
   createdAt: string;
 };
 
@@ -725,10 +727,13 @@ export async function getProducts(): Promise<ProductRow[]> {
     min_stock: number;
     unit_price: string;
     unit: string;
+    category: string | null;
+    compatibility_notes: string | null;
     created_at: Date;
   }>(
     `
-    SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at
+    SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit,
+           category, compatibility_notes, created_at
     FROM products
     ORDER BY name ASC, created_at DESC
 `,
@@ -742,6 +747,8 @@ export async function getProducts(): Promise<ProductRow[]> {
     minStock: r.min_stock,
     unitPrice: Number(r.unit_price),
     unit: r.unit,
+    category: r.category,
+    compatibilityNotes: r.compatibility_notes,
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()
@@ -765,10 +772,13 @@ export async function getProductsPaged(
     min_stock: number;
     unit_price: string;
     unit: string;
+    category: string | null;
+    compatibility_notes: string | null;
     created_at: Date;
     total_count: string;
   }>(
-    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit, created_at,
+    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit,
+            category, compatibility_notes, created_at,
             COUNT(*) OVER() AS total_count
      FROM products
      ORDER BY name ASC, created_at DESC
@@ -786,6 +796,8 @@ export async function getProductsPaged(
       minStock: r.min_stock,
       unitPrice: Number(r.unit_price),
       unit: r.unit,
+      category: r.category,
+      compatibilityNotes: r.compatibility_notes,
       createdAt:
         r.created_at instanceof Date
           ? r.created_at.toISOString()

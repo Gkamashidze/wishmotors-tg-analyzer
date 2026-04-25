@@ -52,6 +52,8 @@ export function ProductCombobox({
         minStock: newProduct.minStock,
         unitPrice: newProduct.unitPrice,
         unit: newProduct.unit,
+        category: null,
+        compatibilityNotes: null,
         createdAt: newProduct.createdAt,
       };
       onProductAdded?.(row);

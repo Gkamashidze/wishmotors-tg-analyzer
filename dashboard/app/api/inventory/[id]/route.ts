@@ -15,7 +15,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = (await req.json()) as Record<string, unknown>;
-  const { name, oem_code, current_stock, min_stock, unit_price, unit } = body;
+  const { name, oem_code, current_stock, min_stock, unit_price, unit, category, compatibility_notes } = body;
 
   const prev = await queryOne<{ name: string; oem_code: string | null }>(
     "SELECT name, oem_code FROM products WHERE id = $1",
@@ -25,14 +25,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   try {
     await query(
       `UPDATE products SET
-        name          = $2,
-        oem_code      = $3,
-        current_stock = $4,
-        min_stock     = $5,
-        unit_price    = $6,
-        unit          = $7
+        name                = $2,
+        oem_code            = $3,
+        current_stock       = $4,
+        min_stock           = $5,
+        unit_price          = $6,
+        unit                = $7,
+        category            = $8,
+        compatibility_notes = $9
       WHERE id = $1`,
-      [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit],
+      [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit,
+       category ?? null, compatibility_notes ?? null],
     );
   } catch (err: unknown) {
     if (
@@ -53,6 +56,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   const newOem = (oem_code as string | null | undefined) ?? null;
   const nameChanged = prev?.name !== newName;
   const oemChanged = (prev?.oem_code ?? null) !== newOem;
+
+  // Cascade name change to orders.part_name so freeform-order display stays current.
+  if (nameChanged) {
+    await query(
+      "UPDATE orders SET part_name = $1 WHERE product_id = $2",
+      [newName, rowId],
+    );
+  }
 
   if (prev && (nameChanged || oemChanged) && GROUP_ID) {
     void (async () => {

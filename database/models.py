@@ -358,6 +358,12 @@ CREATE INDEX IF NOT EXISTS idx_expenses_is_paid ON expenses(is_paid) WHERE is_pa
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_non_cash BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_expenses_is_non_cash ON expenses(is_non_cash) WHERE is_non_cash = TRUE;
 
+-- Catalog / MDM fields: product category and compatibility notes.
+-- category:            free-text type/group (e.g. 'ფილტრი', 'სარკე', 'გარდამბეჭდი')
+-- compatibility_notes: vehicle compatibility or any extra info shown in catalog
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS compatibility_notes TEXT;
+
 -- Explicit COGS column: quantity × WAC at time of sale (same value as
 -- cost_amount, kept as a named alias so reports can reference it directly).
 -- cost_amount remains for reversal / ledger-posting backward compatibility.
@@ -413,6 +419,8 @@ class ProductRow(TypedDict):
     unit_price: float
     unit: str
     recommended_price: Optional[float]
+    category: Optional[str]
+    compatibility_notes: Optional[str]
     created_at: object  # datetime in practice
 
 

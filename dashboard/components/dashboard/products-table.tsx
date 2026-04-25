@@ -92,11 +92,27 @@ interface OrderEditState {
   notes: string;
 }
 
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+
+function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="relative group/tip inline-flex">
+      {children}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-sm whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50">
+        {label}
+      </div>
+    </div>
+  );
+}
+
 // ─── Product edit / add state ─────────────────────────────────────────────────
 
 interface EditState {
   name: string;
   oem_code: string;
+  unit_price: string;
+  category: string;
+  compatibility_notes: string;
 }
 
 interface AddState {
@@ -127,7 +143,13 @@ const DEFAULT_ADD: AddState = {
 };
 
 function rowToEdit(r: ProductRow): EditState {
-  return { name: r.name, oem_code: r.oemCode ?? "" };
+  return {
+    name: r.name,
+    oem_code: r.oemCode ?? "",
+    unit_price: String(r.unitPrice),
+    category: r.category ?? "",
+    compatibility_notes: r.compatibilityNotes ?? "",
+  };
 }
 
 function saleToEdit(s: ProductSale): SaleEditState {
@@ -165,7 +187,6 @@ export function ProductsTable({
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [showNegative, setShowNegative] = useState(false);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
 
   useEffect(() => {
@@ -263,12 +284,12 @@ export function ProductsTable({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (showNegative && r.currentStock >= 0) return false;
-      if (!q) return true;
-      return [r.name, r.oemCode ?? ""].join(" ").toLowerCase().includes(q);
-    });
-  }, [rows, search, showNegative]);
+    if (!q) return rows;
+    return rows.filter((r) =>
+      [r.name, r.oemCode ?? "", r.category ?? "", r.compatibilityNotes ?? ""]
+        .join(" ").toLowerCase().includes(q),
+    );
+  }, [rows, search]);
 
   // ── Add product ─────────────────────────────────────────────────────────────
 
@@ -371,8 +392,10 @@ export function ProductsTable({
           oem_code: editState.oem_code || null,
           current_stock: editRow.currentStock,
           min_stock: editRow.minStock,
-          unit_price: editRow.unitPrice,
+          unit_price: Number(editState.unit_price) || 0,
           unit: editRow.unit,
+          category: editState.category.trim() || null,
+          compatibility_notes: editState.compatibility_notes.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -551,27 +574,13 @@ export function ProductsTable({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="ძიება (დასახელება, OEM...)"
-            aria-label="ძიება პროდუქციაში"
-            className="h-9 w-72 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            onClick={() => setShowNegative((v) => !v)}
-            aria-pressed={showNegative}
-            className={cn(
-              "h-9 px-3 rounded-lg border text-sm font-medium transition-colors cursor-pointer",
-              showNegative
-                ? "border-destructive bg-destructive/10 text-destructive"
-                : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-destructive/50",
-            )}
-          >
-            ⚠️ უარყოფითი მარაგები
-          </button>
-        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="ძიება (დასახელება, OEM, კატეგორია...)"
+          aria-label="ძიება პროდუქციაში"
+          className="h-9 w-80 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
         <div className="flex items-center gap-3">
           <p className="text-xs text-muted-foreground">
             {formatNumber(filtered.length)} / {formatNumber(total)} პროდუქტი
@@ -588,17 +597,20 @@ export function ProductsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-14">#</TableHead>
+              <TableHead className="w-10">#</TableHead>
               <TableHead>OEM კოდი</TableHead>
               <TableHead>დასახელება</TableHead>
-              <TableHead className="w-24 text-right">მარაგი</TableHead>
+              <TableHead>ტიპი / კატეგორია</TableHead>
+              <TableHead className="w-20">ერთეული</TableHead>
+              <TableHead className="w-28 text-right">გასაყიდი ფასი</TableHead>
+              <TableHead>თავსებადობა / შენ.</TableHead>
               <TableHead className="w-24 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -612,26 +624,40 @@ export function ProductsTable({
                     {r.oemCode ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell className={cn(
-                    "text-right tabular-nums text-sm font-medium",
-                    r.currentStock < 0 ? "text-destructive" : "text-foreground",
-                  )}>
-                    {formatNumber(r.currentStock)}
+                  <TableCell className="text-sm text-muted-foreground">
+                    {r.category ?? <span className="italic text-xs">—</span>}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {r.unit}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm font-medium">
+                    {formatGEL(r.unitPrice)}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                    {r.compatibilityNotes ?? <span className="italic">—</span>}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => openWriteoff(r)} aria-label="ჩამოწერა">
-                        <PackageMinus className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <Tooltip label="ნახვა">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip label="რედაქტირება">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip label="ჩამოწერა">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => openWriteoff(r)} aria-label="ჩამოწერა">
+                          <PackageMinus className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip label="წაშლა">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1037,8 +1063,20 @@ export function ProductsTable({
       <Dialog open={!!editRow} onClose={closeEdit} title={`პროდუქტის რედაქტირება #${editRow?.id}`}>
         {editState && (
           <div className="space-y-3">
-            <Input id="prod-name" label="დასახელება" type="text" value={editState.name} onChange={set("name")} />
+            <Input id="prod-name" label="დასახელება *" type="text" value={editState.name} onChange={set("name")} />
             <Input id="prod-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
+            <div className="grid grid-cols-2 gap-3">
+              <Input id="prod-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
+              <Input id="prod-category" label="ტიპი / კატეგორია" type="text" value={editState.category} onChange={set("category")} placeholder="მაგ: ფილტრი, სარკე..." />
+            </div>
+            <Input
+              id="prod-compat"
+              label="თავსებადობა / დამატ. ინფორმაცია"
+              type="text"
+              value={editState.compatibility_notes}
+              onChange={set("compatibility_notes")}
+              placeholder="მაგ: Toyota Corolla 2008–2015, 1.6L"
+            />
             {saveError && (
               <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
                 {saveError}
