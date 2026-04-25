@@ -118,6 +118,11 @@ type DbImport = {
 
 async function fetchImport(importId: number): Promise<DbImport | null> {
   try {
+    // Ensure columns exist (idempotent — safe to run every time)
+    await query(`ALTER TABLE import_items ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'inventory'`);
+    await query(`ALTER TABLE import_items ADD COLUMN IF NOT EXISTS inventory_sub_type TEXT NOT NULL DEFAULT 'regular'`);
+    await query(`ALTER TABLE import_items ADD COLUMN IF NOT EXISTS accounting_category TEXT`);
+
     const imp = await queryOne<{
       id: number;
       date: Date;
