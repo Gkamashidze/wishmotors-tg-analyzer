@@ -33,7 +33,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = await req.json() as Record<string, unknown>;
-  const { amount, description, category, payment_method, created_at, vat_amount, is_vat_included, is_paid } = body;
+  const {
+    amount, description, category, payment_method, created_at,
+    vat_amount, is_vat_included, is_paid,
+    currency, original_amount, exchange_rate,
+  } = body;
 
   const current = await fetchExpense(rowId);
 
@@ -46,9 +50,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
       created_at      = $6,
       vat_amount      = $7,
       is_vat_included = $8,
-      is_paid         = $9
+      is_paid         = $9,
+      currency        = COALESCE($10, currency),
+      original_amount = COALESCE($11, original_amount),
+      exchange_rate   = COALESCE($12, exchange_rate)
     WHERE id = $1`,
-    [rowId, amount, description ?? null, category ?? null, payment_method, created_at, vat_amount ?? 0, is_vat_included ?? false, is_paid ?? true],
+    [
+      rowId, amount, description ?? null, category ?? null, payment_method,
+      created_at, vat_amount ?? 0, is_vat_included ?? false, is_paid ?? true,
+      currency ?? null, original_amount ?? null, exchange_rate ?? null,
+    ],
   );
 
   if (current?.topic_id && current.topic_message_id && GROUP_ID) {

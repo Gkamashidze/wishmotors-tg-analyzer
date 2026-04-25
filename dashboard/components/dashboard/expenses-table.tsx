@@ -245,6 +245,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
             <TableRow>
               <TableHead className="w-14">#</TableHead>
               <TableHead className="text-right">თანხა</TableHead>
+              <TableHead className="text-center w-16">ვალ.</TableHead>
               <TableHead className="text-right">დღგ</TableHead>
               <TableHead>კატეგორია</TableHead>
               <TableHead>აღწერა</TableHead>
@@ -257,7 +258,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -276,6 +277,22 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-destructive">
                     {formatGEL(r.amount)}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {(r.currency && r.currency !== "GEL") ? (
+                      <span className={[
+                        "inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-semibold",
+                        r.category === "exchange_gain"
+                          ? "bg-green-100 text-green-800"
+                          : r.category === "exchange_loss"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-blue-100 text-blue-800",
+                      ].join(" ")}>
+                        {r.currency}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">₾</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.isVatIncluded ? (

@@ -993,6 +993,7 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">კონტრაგენტი</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">ვალუტა</th>
                     <th className="text-right px-4 py-3 font-medium text-muted-foreground">საწყისი დავალიანება</th>
                     <th className="text-right px-4 py-3 font-medium text-muted-foreground">დაფარული თანხა</th>
                     <th className="text-right px-4 py-3 font-medium text-muted-foreground">დარჩენილი ნაშთი</th>
@@ -1015,13 +1016,30 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
                           <div className="text-xs text-muted-foreground">{p.phone}</div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{fmt(p.opening_balance)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                          p.primary_currency === "GEL"
+                            ? "bg-green-100 text-green-800"
+                            : p.primary_currency === "USD"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-purple-100 text-purple-800",
+                        )}>
+                          {p.primary_currency ?? "GEL"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {p.primary_currency !== "GEL" && p.total_original_foreign > 0
+                          ? <><span className="text-muted-foreground text-xs mr-1">{p.primary_currency}</span>{fmt(p.total_original_foreign)}</>
+                          : fmt(p.opening_balance)
+                        }
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums text-green-700">{fmt(p.paid_amount)}</td>
                       <td className={cn(
                         "px-4 py-3 text-right tabular-nums font-semibold",
                         p.remaining > 0 ? "text-red-600" : "text-green-700",
                       )}>
-                        {fmt(p.remaining)}
+                        ₾ {fmt(p.remaining)}
                       </td>
                       <td className="px-4 py-3">
                         <Button
@@ -1042,13 +1060,14 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
                   <tfoot>
                     <tr className="border-t-2 border-border bg-muted/60 font-semibold">
                       <td className="px-4 py-2.5 text-sm">სულ</td>
+                      <td></td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-sm">{fmt(totalOpening)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-sm text-green-700">{fmt(totalPaid)}</td>
                       <td className={cn(
                         "px-4 py-2.5 text-right tabular-nums text-sm font-bold",
                         totalRemaining > 0 ? "text-red-600" : "text-green-700",
                       )}>
-                        {fmt(totalRemaining)}
+                        ₾ {fmt(totalRemaining)}
                       </td>
                       <td></td>
                     </tr>
@@ -1091,23 +1110,37 @@ function AddEntryModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [mode, setMode]             = useState<"new" | "existing">("new");
-  const [partnerId, setPartnerId]   = useState<number | null>(null);
-  const [name, setName]             = useState("");
-  const [phone, setPhone]           = useState("");
-  const [amount, setAmount]         = useState("");
-  const [description, setDesc]      = useState("");
-  const [date, setDate]             = useState(today());
-  const [saving, setSaving]         = useState(false);
-  const [err, setErr]               = useState<string | null>(null);
+  const [mode, setMode]           = useState<"new" | "existing">("new");
+  const [partnerId, setPartnerId] = useState<number | null>(null);
+  const [name, setName]           = useState("");
+  const [phone, setPhone]         = useState("");
+  const [foreignAmount, setForeignAmount] = useState("");
+  const [currency, setCurrency]   = useState("GEL");
+  const [fxRate, setFxRate]       = useState("");
+  const [description, setDesc]    = useState("");
+  const [date, setDate]           = useState(today());
+  const [saving, setSaving]       = useState(false);
+  const [err, setErr]             = useState<string | null>(null);
 
-  const label = partnerType === "debtor" ? "დებიტორი" : "კრედიტორი";
+  const label      = partnerType === "debtor" ? "დებიტორი" : "კრედიტორი";
+  const isForeign  = currency !== "GEL";
+  const rate       = parseFloat(fxRate) || 0;
+  const foreign    = parseFloat(foreignAmount) || 0;
+  const gelPreview = isForeign ? foreign * rate : foreign;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+
+    if (isForeign) {
+      if (foreign <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+      if (rate <= 0)    { setErr("კურსი უნდა იყოს > 0"); return; }
+    } else {
+      if (foreign <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+    }
+
+    const gelAmount = isForeign ? foreign * rate : foreign;
+
     setSaving(true);
     try {
       if (mode === "new") {
@@ -1119,9 +1152,11 @@ function AddEntryModal({
             name: name.trim(),
             type: partnerType,
             phone: phone || undefined,
-            initial_amount: amountNum,
+            initial_amount: gelAmount,
             initial_description: description || undefined,
             initial_date: date,
+            currency,
+            exchange_rate: isForeign ? rate : 1.0,
           }),
         });
         const data = await res.json();
@@ -1133,7 +1168,10 @@ function AddEntryModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             tx_type: "debit",
-            amount: amountNum,
+            amount: gelAmount,
+            currency,
+            original_amount: isForeign ? foreign : gelAmount,
+            exchange_rate: isForeign ? rate : 1.0,
             description: description || undefined,
             tx_date: date,
           }),
@@ -1219,20 +1257,64 @@ function AddEntryModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Currency selector */}
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">თანხა (₾) *</label>
+              <label className="text-xs font-medium text-muted-foreground">ვალუტა</label>
+              <select
+                value={currency}
+                onChange={(e) => { setCurrency(e.target.value); setFxRate(""); }}
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="GEL">GEL ₾</option>
+                <option value="USD">USD $</option>
+                <option value="EUR">EUR €</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                {isForeign ? `თანხა (${currency}) *` : "თანხა (₾) *"}
+              </label>
               <input
                 type="number"
                 min="0.01"
                 step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                value={foreignAmount}
+                onChange={(e) => setForeignAmount(e.target.value)}
                 required
                 className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-            <div className="space-y-1">
+            {isForeign && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">კურსი ({currency}→₾) *</label>
+                <input
+                  type="number"
+                  min="0.0001"
+                  step="0.0001"
+                  value={fxRate}
+                  onChange={(e) => setFxRate(e.target.value)}
+                  placeholder="2.80"
+                  required
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* GEL preview when foreign currency */}
+          {isForeign && gelPreview > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-100 text-sm">
+              <span className="text-muted-foreground">GEL ექვივ.:</span>
+              <span className="font-semibold text-blue-700">₾ {fmt(gelPreview)}</span>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {fmt(foreign)} {currency} × {rate}
+              </span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1 sm:col-span-1">
               <label className="text-xs font-medium text-muted-foreground">თარიღი</label>
               <input
                 type="date"
@@ -1241,16 +1323,15 @@ function AddEntryModal({
                 className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">აღწერა</label>
-            <input
-              value={description}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="სურვილისამებრ"
-              className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <div className="col-span-2 space-y-1 sm:col-span-1">
+              <label className="text-xs font-medium text-muted-foreground">აღწერა</label>
+              <input
+                value={description}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="სურვილისამებრ"
+                className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
           </div>
 
           {err && (
@@ -1283,27 +1364,47 @@ function PaymentModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [amount, setAmount] = useState("");
-  const [note, setNote]     = useState("");
-  const [date, setDate]     = useState(today());
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState<string | null>(null);
+  const isForeign      = (partner.primary_currency ?? "GEL") !== "GEL";
+  const origRate       = partner.original_exchange_rate ?? 1.0;
+  const partnerCcy     = partner.primary_currency ?? "GEL";
+
+  const [foreignAmount, setForeignAmount] = useState("");
+  const [paymentRate, setPaymentRate]     = useState(isForeign ? String(origRate) : "");
+  const [note, setNote]                   = useState("");
+  const [date, setDate]                   = useState(today());
+  const [saving, setSaving]               = useState(false);
+  const [err, setErr]                     = useState<string | null>(null);
+
+  const foreign   = parseFloat(foreignAmount) || 0;
+  const pRate     = parseFloat(paymentRate) || 0;
+  const gelAmount = isForeign ? foreign * pRate : foreign;
+  const fxDiff    = isForeign && pRate > 0 ? (pRate - origRate) * foreign : 0;
+  const isLoss    = fxDiff > 0.005;
+  const isGain    = fxDiff < -0.005;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+    if (isForeign) {
+      if (foreign <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+      if (pRate <= 0)   { setErr("კურსი უნდა იყოს > 0"); return; }
+    } else {
+      if (foreign <= 0) { setErr("სწორი თანხა შეიყვანეთ"); return; }
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/accounting/partners/${partner.id}/transaction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tx_type: "credit",
-          amount: amountNum,
-          description: note || "გადახდა",
-          tx_date: date,
+          tx_type:               "credit",
+          amount:                gelAmount,
+          currency:              isForeign ? partnerCcy : "GEL",
+          original_amount:       isForeign ? foreign : gelAmount,
+          exchange_rate:         isForeign ? pRate : 1.0,
+          payment_exchange_rate: isForeign ? pRate : undefined,
+          description:           note || "გადახდა",
+          tx_date:               date,
         }),
       });
       const data = await res.json();
@@ -1328,6 +1429,11 @@ function PaymentModal({
             <p className="text-sm text-muted-foreground">
               {partner.name} · ნაშთი ₾ {fmt(partner.remaining)}
             </p>
+            {isForeign && (
+              <p className="text-xs text-blue-600 font-medium mt-0.5">
+                💱 ვალუტა: {partnerCcy} · საინვ. კურსი: {fmt(origRate)}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
             <X className="h-4 w-4" />
@@ -1337,18 +1443,77 @@ function PaymentModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">თანხა (₾) *</label>
+              <label className="text-xs font-medium text-muted-foreground">
+                {isForeign ? `თანხა (${partnerCcy}) *` : "თანხა (₾) *"}
+              </label>
               <input
                 type="number"
                 min="0.01"
                 step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder={`მაქს. ${fmt(partner.remaining)}`}
+                value={foreignAmount}
+                onChange={(e) => setForeignAmount(e.target.value)}
+                placeholder={isForeign ? `${partnerCcy} თანხა` : `მაქს. ${fmt(partner.remaining)}`}
                 required
                 className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
+            {isForeign ? (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  დღევ. კურსი ({partnerCcy}→₾) *
+                </label>
+                <input
+                  type="number"
+                  min="0.0001"
+                  step="0.0001"
+                  value={paymentRate}
+                  onChange={(e) => setPaymentRate(e.target.value)}
+                  placeholder="2.85"
+                  required
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">თარიღი</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* FX breakdown — shown when foreign currency and amounts entered */}
+          {isForeign && foreign > 0 && pRate > 0 && (
+            <div className="rounded-lg border p-3 space-y-1.5 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>GEL ექვივ. ({fmt(foreign)} × {pRate})</span>
+                <span className="font-medium text-foreground">₾ {fmt(gelAmount)}</span>
+              </div>
+              {(isLoss || isGain) && (
+                <div className={cn(
+                  "flex justify-between font-semibold rounded px-2 py-1",
+                  isLoss ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700",
+                )}>
+                  <span>
+                    {isLoss ? "⬆ სავალ. ზარალი" : "⬇ სავალ. მოგება"}
+                    <span className="font-normal text-xs ml-1">
+                      ({fmt(foreign)} × ({pRate} − {origRate}))
+                    </span>
+                  </span>
+                  <span>₾ {fmt(Math.abs(fxDiff))}</span>
+                </div>
+              )}
+              {!isLoss && !isGain && (
+                <div className="text-xs text-muted-foreground text-center">სავალუტო სხვაობა არ არის</div>
+              )}
+            </div>
+          )}
+
+          {isForeign && (
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">თარიღი</label>
               <input
@@ -1358,7 +1523,7 @@ function PaymentModal({
                 className="w-full h-9 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-          </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">შენიშვნა</label>
@@ -1380,7 +1545,7 @@ function PaymentModal({
           <div className="flex gap-2 pt-1">
             <Button type="submit" disabled={saving} className="flex-1">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              გადახდის ჩაწერა
+              გადახდის ჩაწერა{isForeign && gelAmount > 0 ? ` (₾ ${fmt(gelAmount)})` : ""}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>გაუქმება</Button>
           </div>
