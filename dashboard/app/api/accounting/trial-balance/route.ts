@@ -56,12 +56,22 @@ export async function GET(req: NextRequest) {
       period_credit: string;
     }>(`
       WITH
+        -- Exclude ledger rows that belong to individual (FZ) sales.
+        -- Sale rows carry reference_id = 'sale:<id>'; all other rows (batches,
+        -- expenses, payments) have no sales.id match and are kept as-is.
+        llc_ledger AS (
+          SELECT l.*
+          FROM ledger l
+          LEFT JOIN sales s
+            ON l.reference_id = 'sale:' || s.id::text
+          WHERE s.id IS NULL OR s.seller_type = 'llc'
+        ),
         opening AS (
           SELECT
             account_code,
             COALESCE(SUM(debit_amount),  0) AS debit,
             COALESCE(SUM(credit_amount), 0) AS credit
-          FROM ledger
+          FROM llc_ledger
           WHERE transaction_date < $1
           GROUP BY account_code
         ),
@@ -70,7 +80,7 @@ export async function GET(req: NextRequest) {
             account_code,
             COALESCE(SUM(debit_amount),  0) AS debit,
             COALESCE(SUM(credit_amount), 0) AS credit
-          FROM ledger
+          FROM llc_ledger
           WHERE transaction_date >= $1
             AND transaction_date <= $2
           GROUP BY account_code

@@ -46,6 +46,7 @@ export async function getDashboardSummary(
         FROM sales
         WHERE sold_at >= NOW() - ($1::int || ' days')::interval
           AND status != 'returned'
+          AND seller_type = 'llc'
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -135,6 +136,7 @@ export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
       FROM sales
       WHERE sold_at >= date_trunc('day', NOW()) - (($1::int - 1) || ' days')::interval
         AND status != 'returned'
+        AND seller_type = 'llc'
       GROUP BY 1
     ),
     exp_per_day AS (
@@ -461,6 +463,7 @@ export async function getDashboardSummaryRange(
         WHERE sold_at >= $1::timestamptz
           AND sold_at <  $2::timestamptz + INTERVAL '1 day'
           AND status != 'returned'
+          AND seller_type = 'llc'
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -642,6 +645,7 @@ export async function getTopSellingProducts(
           WHERE s.sold_at >= $2::timestamptz
             AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
             AND s.status != 'returned'
+            AND s.seller_type = 'llc'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_quantity DESC
           LIMIT $1
@@ -657,6 +661,7 @@ export async function getTopSellingProducts(
           FROM sales s
           LEFT JOIN products p ON p.id = s.product_id
           WHERE s.status != 'returned'
+            AND s.seller_type = 'llc'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_quantity DESC
           LIMIT $1
@@ -712,6 +717,7 @@ export async function getTopProfitableProducts(
           WHERE s.sold_at >= $2::timestamptz
             AND s.sold_at <  $3::timestamptz + INTERVAL '1 day'
             AND s.status != 'returned'
+            AND s.seller_type = 'llc'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_profit DESC
           LIMIT $1
@@ -727,6 +733,7 @@ export async function getTopProfitableProducts(
           FROM sales s
           LEFT JOIN products p ON p.id = s.product_id
           WHERE s.status != 'returned'
+            AND s.seller_type = 'llc'
           GROUP BY s.product_id, p.name, p.oem_code
           ORDER BY total_profit DESC
           LIMIT $1

@@ -67,21 +67,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Revenue from sales
+    // Revenue from sales — LLC only (seller_type = 'llc')
     const revenueRow = await queryOne<{
       sales_revenue: string;
     }>(
       `SELECT COALESCE(SUM(quantity * unit_price), 0) AS sales_revenue
        FROM sales
-       WHERE sold_at >= $1 AND sold_at <= $2`,
+       WHERE sold_at >= $1 AND sold_at <= $2
+         AND seller_type = 'llc'
+         AND status != 'returned'`,
       [from.toISOString(), to.toISOString()],
     );
 
-    // COGS from sales
+    // COGS from sales — LLC only
     const cogsRow = await queryOne<{ cogs: string }>(
       `SELECT COALESCE(SUM(cost_amount), 0) AS cogs
        FROM sales
-       WHERE sold_at >= $1 AND sold_at <= $2`,
+       WHERE sold_at >= $1 AND sold_at <= $2
+         AND seller_type = 'llc'
+         AND status != 'returned'`,
       [from.toISOString(), to.toISOString()],
     );
 

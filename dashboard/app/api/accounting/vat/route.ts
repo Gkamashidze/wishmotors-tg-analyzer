@@ -51,14 +51,23 @@ export async function GET(req: NextRequest) {
       output_vat: string;
       input_vat: string;
     }>(
+      // import_vat rows are always kept (imports = LLC).
+      // sales_vat rows are filtered to LLC-only via JOIN to sales table.
       `SELECT
-         TO_CHAR(created_at AT TIME ZONE 'Asia/Tbilisi', 'YYYY-MM') AS month,
-         SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END)      AS output_vat,
-         SUM(CASE WHEN amount > 0 THEN amount      ELSE 0 END)      AS input_vat
-       FROM vat_ledger
-       WHERE transaction_type IN ('import_vat', 'sales_vat')
-         AND created_at >= $1
-         AND created_at <= $2
+         TO_CHAR(vl.created_at AT TIME ZONE 'Asia/Tbilisi', 'YYYY-MM') AS month,
+         SUM(CASE WHEN vl.amount < 0 THEN ABS(vl.amount) ELSE 0 END)   AS output_vat,
+         SUM(CASE WHEN vl.amount > 0 THEN vl.amount      ELSE 0 END)   AS input_vat
+       FROM vat_ledger vl
+       LEFT JOIN sales s
+         ON vl.transaction_type = 'sales_vat'
+        AND vl.reference_id = 'sale:' || s.id::text
+       WHERE vl.transaction_type IN ('import_vat', 'sales_vat')
+         AND vl.created_at >= $1
+         AND vl.created_at <= $2
+         AND (
+           vl.transaction_type = 'import_vat'
+           OR s.seller_type = 'llc'
+         )
        GROUP BY month
        ORDER BY month DESC`,
       [from.toISOString(), to.toISOString()],
