@@ -35,7 +35,7 @@ const NAV: NavItem[] = [
   { href: "/imports", label: "იმპორტი", icon: FileDown },
   { href: "/accounting", label: "ბუღალტერია", icon: BookOpen },
   { href: "/vat", label: "დღგ-ს დეკლარაცია", icon: FileText },
-  { href: "/debtors", label: "დებიტორები", icon: UserX },
+  { href: "/debtors", label: "ნისია", icon: UserX },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
