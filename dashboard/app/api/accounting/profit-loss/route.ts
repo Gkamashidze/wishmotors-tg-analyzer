@@ -16,6 +16,17 @@ export type ProfitLossResponse = {
   };
   gross_profit: number;
   gross_margin_pct: number;
+  cash_expenses: {
+    category: string;
+    amount: number;
+  }[];
+  total_cash_expenses: number;
+  non_cash_expenses: {
+    category: string;
+    amount: number;
+  }[];
+  total_non_cash_expenses: number;
+  /** @deprecated use cash_expenses + non_cash_expenses */
   expenses: {
     category: string;
     amount: number;
@@ -74,8 +85,8 @@ export async function GET(req: NextRequest) {
       [from.toISOString(), to.toISOString()],
     );
 
-    // Expenses by category
-    const expenseRows = await query<{
+    // Cash expenses (is_paid=TRUE, is_non_cash=FALSE) grouped by category
+    const cashExpenseRows = await query<{
       category: string;
       amount: string;
     }>(
@@ -84,7 +95,24 @@ export async function GET(req: NextRequest) {
          SUM(amount) AS amount
        FROM expenses
        WHERE created_at >= $1 AND created_at <= $2
+         AND is_paid = TRUE AND is_non_cash = FALSE
        GROUP BY COALESCE(NULLIF(category, ''), 'სხვა')
+       ORDER BY SUM(amount) DESC`,
+      [from.toISOString(), to.toISOString()],
+    );
+
+    // Non-cash expenses / inventory write-offs (is_non_cash=TRUE) grouped by category
+    const nonCashExpenseRows = await query<{
+      category: string;
+      amount: string;
+    }>(
+      `SELECT
+         COALESCE(NULLIF(category, ''), 'ჩამოწერა') AS category,
+         SUM(amount) AS amount
+       FROM expenses
+       WHERE created_at >= $1 AND created_at <= $2
+         AND is_non_cash = TRUE
+       GROUP BY COALESCE(NULLIF(category, ''), 'ჩამოწერა')
        ORDER BY SUM(amount) DESC`,
       [from.toISOString(), to.toISOString()],
     );
@@ -94,14 +122,21 @@ export async function GET(req: NextRequest) {
     const grossProfit    = salesRevenue - cogs;
     const grossMarginPct = salesRevenue > 0 ? (grossProfit / salesRevenue) * 100 : 0;
 
-    const expenses = expenseRows.map((r) => ({
+    const cashExpenses = cashExpenseRows.map((r) => ({
       category: r.category,
       amount:   Number(r.amount),
     }));
-    const totalExpenses  = expenses.reduce((s, r) => s + r.amount, 0);
-    const operatingProfit = grossProfit - totalExpenses;
-    const netProfit       = operatingProfit;
-    const netMarginPct    = salesRevenue > 0 ? (netProfit / salesRevenue) * 100 : 0;
+    const nonCashExpenses = nonCashExpenseRows.map((r) => ({
+      category: r.category,
+      amount:   Number(r.amount),
+    }));
+
+    const totalCashExpenses    = cashExpenses.reduce((s, r) => s + r.amount, 0);
+    const totalNonCashExpenses = nonCashExpenses.reduce((s, r) => s + r.amount, 0);
+    const totalExpenses        = totalCashExpenses + totalNonCashExpenses;
+    const operatingProfit      = grossProfit - totalExpenses;
+    const netProfit            = operatingProfit;
+    const netMarginPct         = salesRevenue > 0 ? (netProfit / salesRevenue) * 100 : 0;
 
     const result: ProfitLossResponse = {
       period: { from: fromStr, to: toStr },
@@ -113,13 +148,17 @@ export async function GET(req: NextRequest) {
         cogs,
         total: cogs,
       },
-      gross_profit:     grossProfit,
-      gross_margin_pct: grossMarginPct,
-      expenses,
-      total_expenses:   totalExpenses,
-      operating_profit: operatingProfit,
-      net_profit:       netProfit,
-      net_margin_pct:   netMarginPct,
+      gross_profit:          grossProfit,
+      gross_margin_pct:      grossMarginPct,
+      cash_expenses:         cashExpenses,
+      total_cash_expenses:   totalCashExpenses,
+      non_cash_expenses:     nonCashExpenses,
+      total_non_cash_expenses: totalNonCashExpenses,
+      expenses:              [...cashExpenses, ...nonCashExpenses],
+      total_expenses:        totalExpenses,
+      operating_profit:      operatingProfit,
+      net_profit:            netProfit,
+      net_margin_pct:        netMarginPct,
     };
 
     return NextResponse.json(result);

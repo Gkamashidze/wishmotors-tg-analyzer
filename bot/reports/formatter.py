@@ -250,7 +250,14 @@ def _calculate_report_metrics(
     total_cogs = sum(float(s.get("cost_amount") or 0) for s in sales)
     gross_profit = total_revenue - total_cogs
     total_returns = sum(float(r["refund_amount"]) for r in returns)
-    total_expenses = sum(float(e["amount"]) for e in expenses)
+
+    cash_expenses = sum(
+        float(e["amount"]) for e in expenses if not e.get("is_non_cash")
+    )
+    non_cash_expenses = sum(
+        float(e["amount"]) for e in expenses if e.get("is_non_cash")
+    )
+    total_expenses = cash_expenses + non_cash_expenses
 
     by_product: Dict[str, Dict[str, Any]] = {}
     for s in sales:
@@ -264,6 +271,8 @@ def _calculate_report_metrics(
         "total_cogs": total_cogs,
         "gross_profit": gross_profit,
         "total_returns": total_returns,
+        "cash_expenses": cash_expenses,
+        "non_cash_expenses": non_cash_expenses,
         "total_expenses": total_expenses,
         "net_income": gross_profit - total_returns - total_expenses,
         "cash_revenue": sum(
@@ -295,20 +304,35 @@ def _build_report_body(
     cash_on_hand: Optional[Dict[str, float]] = None,
     pending_liabilities: Optional[Sequence[Any]] = None,
 ) -> List[str]:
-    """Build the common body lines (metrics + returns + expenses)."""
+    """Build the common body lines as a structured P&L statement."""
+    net_sign = "✅" if m["net_income"] >= 0 else "⚠️"
+
     lines: List[str] = [
         "━━━━━━━━━━━━━━━━━━━━━",
-        f"💰 მთლიანი შემოსავალი: <b>{m['total_revenue']:.2f}₾</b>",
-        f"   💵 ხელზე: {m['cash_revenue']:.2f}₾",
-        f"   🏦 დარიცხა: {m['transfer_revenue']:.2f}₾",
-        f"   📋 ნისია: {m['credit_revenue']:.2f}₾",
-        f"📦 თვითღირებულება (COGS): <b>{m['total_cogs']:.2f}₾</b>",
-        f"📈 მთლიანი მოგება: <b>{m['gross_profit']:.2f}₾</b>",
-        f"↩️ დაბრუნებები: {m['total_returns']:.2f}₾",
-        f"🧾 გადახდილი ხარჯები: {m['total_expenses']:.2f}₾",
-        f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
+        "<b>📊 მოგება-ზარალი (P&amp;L)</b>",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"💰 <b>შემოსავალი:</b>   <b>{m['total_revenue']:.2f}₾</b>",
+        f"   💵 ხელზე:     {m['cash_revenue']:.2f}₾",
+        f"   🏦 დარიცხა:   {m['transfer_revenue']:.2f}₾",
+        f"   📋 ნისია:     {m['credit_revenue']:.2f}₾",
+        f"📦 <b>COGS:</b>          <b>−{m['total_cogs']:.2f}₾</b>",
+        "─────────────────────",
+        f"📈 <b>მთლიანი მოგება:</b>  <b>{m['gross_profit']:.2f}₾</b>",
+        "─────────────────────",
+    ]
+
+    if m["total_returns"] > 0:
+        lines.append(f"↩️ დაბრუნებები:   −{m['total_returns']:.2f}₾")
+    lines.append(f"🧾 ნაღდი ხარჯები:  −{m['cash_expenses']:.2f}₾")
+    if m["non_cash_expenses"] > 0:
+        lines.append(f"🏚 ჩამოწერები:    −{m['non_cash_expenses']:.2f}₾")
+
+    lines += [
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"{net_sign} <b>სუფთა მოგება:   {m['net_income']:.2f}₾</b>",
         "━━━━━━━━━━━━━━━━━━━━━",
     ]
+
     if pending_liabilities:
         total_pending = sum(float(e["amount"]) for e in pending_liabilities)
         lines += [
@@ -333,16 +357,25 @@ def _build_report_body(
         ]
 
     if returns:
-        lines += ["", "↩️ <b>დაბრუნებები:</b>"]
+        lines += ["", "↩️ <b>დაბრუნებები (დეტალი):</b>"]
         for r in returns:
             name = r.get("product_name") or "უცნობი"
             lines.append(
                 f"• {_e(name)}: {r['quantity']}ც — {float(r['refund_amount']):.2f}₾"
             )
 
-    if expenses:
-        lines += ["", "🧾 <b>გადახდილი ხარჯები:</b>"]
-        for e in expenses:
+    cash_exp_list = [e for e in expenses if not e.get("is_non_cash")]
+    non_cash_exp_list = [e for e in expenses if e.get("is_non_cash")]
+
+    if cash_exp_list:
+        lines += ["", "🧾 <b>ნაღდი ხარჯები (დეტალი):</b>"]
+        for e in cash_exp_list:
+            desc = e.get("description") or "—"
+            lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
+
+    if non_cash_exp_list:
+        lines += ["", "🏚 <b>ჩამოწერები / ნაკლოვანებები (დეტალი):</b>"]
+        for e in non_cash_exp_list:
             desc = e.get("description") or "—"
             lines.append(f"• {_e(desc)}: {float(e['amount']):.2f}₾")
 

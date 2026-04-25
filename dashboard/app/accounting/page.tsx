@@ -631,11 +631,12 @@ function TrialBalanceTab({ from, to }: { from: string; to: string }) {
 // Tab 3 — Profit & Loss
 // ═══════════════════════════════════════════════════════════════════════════════
 function ProfitLossTab({ from, to }: { from: string; to: string }) {
-  const [data, setData]       = useState<ProfitLossResponse | null>(null);
-  const [vatData, setVatData] = useState<VatSummaryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
-  const [expOpen, setExpOpen] = useState(true);
+  const [data, setData]             = useState<ProfitLossResponse | null>(null);
+  const [vatData, setVatData]       = useState<VatSummaryResponse | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [expOpen, setExpOpen]       = useState(true);
+  const [ncExpOpen, setNcExpOpen]   = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -665,7 +666,7 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <KpiCard label="შემოსავალი" value={`₾ ${fmt(data.revenue.total)}`} color="text-green-700" bgColor="bg-green-50" />
           <KpiCard label="მთლიანი მოგება" value={`₾ ${fmt(data.gross_profit)}`} sub={`მარჟა ${data.gross_margin_pct.toFixed(1)}%`} color={data.gross_profit >= 0 ? "text-blue-700" : "text-red-600"} bgColor={data.gross_profit >= 0 ? "bg-blue-50" : "bg-red-50"} />
-          <KpiCard label="ჯამური ხარჯი" value={`₾ ${fmt(data.total_expenses)}`} color="text-orange-700" bgColor="bg-orange-50" />
+          <KpiCard label="ნაღდი ხარჯები" value={`₾ ${fmt(data.total_cash_expenses)}`} sub={data.total_non_cash_expenses > 0 ? `+ ჩამოწ. ₾${fmt(data.total_non_cash_expenses)}` : undefined} color="text-orange-700" bgColor="bg-orange-50" />
           <KpiCard label="წმინდა მოგება" value={`₾ ${fmt(data.net_profit)}`} sub={`მარჟა ${data.net_margin_pct.toFixed(1)}%`} color={data.net_profit >= 0 ? "text-green-700" : "text-red-600"} bgColor={data.net_profit >= 0 ? "bg-green-50" : "bg-red-50"} />
         </div>
         {vatData && (
@@ -774,21 +775,38 @@ function ProfitLossTab({ from, to }: { from: string; to: string }) {
                 </span>
               </div>
 
-              {/* Expenses */}
+              {/* Cash Expenses */}
               <PLSection
-                label="საოპერაციო ხარჯები"
+                label="ნაღდი / გადახდილი ხარჯები"
                 accent="red"
                 collapsible
                 open={expOpen}
                 onToggle={() => setExpOpen((v) => !v)}
               >
-                {data.expenses.map((exp) => (
+                {data.cash_expenses.map((exp) => (
                   <PLRow key={exp.category} label={exp.category} value={exp.amount} negative />
                 ))}
-                {data.expenses.length === 0 && (
-                  <div className="px-4 py-2 text-sm text-muted-foreground">ხარჯები არ არის</div>
+                {data.cash_expenses.length === 0 && (
+                  <div className="px-4 py-2 text-sm text-muted-foreground">ნაღდი ხარჯები არ არის</div>
                 )}
-                <PLTotalRow label="სულ ხარჯები" value={-data.total_expenses} />
+                <PLTotalRow label="სულ ნაღდი ხარჯები" value={-data.total_cash_expenses} />
+              </PLSection>
+
+              {/* Non-Cash Expenses / Write-offs */}
+              <PLSection
+                label="ჩამოწერები / ინვენტარის ნაკლოვანებები"
+                accent="orange"
+                collapsible
+                open={ncExpOpen}
+                onToggle={() => setNcExpOpen((v) => !v)}
+              >
+                {data.non_cash_expenses.map((exp) => (
+                  <PLRow key={exp.category} label={exp.category} value={exp.amount} negative />
+                ))}
+                {data.non_cash_expenses.length === 0 && (
+                  <div className="px-4 py-2 text-sm text-muted-foreground">ჩამოწერა არ არის</div>
+                )}
+                <PLTotalRow label="სულ ჩამოწერები" value={-data.total_non_cash_expenses} />
               </PLSection>
 
               {/* Net profit line */}
