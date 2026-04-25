@@ -527,33 +527,71 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto -mx-2 px-2">
-            <table className="w-full text-sm border-separate border-spacing-0">
-              <thead>
-                <tr className="text-left">
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[140px]">OEM კოდი</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[160px]">დასახელება</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">ტიპი</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ქვე-ტიპი</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">კატეგ.</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">რაოდ.</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">ერთ.</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ფასი ($)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">წონა (კგ)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ ($)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">სულ (₾)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground text-right whitespace-nowrap">თვითღირებულება (₾/ც)</th>
-                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">მარჟა (%)</th>
-                  <th className="pb-3 font-medium text-muted-foreground w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, idx) => {
-                  const calc = calcLines[idx];
-                  return (
-                    <tr key={item._key} className="group">
-                      {/* OEM Code — combobox (existing) or editable OEM input (new product) */}
-                      <td className="pb-2 pr-2 align-top">
+          <div className="space-y-3">
+            {items.map((item, idx) => {
+              const calc = calcLines[idx];
+              return (
+                <div
+                  key={item._key}
+                  className="rounded-xl border border-border bg-card shadow-sm overflow-hidden"
+                >
+                  {/* ── Row 1: classification + trash ──────────────────────── */}
+                  <div className={`flex items-center gap-2 px-3 py-2 border-b border-border ${ITEM_TYPE_COLORS[item.itemType]}`}>
+                    <span className="text-xs font-semibold opacity-60 shrink-0 w-5 text-center">#{idx + 1}</span>
+
+                    {/* Item type */}
+                    <select
+                      value={item.itemType}
+                      onChange={(e) => updateItem(item._key, "itemType", e.target.value)}
+                      className="h-7 rounded-md border-0 bg-white/40 dark:bg-black/20 px-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer backdrop-blur-sm"
+                    >
+                      <option value="inventory">საქონელი</option>
+                      <option value="fixed_asset">ძირ. საშ.</option>
+                      <option value="consumable">სახარჯი</option>
+                    </select>
+
+                    {/* Sub-type (only for inventory) */}
+                    {item.itemType === "inventory" ? (
+                      <select
+                        value={item.inventorySubType}
+                        onChange={(e) => updateItem(item._key, "inventorySubType", e.target.value)}
+                        className="h-7 rounded-md border-0 bg-white/40 dark:bg-black/20 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                      >
+                        <option value="regular">ჩვეულებრივი</option>
+                        <option value="small_value">მცირეფასიანი</option>
+                      </select>
+                    ) : null}
+
+                    {/* Category (only for regular inventory) */}
+                    {item.itemType === "inventory" && item.inventorySubType === "regular" ? (
+                      <select
+                        value={item.accountingCategory}
+                        onChange={(e) => updateItem(item._key, "accountingCategory", e.target.value)}
+                        className="h-7 flex-1 rounded-md border-0 bg-white/40 dark:bg-black/20 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                      >
+                        <option value="">— კატეგ. —</option>
+                        {INVENTORY_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    ) : <div className="flex-1" />}
+
+                    {/* Trash */}
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item._key)}
+                        className="ml-auto h-7 w-7 flex items-center justify-center rounded-md text-current opacity-50 hover:opacity-100 hover:bg-white/30 dark:hover:bg-black/20 transition-all cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="p-3 space-y-2">
+                    {/* ── Row 2: product selector ─────────────────────────── */}
+                    <div className="flex gap-2">
+                      <div className="flex-1 min-w-0">
                         {item.isNew ? (
                           <div className="flex items-center gap-1">
                             <input
@@ -588,72 +626,30 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                             placeholder="OEM / პროდ..."
                           />
                         )}
-                      </td>
-                      {/* Product Name — editable (new product) or auto-filled read-only (existing) */}
-                      <td className="pb-2 pr-2 align-top">
-                        {item.isNew ? (
-                          <input
-                            type="text"
-                            placeholder="დასახელება *"
-                            value={item.productName}
-                            onChange={(e) => updateItem(item._key, "productName", e.target.value)}
-                            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                          />
-                        ) : (
-                          <div className="h-9 flex items-center px-3 rounded-lg bg-muted/40 text-sm truncate">
-                            {item.productId
-                              ? <span className="truncate text-foreground">{products.find((p) => String(p.id) === item.productId)?.name ?? "—"}</span>
-                              : <span className="text-muted-foreground/40">—</span>
-                            }
-                          </div>
-                        )}
-                      </td>
-                      {/* Item Type */}
-                      <td className="pb-2 pr-2 align-top">
-                        <select
-                          value={item.itemType}
-                          onChange={(e) => updateItem(item._key, "itemType", e.target.value)}
-                          className={`h-9 w-full rounded-lg border px-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer ${ITEM_TYPE_COLORS[item.itemType]}`}
-                        >
-                          <option value="inventory">საქონელი</option>
-                          <option value="fixed_asset">ძირ. საშ.</option>
-                          <option value="consumable">სახარჯი</option>
-                        </select>
-                      </td>
-                      {/* Inventory Sub-Type */}
-                      <td className="pb-2 pr-2 align-top">
-                        {item.itemType === "inventory" ? (
-                          <select
-                            value={item.inventorySubType}
-                            onChange={(e) => updateItem(item._key, "inventorySubType", e.target.value)}
-                            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
-                          >
-                            <option value="regular">ჩვეულებრივი</option>
-                            <option value="small_value">მცირეფასიანი</option>
-                          </select>
-                        ) : (
-                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
-                        )}
-                      </td>
-                      {/* Accounting Category */}
-                      <td className="pb-2 pr-2 align-top">
-                        {item.itemType === "inventory" && item.inventorySubType === "regular" ? (
-                          <select
-                            value={item.accountingCategory}
-                            onChange={(e) => updateItem(item._key, "accountingCategory", e.target.value)}
-                            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
-                          >
-                            <option value="">— კატეგ. —</option>
-                            {INVENTORY_CATEGORIES.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
-                        )}
-                      </td>
-                      {/* Quantity */}
-                      <td className="pb-2 pr-2 align-top">
+                      </div>
+
+                      {item.isNew ? (
+                        <input
+                          type="text"
+                          placeholder="დასახელება *"
+                          value={item.productName}
+                          onChange={(e) => updateItem(item._key, "productName", e.target.value)}
+                          className="h-9 flex-1 min-w-0 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      ) : (
+                        <div className="h-9 flex-1 min-w-0 flex items-center px-3 rounded-lg bg-muted/40 text-sm truncate">
+                          {item.productId
+                            ? <span className="truncate text-foreground">{products.find((p) => String(p.id) === item.productId)?.name ?? "—"}</span>
+                            : <span className="text-muted-foreground/40 text-xs">— დასახელება —</span>
+                          }
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Row 3: numeric inputs ────────────────────────────── */}
+                    <div className="grid grid-cols-5 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">რაოდ.</label>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -662,9 +658,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           onChange={(e) => updateItem(item._key, "quantity", e.target.value)}
                           className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         />
-                      </td>
-                      {/* Unit */}
-                      <td className="pb-2 pr-2 align-top">
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">ერთეული</label>
                         <input
                           type="text"
                           placeholder="ცალი"
@@ -672,9 +668,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           onChange={(e) => updateItem(item._key, "unit", e.target.value)}
                           className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         />
-                      </td>
-                      {/* Price USD */}
-                      <td className="pb-2 pr-2 align-top">
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">ფასი ($)</label>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -683,9 +679,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           onChange={(e) => updateItem(item._key, "unitPriceUsd", e.target.value)}
                           className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         />
-                      </td>
-                      {/* Weight */}
-                      <td className="pb-2 pr-2 align-top">
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">წონა (კგ)</label>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -694,27 +690,9 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           onChange={(e) => updateItem(item._key, "weight", e.target.value)}
                           className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         />
-                      </td>
-                      {/* Total USD (calculated) */}
-                      <td className="pb-2 pr-2 align-top">
-                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-muted/50 text-sm font-medium">
-                          {fmt(calc?.totalPriceUsd ?? 0)}
-                        </div>
-                      </td>
-                      {/* Total GEL (calculated) */}
-                      <td className="pb-2 pr-2 align-top">
-                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm font-medium text-blue-700 dark:text-blue-300">
-                          {fmt(calc?.totalPriceGel ?? 0)}
-                        </div>
-                      </td>
-                      {/* Landed cost per unit (calculated) */}
-                      <td className="pb-2 pr-2 align-top">
-                        <div className="h-9 flex items-center justify-end px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                          {fmt(calc?.landedCostPerUnit ?? 0)}
-                        </div>
-                      </td>
-                      {/* Margin — only meaningful for inventory items */}
-                      <td className="pb-2 pr-2 align-top">
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">მარჟა (%)</label>
                         {item.itemType === "inventory" ? (
                           <input
                             type="number"
@@ -727,26 +705,30 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                             className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                           />
                         ) : (
-                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
+                          <div className="h-9 flex items-center justify-center rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
                         )}
-                      </td>
-                      {/* Remove */}
-                      <td className="pb-2 align-top">
-                        {items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(item._key)}
-                            className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+
+                    {/* ── Row 4: calculated values ─────────────────────────── */}
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="rounded-lg bg-muted/50 px-3 py-2 text-center">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">სულ ($)</p>
+                        <p className="text-sm font-semibold">{fmt(calc?.totalPriceUsd ?? 0)}</p>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-center">
+                        <p className="text-[10px] text-blue-600 dark:text-blue-400 mb-0.5">სულ (₾)</p>
+                        <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">{fmt(calc?.totalPriceGel ?? 0)}</p>
+                      </div>
+                      <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 text-center">
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mb-0.5">თვითღ. (₾/ც)</p>
+                        <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{fmt(calc?.landedCostPerUnit ?? 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Totals row */}
