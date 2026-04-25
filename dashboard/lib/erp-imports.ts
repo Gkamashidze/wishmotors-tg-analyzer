@@ -2,6 +2,7 @@ import "server-only";
 import { query } from "@/lib/db";
 
 export type ItemType = "inventory" | "fixed_asset" | "consumable";
+export type InventorySubType = "regular" | "small_value";
 
 export type ImportItemPayload = {
   productId:              number;
@@ -19,6 +20,8 @@ export type ImportItemPayload = {
   allocatedVatCost:       number;
   landedCostPerUnitGel:   number;
   itemType:               ItemType;
+  inventorySubType?:      InventorySubType;
+  accountingCategory?:    string;
   recommendedPrice?:      number;
 };
 
@@ -26,6 +29,8 @@ export async function upsertItems(
   importId: number,
   items: ImportItemPayload[],
 ): Promise<void> {
+  await query(`ALTER TABLE import_items ADD COLUMN IF NOT EXISTS inventory_sub_type TEXT NOT NULL DEFAULT 'regular'`);
+  await query(`ALTER TABLE import_items ADD COLUMN IF NOT EXISTS accounting_category TEXT`);
   await query("DELETE FROM import_items WHERE import_id = $1", [importId]);
   for (const it of items) {
     let productId = it.productId;
@@ -50,8 +55,9 @@ export async function upsertItems(
           total_price_usd, total_price_gel,
           allocated_transport_cost, allocated_terminal_cost,
           allocated_agency_cost, allocated_vat_cost,
-          landed_cost_per_unit_gel, item_type, recommended_price)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          landed_cost_per_unit_gel, item_type, recommended_price,
+          inventory_sub_type, accounting_category)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
         importId,
         productId,
@@ -68,6 +74,8 @@ export async function upsertItems(
         it.landedCostPerUnitGel,
         it.itemType || "inventory",
         it.recommendedPrice ?? null,
+        it.inventorySubType ?? "regular",
+        it.accountingCategory ?? null,
       ],
     );
   }

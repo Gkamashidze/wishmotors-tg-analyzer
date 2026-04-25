@@ -26,24 +26,33 @@ import { Input }        from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductCombobox }    from "@/components/ui/product-combobox";
 import type { ProductRow }    from "@/lib/queries";
-import type { ItemType }      from "@/lib/erp-imports";
+import type { ItemType, InventorySubType } from "@/lib/erp-imports";
 import { calcRecommendedPrice } from "@/lib/utils";
 import { calcLanded, type CalcLine } from "@/lib/import-calc";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+const INVENTORY_CATEGORIES = [
+  "ძრავი", "გადაცემათა კოლოფი", "სამუხრუჭე სისტემა",
+  "სარეზინო სისტემა", "საჭე და მართვა", "ელექტრიკა და სენსორები",
+  "განათება", "ფილტრები", "გაგრილება", "საწვავის სისტემა",
+  "სხეული", "სხვადასხვა",
+] as const;
+
 type LineItem = {
-  _key:         string;
-  productId:    string;
-  isNew:        boolean;
-  oemCode:      string;
-  productName:  string;
-  quantity:     string;
-  unit:         string;
-  unitPriceUsd: string;
-  weight:       string;
-  itemType:     ItemType;
-  margin:       string;
+  _key:              string;
+  productId:         string;
+  isNew:             boolean;
+  oemCode:           string;
+  productName:       string;
+  quantity:          string;
+  unit:              string;
+  unitPriceUsd:      string;
+  weight:            string;
+  itemType:          ItemType;
+  inventorySubType:  InventorySubType;
+  accountingCategory: string;
+  margin:            string;
 };
 
 const ITEM_TYPE_LABELS: Record<ItemType, string> = {
@@ -80,6 +89,8 @@ interface Props {
       unitPriceUsd: number;
       weight: number;
       itemType?: string;
+      inventorySubType?: string;
+      accountingCategory?: string;
     }>;
   };
   products: ProductRow[];
@@ -126,20 +137,22 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const [items, setItems] = useState<LineItem[]>(() => {
     if (initialData?.items?.length) {
       return initialData.items.map((it) => ({
-        _key:         newKey(),
-        productId:    String(it.productId),
-        isNew:        false,
-        oemCode:      "",
-        productName:  "",
-        quantity:     String(it.quantity),
-        unit:         it.unit,
-        unitPriceUsd: String(it.unitPriceUsd),
-        weight:       String(it.weight),
-        itemType:     (it.itemType as ItemType) || "inventory",
-        margin:       "30",
+        _key:               newKey(),
+        productId:          String(it.productId),
+        isNew:              false,
+        oemCode:            "",
+        productName:        "",
+        quantity:           String(it.quantity),
+        unit:               it.unit,
+        unitPriceUsd:       String(it.unitPriceUsd),
+        weight:             String(it.weight),
+        itemType:           (it.itemType as ItemType) || "inventory",
+        inventorySubType:   (it.inventorySubType as InventorySubType) || "regular",
+        accountingCategory: it.accountingCategory ?? "",
+        margin:             "30",
       }));
     }
-    return [{ _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", margin: "30" }];
+    return [{ _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", inventorySubType: "regular", accountingCategory: "", margin: "30" }];
   });
 
   // ── Products list (can grow if user adds new) ─────────────────────────────
@@ -202,6 +215,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
           allocatedVatCost:       calcLines[idx]?.allocatedVat           ?? 0,
           landedCostPerUnitGel:   landed,
           itemType:               it.itemType || "inventory",
+          inventorySubType:       it.inventorySubType || "regular",
+          accountingCategory:     it.accountingCategory || undefined,
           recommendedPrice:       recPrice,
         };
       })
@@ -347,7 +362,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const addItem = () =>
     setItems((prev) => [
       ...prev,
-      { _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", margin: "30" },
+      { _key: newKey(), productId: "", isNew: false, oemCode: "", productName: "", quantity: "", unit: "ცალი", unitPriceUsd: "", weight: "", itemType: "inventory", inventorySubType: "regular", accountingCategory: "", margin: "30" },
     ]);
 
   const handleNewOem = (key: string, oem: string) =>
@@ -519,6 +534,8 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[140px]">OEM კოდი</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap min-w-[160px]">დასახელება</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">ტიპი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ქვე-ტიპი</th>
+                  <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-36">კატეგ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">რაოდ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-24">ერთ.</th>
                   <th className="pb-3 pr-2 font-medium text-muted-foreground whitespace-nowrap w-28">ფასი ($)</th>
@@ -559,7 +576,13 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           <ProductCombobox
                             products={products}
                             value={item.productId}
-                            onChange={(v) => updateItem(item._key, "productId", v)}
+                            onChange={(v) => {
+                              updateItem(item._key, "productId", v);
+                              const prod = products.find((p) => String(p.id) === v);
+                              if (prod?.category) {
+                                updateItem(item._key, "accountingCategory", prod.category);
+                              }
+                            }}
                             onProductAdded={(p) => setProducts((prev) => [...prev, p])}
                             onNewOem={(oem) => handleNewOem(item._key, oem)}
                             placeholder="OEM / პროდ..."
@@ -596,6 +619,38 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                           <option value="fixed_asset">ძირ. საშ.</option>
                           <option value="consumable">სახარჯი</option>
                         </select>
+                      </td>
+                      {/* Inventory Sub-Type */}
+                      <td className="pb-2 pr-2 align-top">
+                        {item.itemType === "inventory" ? (
+                          <select
+                            value={item.inventorySubType}
+                            onChange={(e) => updateItem(item._key, "inventorySubType", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                          >
+                            <option value="regular">ჩვეულებრივი</option>
+                            <option value="small_value">მცირეფასიანი</option>
+                          </select>
+                        ) : (
+                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
+                        )}
+                      </td>
+                      {/* Accounting Category */}
+                      <td className="pb-2 pr-2 align-top">
+                        {item.itemType === "inventory" && item.inventorySubType === "regular" ? (
+                          <select
+                            value={item.accountingCategory}
+                            onChange={(e) => updateItem(item._key, "accountingCategory", e.target.value)}
+                            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                          >
+                            <option value="">— კატეგ. —</option>
+                            {INVENTORY_CATEGORIES.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="h-9 flex items-center justify-center px-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">—</div>
+                        )}
                       </td>
                       {/* Quantity */}
                       <td className="pb-2 pr-2 align-top">

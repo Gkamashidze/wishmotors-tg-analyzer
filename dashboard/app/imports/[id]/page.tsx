@@ -70,12 +70,14 @@ export default async function ImportDetailPage({ params }: Params) {
                 totalVatCost:       String(imp.totalVatCost),
                 documentName:       imp.documentName ?? "",
                 items: imp.items.map((it) => ({
-                  productId:    it.productId,
-                  quantity:     it.quantity,
-                  unit:         it.unit,
-                  unitPriceUsd: it.unitPriceUsd,
-                  weight:       it.weight,
-                  itemType:     it.itemType,
+                  productId:          it.productId,
+                  quantity:           it.quantity,
+                  unit:               it.unit,
+                  unitPriceUsd:       it.unitPriceUsd,
+                  weight:             it.weight,
+                  itemType:           it.itemType,
+                  inventorySubType:   it.inventorySubType,
+                  accountingCategory: it.accountingCategory,
                 })),
               }}
             />
@@ -109,6 +111,8 @@ type DbImport = {
     unitPriceUsd: number;
     weight: number;
     itemType?: string;
+    inventorySubType?: string;
+    accountingCategory?: string;
   }>;
 };
 
@@ -144,9 +148,13 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       unit_price_usd: string;
       weight: string;
       item_type: string;
+      inventory_sub_type: string;
+      accounting_category: string | null;
     }>(
       `SELECT product_id, quantity, unit, unit_price_usd, weight,
-              COALESCE(item_type, 'inventory') AS item_type
+              COALESCE(item_type, 'inventory') AS item_type,
+              COALESCE(inventory_sub_type, 'regular') AS inventory_sub_type,
+              accounting_category
        FROM import_items WHERE import_id = $1 ORDER BY id`,
       [importId],
     );
@@ -166,12 +174,14 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       documentName:       imp.document_name,
       status:             imp.status,
       items: items.map((it) => ({
-        productId:    it.product_id,
-        quantity:     Number(it.quantity),
-        unit:         it.unit,
-        unitPriceUsd: Number(it.unit_price_usd),
-        weight:       Number(it.weight),
-        itemType:     it.item_type,
+        productId:          it.product_id,
+        quantity:           Number(it.quantity),
+        unit:               it.unit,
+        unitPriceUsd:       Number(it.unit_price_usd),
+        weight:             Number(it.weight),
+        itemType:           it.item_type,
+        inventorySubType:   it.inventory_sub_type,
+        accountingCategory: it.accounting_category ?? "",
       })),
     };
   } catch {

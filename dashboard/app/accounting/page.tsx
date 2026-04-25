@@ -917,11 +917,12 @@ function PLTotalRow({ label, value, positive }: { label: string; value: number; 
 // Tab 4/5 — Debtors / Creditors
 // ═══════════════════════════════════════════════════════════════════════════════
 function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
-  const [partners, setPartners]         = useState<PartnerRow[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [payTarget, setPayTarget]       = useState<PartnerRow | null>(null);
+  const [partners, setPartners]               = useState<PartnerRow[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const [error, setError]                     = useState<string | null>(null);
+  const [showAddModal, setShowAddModal]       = useState(false);
+  const [payTarget, setPayTarget]             = useState<PartnerRow | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1009,7 +1010,11 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
                     </tr>
                   )}
                   {partners.map((p) => (
-                    <tr key={p.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                    <tr
+                      key={p.id}
+                      className="border-t border-border hover:bg-muted/30 transition-colors cursor-pointer"
+                      onClick={() => setSelectedPartnerId(p.id)}
+                    >
                       <td className="px-4 py-3">
                         <div className="font-medium">{p.name}</div>
                         {p.phone && (
@@ -1045,7 +1050,7 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setPayTarget(p)}
+                          onClick={(e) => { e.stopPropagation(); setPayTarget(p); }}
                           className="h-7 text-xs gap-1"
                           disabled={p.remaining <= 0}
                         >
@@ -1094,6 +1099,161 @@ function PartnerTab({ type }: { type: "debtor" | "creditor" }) {
           onSaved={() => { setPayTarget(null); void load(); }}
         />
       )}
+      {selectedPartnerId !== null && (
+        <PartnerDetailDrawer
+          partnerId={selectedPartnerId}
+          onClose={() => setSelectedPartnerId(null)}
+          onPayment={(p) => { setSelectedPartnerId(null); setPayTarget(p); }}
+          partners={partners}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Partner Detail Drawer ────────────────────────────────────────────────────
+type PartnerDetail = {
+  partner: {
+    id: number;
+    name: string;
+    type: string;
+    phone: string | null;
+    note: string | null;
+    is_active: boolean;
+  };
+  transactions: Array<{
+    id: number;
+    tx_type: "debit" | "credit";
+    amount: number;
+    description: string | null;
+    tx_date: string;
+    currency: string;
+    original_amount: number | null;
+    exchange_rate: number;
+    created_at: string;
+  }>;
+};
+
+function PartnerDetailDrawer({
+  partnerId,
+  onClose,
+  onPayment,
+  partners,
+}: {
+  partnerId: number;
+  onClose: () => void;
+  onPayment: (p: PartnerRow) => void;
+  partners: PartnerRow[];
+}) {
+  const [data, setData]       = useState<PartnerDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch(`/api/accounting/partners/${partnerId}`)
+      .then((r) => r.json())
+      .then((d) => setData(d as PartnerDetail))
+      .catch(() => setError("ჩატვირთვა ვერ მოხდა"))
+      .finally(() => setLoading(false));
+  }, [partnerId]);
+
+  const partnerRow = partners.find((p) => p.id === partnerId);
+  const totalDebit  = data?.transactions.filter((t) => t.tx_type === "debit").reduce((s, t) => s + Number(t.amount), 0) ?? 0;
+  const totalCredit = data?.transactions.filter((t) => t.tx_type === "credit").reduce((s, t) => s + Number(t.amount), 0) ?? 0;
+  const balance     = totalDebit - totalCredit;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div
+        className="relative h-full w-full max-w-lg bg-background border-l border-border shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div>
+            <p className="text-base font-semibold">{data?.partner.name ?? "..."}</p>
+            {data?.partner.phone && (
+              <p className="text-xs text-muted-foreground">{data.partner.phone}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {partnerRow && balance > 0 && (
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => onPayment(partnerRow)}>
+                <CreditCard className="h-3 w-3" />
+                გადახდა
+              </Button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-3 gap-2 px-5 py-3 border-b border-border shrink-0">
+          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-2 text-center">
+            <p className="text-[10px] text-muted-foreground">ჯამი</p>
+            <p className="text-sm font-bold text-blue-700 dark:text-blue-300 tabular-nums">₾ {fmt(totalDebit)}</p>
+          </div>
+          <div className="rounded-lg bg-green-50 dark:bg-green-950/30 p-2 text-center">
+            <p className="text-[10px] text-muted-foreground">გადახდილი</p>
+            <p className="text-sm font-bold text-green-700 dark:text-green-300 tabular-nums">₾ {fmt(totalCredit)}</p>
+          </div>
+          <div className={cn("rounded-lg p-2 text-center", balance > 0 ? "bg-red-50 dark:bg-red-950/30" : "bg-green-50 dark:bg-green-950/30")}>
+            <p className="text-[10px] text-muted-foreground">ნაშთი</p>
+            <p className={cn("text-sm font-bold tabular-nums", balance > 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300")}>₾ {fmt(balance)}</p>
+          </div>
+        </div>
+
+        {/* Transaction list */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              იტვირთება...
+            </div>
+          )}
+          {error && (
+            <div className="text-sm text-destructive p-3 rounded-lg bg-destructive/10">{error}</div>
+          )}
+          {!loading && !error && data?.transactions.length === 0 && (
+            <p className="text-sm text-center text-muted-foreground py-12">ტრანზაქციები არ არის</p>
+          )}
+          {!loading && !error && data?.transactions.map((tx) => (
+            <div
+              key={tx.id}
+              className={cn(
+                "rounded-lg border px-3 py-2.5 flex items-start justify-between gap-3",
+                tx.tx_type === "debit"
+                  ? "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20"
+                  : "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20",
+              )}
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-medium truncate">
+                  {tx.description ?? (tx.tx_type === "debit" ? "ჩანაწერი" : "გადახდა")}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {new Date(tx.tx_date).toLocaleDateString("ka-GE", { day: "2-digit", month: "short", year: "numeric" })}
+                  {tx.currency !== "GEL" && tx.original_amount != null && (
+                    <span className="ml-1.5 text-muted-foreground/70">
+                      {tx.currency} {Number(tx.original_amount).toFixed(2)} × {Number(tx.exchange_rate).toFixed(4)}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div className={cn(
+                "shrink-0 text-sm font-semibold tabular-nums",
+                tx.tx_type === "debit" ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300",
+              )}>
+                {tx.tx_type === "debit" ? "+" : "−"} ₾ {fmt(Number(tx.amount))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
