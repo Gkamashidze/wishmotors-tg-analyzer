@@ -825,7 +825,7 @@ class Database:
                     )
                     if cost_amount > 0:
                         await conn.execute(
-                            "UPDATE sales SET cost_amount = $1 WHERE id = $2",
+                            "UPDATE sales SET cost_amount = $1, cogs = $1 WHERE id = $2",
                             cost_amount, sale_id,
                         )
 
@@ -2382,9 +2382,9 @@ class Database:
                     values.append(new_product_id)
                     idx += 1
                 if product_changed or quantity_changed:
-                    updates.append(f"cost_amount = ${idx}")
-                    values.append(round(new_cost, 2))
-                    idx += 1
+                    updates.extend([f"cost_amount = ${idx}", f"cogs = ${idx + 1}"])
+                    values.extend([round(new_cost, 2), round(new_cost, 2)])
+                    idx += 2
 
                 if not updates and not ledger_touching:
                     return self._row(sale)
@@ -2700,7 +2700,7 @@ class Database:
                     )
                     if cost_amount > 0:
                         await conn.execute(
-                            "UPDATE sales SET cost_amount = $1 WHERE id = $2",
+                            "UPDATE sales SET cost_amount = $1, cogs = $1 WHERE id = $2",
                             cost_amount, new_sale_id,
                         )
 

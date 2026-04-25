@@ -357,6 +357,15 @@ CREATE INDEX IF NOT EXISTS idx_expenses_is_paid ON expenses(is_paid) WHERE is_pa
 -- These rows must NEVER be included in Cash/Bank balance deductions.
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_non_cash BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_expenses_is_non_cash ON expenses(is_non_cash) WHERE is_non_cash = TRUE;
+
+-- Explicit COGS column: quantity × WAC at time of sale (same value as
+-- cost_amount, kept as a named alias so reports can reference it directly).
+-- cost_amount remains for reversal / ledger-posting backward compatibility.
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS cogs NUMERIC(14, 2) NOT NULL DEFAULT 0;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cogs NUMERIC(14, 2) NOT NULL DEFAULT 0;
+-- Back-fill from cost_amount for all existing rows.
+UPDATE sales         SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
+UPDATE deleted_sales SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
 """
 
 
@@ -398,6 +407,8 @@ class SaleRow(TypedDict):
     topic_message_id: Optional[int]
     vat_amount: float
     is_vat_included: bool
+    cost_amount: float  # COGS snapshot (WAC at time of sale); used for reversals
+    cogs: float         # Explicit COGS alias: quantity × unit_cost
     # Joined fields (present in report queries)
     product_name: Optional[str]
     oem_code: Optional[str]

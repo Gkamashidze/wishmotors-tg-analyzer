@@ -247,6 +247,8 @@ def _calculate_report_metrics(
 ) -> Dict[str, Any]:
     """Calculate financial totals and per-product aggregates for any report period."""
     total_revenue = sum(float(s["unit_price"]) * s["quantity"] for s in sales)
+    total_cogs = sum(float(s.get("cost_amount") or 0) for s in sales)
+    gross_profit = total_revenue - total_cogs
     total_returns = sum(float(r["refund_amount"]) for r in returns)
     total_expenses = sum(float(e["amount"]) for e in expenses)
 
@@ -259,9 +261,11 @@ def _calculate_report_metrics(
 
     return {
         "total_revenue": total_revenue,
+        "total_cogs": total_cogs,
+        "gross_profit": gross_profit,
         "total_returns": total_returns,
         "total_expenses": total_expenses,
-        "net_income": total_revenue - total_returns - total_expenses,
+        "net_income": gross_profit - total_returns - total_expenses,
         "cash_revenue": sum(
             float(s["unit_price"]) * s["quantity"]
             for s in sales if s.get("payment_method") == PAYMENT_CASH
@@ -298,6 +302,8 @@ def _build_report_body(
         f"   💵 ხელზე: {m['cash_revenue']:.2f}₾",
         f"   🏦 დარიცხა: {m['transfer_revenue']:.2f}₾",
         f"   📋 ნისია: {m['credit_revenue']:.2f}₾",
+        f"📦 თვითღირებულება (COGS): <b>{m['total_cogs']:.2f}₾</b>",
+        f"📈 მთლიანი მოგება: <b>{m['gross_profit']:.2f}₾</b>",
         f"↩️ დაბრუნებები: {m['total_returns']:.2f}₾",
         f"🧾 გადახდილი ხარჯები: {m['total_expenses']:.2f}₾",
         f"💵 სუფთა შემოსავალი: <b>{m['net_income']:.2f}₾</b>",
