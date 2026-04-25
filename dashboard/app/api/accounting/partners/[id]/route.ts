@@ -13,6 +13,9 @@ export type PartnerTransaction = {
   description: string | null;
   tx_date: string;
   created_at: string;
+  currency: string;
+  original_amount: number | null;
+  exchange_rate: number;
 };
 
 export async function GET(_req: NextRequest, { params }: Params) {
