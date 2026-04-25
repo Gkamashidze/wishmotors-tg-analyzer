@@ -342,6 +342,7 @@ export type ExpenseRow = {
   vatAmount: number;
   isVatIncluded: boolean;
   isPaid: boolean;
+  isNonCash: boolean;
 };
 
 export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
@@ -355,10 +356,11 @@ export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
     vat_amount: string;
     is_vat_included: boolean;
     is_paid: boolean;
+    is_non_cash: boolean;
   }>(
     `
     SELECT id, amount, description, category, payment_method, created_at,
-           vat_amount, is_vat_included, is_paid
+           vat_amount, is_vat_included, is_paid, is_non_cash
     FROM expenses
     ORDER BY is_paid ASC, created_at DESC
     LIMIT $1
@@ -379,6 +381,7 @@ export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
     vatAmount: Number(r.vat_amount),
     isVatIncluded: r.is_vat_included,
     isPaid: r.is_paid,
+    isNonCash: r.is_non_cash,
   }));
 }
 

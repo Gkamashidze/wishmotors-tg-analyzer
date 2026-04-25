@@ -647,3 +647,179 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
         text="\n".join(summary_lines),
         parse_mode=_PARSE,
     )
+
+
+# ─── Inventory topic: Stock Count / Adjustment upload ─────────────────────────
+# Triggered when an admin uploads an Excel file to the Stock topic with a
+# caption that starts with "/count" or "#count" (case-insensitive).
+#
+# Expected columns (header row skipped): OEM | სახელი | ახალი მარაგი
+#   OEM         — must match an existing product in the database
+#   სახელი      — display name (used in descriptions; DB name is not updated)
+#   ახალი მარაგი — the physically-counted quantity (absolute, not a delta)
+#
+# Logic:
+#   delta = target_qty - current_stock
+#   delta < 0 → shortage: expense + ledger write-off (DR 7500 / CR 1600)
+#   delta > 0 → overage:  stock update + ledger gain  (DR 1600 / CR 7500)
+#   delta = 0 → no action
+#
+# The generated expense has is_non_cash=True so it NEVER reduces the Cash/Bank
+# balance — it only moves through the P&L as a write-off.
+
+@sales_router.message(
+    InTopic(config.STOCK_TOPIC_ID),
+    IsAdmin(),
+    F.document,
+    F.caption.regexp(r"(?i)^[#/]?count\b"),
+)
+async def handle_stock_adjustment(message: Message, bot: Bot, db: Database) -> None:
+    doc = message.document
+    if not doc or not doc.file_name:
+        return
+
+    if not doc.file_name.lower().endswith((".xlsx", ".xls")):
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "❌ გთხოვთ Excel ფაილი (.xlsx) გამოაგზავნოთ.\n"
+                "სვეტები: <b>OEM | სახელი | ახალი მარაგი</b>"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="⏳ მარაგის კორექტირება მუშავდება...",
+        parse_mode=_PARSE,
+    )
+
+    file_info = await bot.get_file(doc.file_id)
+    buf = BytesIO()
+    await bot.download_file(file_info.file_path, destination=buf)
+    buf.seek(0)
+
+    try:
+        wb = openpyxl.load_workbook(buf, read_only=True, data_only=True)
+        ws = wb.active
+    except Exception as exc:
+        logger.error("Stock count Excel parse error: %s", exc)
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text=(
+                "❌ ფაილი ვერ წაიკითხა. გადაამოწმეთ ფორმატი.\n"
+                "სვეტები: <b>OEM | სახელი | ახალი მარაგი</b>"
+            ),
+            parse_mode=_PARSE,
+        )
+        return
+
+    shortages: list[tuple[str, str, float, float]] = []  # (oem, name, qty, loss_value)
+    overages: list[tuple[str, str, float]] = []           # (oem, name, qty)
+    unchanged = 0
+    errors: list[str] = []
+    data_rows = 0
+
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not row or row[0] is None:
+            continue
+        data_rows += 1
+        if data_rows > _MAX_IMPORT_ROWS:
+            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა.")
+            break
+
+        try:
+            oem = sanitize_oem(row[0]) if row[0] is not None else None
+            name = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            target_qty = float(row[2]) if len(row) > 2 and row[2] is not None else 0.0
+
+            if not oem:
+                raise ValueError("OEM კოდი სავალდებულოა")
+            if not name:
+                raise ValueError("სახელი სავალდებულოა")
+            if target_qty < 0:
+                raise ValueError("ახალი მარაგი უნდა იყოს >= 0")
+
+            # Fetch current stock and WAC
+            product = await db.get_product_by_oem(oem)
+            if product is None:
+                raise ValueError(f"პროდუქტი OEM '{oem}' ვერ მოიძებნა")
+
+            current_qty = int(product["current_stock"])
+            delta = int(target_qty) - current_qty
+
+            if delta == 0:
+                unchanged += 1
+                continue
+
+            if delta < 0:
+                # Shortage: write off the lost units
+                wac = await db.get_product_wac(product["id"])
+                unit_cost = wac if wac > 0 else float(product["unit_price"])
+                result = await db.create_inventory_shortage_expense(
+                    oem_code=oem,
+                    name=name,
+                    shortage_qty=abs(delta),
+                    unit_cost=unit_cost,
+                )
+                shortages.append((oem, name, abs(delta), result["loss_value"]))
+            else:
+                # Overage: add extra units to stock
+                result = await db.record_inventory_overage(
+                    oem_code=oem,
+                    name=name,
+                    overage_qty=delta,
+                )
+                overages.append((oem, name, delta))
+
+        except Exception as exc:
+            logger.warning("Stock count row %d error: %s", row_idx, exc)
+            error_msg = f"რიგი {row_idx}: {exc}"
+            errors.append(error_msg)
+            await db.log_parse_failure(
+                topic_id=config.STOCK_TOPIC_ID,
+                message_text=error_msg,
+            )
+
+    total_loss = sum(v for _, _, _, v in shortages)
+    summary_lines = [
+        "✅ <b>მარაგის კორექტირება დასრულდა!</b>",
+        f"📊 დამუშავდა: <b>{data_rows}</b> სტრიქონი",
+    ]
+    if unchanged:
+        summary_lines.append(f"✔️ უცვლელი: <b>{unchanged}</b>")
+    if shortages:
+        summary_lines.append(f"\n🔴 <b>დანაკლისი ({len(shortages)} პოზ.):</b>")
+        for oem, nm, qty, loss in shortages[:5]:
+            summary_lines.append(
+                f"  • <code>{html.escape(oem)}</code> {html.escape(nm)} "
+                f"— -{qty:.0f} ც. / <b>{loss:.2f}₾</b>"
+            )
+        if len(shortages) > 5:
+            summary_lines.append(f"  • ... და კიდევ {len(shortages) - 5}")
+        summary_lines.append(
+            f"💸 ჯამური ჩამოწერა: <b>{total_loss:.2f}₾</b> "
+            "(P&amp;L ხარჯი — ნაღდ ფულს არ ამცირებს)"
+        )
+        summary_lines.append("📘 ledger: DR 7500 Write-off / CR 1600 Inventory")
+    if overages:
+        summary_lines.append(f"\n🟢 <b>ზედმეტობა ({len(overages)} პოზ.):</b>")
+        for oem, nm, qty in overages[:5]:
+            summary_lines.append(
+                f"  • <code>{html.escape(oem)}</code> {html.escape(nm)} — +{qty:.0f} ც."
+            )
+        if len(overages) > 5:
+            summary_lines.append(f"  • ... და კიდევ {len(overages) - 5}")
+    if errors:
+        summary_lines.append(f"\n❌ <b>ხარვეზები ({len(errors)} რიგი):</b>")
+        for err in errors[:5]:
+            summary_lines.append(f"  • <code>{html.escape(err)}</code>")
+        if len(errors) > 5:
+            summary_lines.append(f"  • ... და კიდევ {len(errors) - 5}")
+
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text="\n".join(summary_lines),
+        parse_mode=_PARSE,
+    )

@@ -350,6 +350,13 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS recommended_price NUMERIC(12, 2);
 -- Only paid expenses should be deducted from cash/bank balances.
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_paid BOOLEAN NOT NULL DEFAULT TRUE;
 CREATE INDEX IF NOT EXISTS idx_expenses_is_paid ON expenses(is_paid) WHERE is_paid = FALSE;
+
+-- Non-cash inventory write-offs (shortages from stock count).
+-- When TRUE: the expense hits the P&L (DR 7500) but NO cash/bank account is
+-- touched — the credit goes to Inventory (CR 1600), not to Cash or AP.
+-- These rows must NEVER be included in Cash/Bank balance deductions.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_non_cash BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_expenses_is_non_cash ON expenses(is_non_cash) WHERE is_non_cash = TRUE;
 """
 
 
@@ -432,6 +439,7 @@ class ExpenseRow(TypedDict):
     vat_amount: float
     is_vat_included: bool
     is_paid: bool
+    is_non_cash: bool  # True = inventory write-off; never deducts cash/bank
 
 
 class ParseFailureRow(TypedDict):

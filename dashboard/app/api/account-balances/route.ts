@@ -65,7 +65,7 @@ export async function GET() {
         ),
         cash_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
-          FROM expenses WHERE payment_method = 'cash' AND is_paid = true
+          FROM expenses WHERE payment_method = 'cash' AND is_paid = true AND is_non_cash = false
         ),
         transfer_sales AS (
           SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
@@ -73,7 +73,7 @@ export async function GET() {
         ),
         transfer_expenses AS (
           SELECT COALESCE(SUM(amount), 0) AS total
-          FROM expenses WHERE payment_method = 'transfer' AND is_paid = true
+          FROM expenses WHERE payment_method = 'transfer' AND is_paid = true AND is_non_cash = false
         ),
         tr_cash_out AS (
           SELECT COALESCE(SUM(amount), 0) AS total

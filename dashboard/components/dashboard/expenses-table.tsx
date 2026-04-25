@@ -263,7 +263,16 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
               </TableRow>
             ) : (
               filtered.map((r, idx) => (
-                <TableRow key={r.id} className={!r.isPaid ? "bg-amber-50/40 dark:bg-amber-950/20" : undefined}>
+                <TableRow
+                  key={r.id}
+                  className={
+                    r.isNonCash
+                      ? "bg-blue-50/40 dark:bg-blue-950/20"
+                      : !r.isPaid
+                        ? "bg-amber-50/40 dark:bg-amber-950/20"
+                        : undefined
+                  }
+                >
                   <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                   <TableCell className="text-right tabular-nums font-semibold text-destructive">
                     {formatGEL(r.amount)}
@@ -292,10 +301,18 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                     {r.description ?? "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{paymentLabel(r.paymentMethod)}</Badge>
+                    {r.isNonCash ? (
+                      <Badge variant="outline" className="text-blue-600 border-blue-300">ჩამოწერა</Badge>
+                    ) : (
+                      <Badge variant="outline">{paymentLabel(r.paymentMethod)}</Badge>
+                    )}
                   </TableCell>
                   <TableCell>
-                    {r.isPaid ? (
+                    {r.isNonCash ? (
+                      <Badge variant="secondary" className="text-blue-700 bg-blue-100 dark:bg-blue-950 dark:text-blue-300">
+                        📦 საწყობის ნაკლი
+                      </Badge>
+                    ) : r.isPaid ? (
                       <Badge variant="secondary" className="text-green-700 bg-green-100 dark:bg-green-950 dark:text-green-300">
                         ✓ გადახდილია
                       </Badge>
@@ -310,7 +327,7 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      {!r.isPaid && (
+                      {!r.isPaid && !r.isNonCash && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -332,15 +349,17 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
                       >
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 cursor-pointer"
-                        onClick={() => openEdit(r)}
-                        aria-label="რედაქტირება"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      {!r.isNonCash && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 cursor-pointer"
+                          onClick={() => openEdit(r)}
+                          aria-label="რედაქტირება"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -378,13 +397,18 @@ export function ExpensesTable({ rows }: { rows: ExpenseRow[] }) {
               />
               <ViewField label="კატეგორია" value={viewRow.category} />
               <ViewField label="აღწერა" value={viewRow.description} className="sm:col-span-2" />
-              <ViewField label="გადახდის მეთოდი" value={paymentLabel(viewRow.paymentMethod)} />
+              <ViewField
+                label="გადახდის მეთოდი"
+                value={viewRow.isNonCash ? "ჩამოწერა (არანაღდი)" : paymentLabel(viewRow.paymentMethod)}
+              />
               <ViewField
                 label="სტატუსი"
                 value={
-                  viewRow.isPaid
-                    ? <span className="text-green-700 font-medium">✓ გადახდილია</span>
-                    : <span className="text-amber-600 font-medium">⏳ გადაუხდელია (მოლოდინში)</span>
+                  viewRow.isNonCash
+                    ? <span className="text-blue-700 font-medium">📦 საწყობის ნაკლი — P&amp;L ჩამოწერა</span>
+                    : viewRow.isPaid
+                      ? <span className="text-green-700 font-medium">✓ გადახდილია</span>
+                      : <span className="text-amber-600 font-medium">⏳ გადაუხდელია (მოლოდინში)</span>
                 }
               />
               <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />

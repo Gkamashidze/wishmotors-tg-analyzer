@@ -292,6 +292,7 @@ class Database:
     #   6100 — Sales revenue (შემოსავალი გაყიდვებიდან)    — revenue
     #   7100 — Cost of goods sold (თვითღირებულება)        — expense
     #   7400 — Operating expenses (საოპერაციო ხარჯი)     — expense
+    #   7500 — Inventory write-off / shortage (საწყობის ნაკლი) — expense
 
     ACCOUNT_CASH              = "1100"
     ACCOUNT_BANK              = "1200"
@@ -301,6 +302,7 @@ class Database:
     ACCOUNT_REVENUE           = "6100"
     ACCOUNT_COGS              = "7100"
     ACCOUNT_OPERATING_EXPENSE = "7400"
+    ACCOUNT_INVENTORY_WRITEOFF = "7500"
 
     # payment_method → debit-side account used when posting revenue or
     # settling a nisia payment. "credit" (ნისია) routes to AR because no cash
@@ -1623,6 +1625,8 @@ class Database:
         payment_method: str = "cash",
         vat_amount: float = 0.0,
         is_vat_included: bool = False,
+        is_paid: bool = True,
+        is_non_cash: bool = False,
     ) -> int:
         """Insert an expense + post its ledger entry atomically.
 
@@ -1631,6 +1635,9 @@ class Database:
             CR 1100 Cash   (payment_method='cash')
             CR 1200 Bank   (payment_method='transfer')
             CR 2100 AP     (payment_method='credit' — unpaid supplier bill)
+
+        For inventory write-offs (is_non_cash=True) callers should use
+        create_inventory_shortage_expense() instead, which posts to 7500/1600.
         """
         amt = round(float(amount), 2)
         async with self.pool.acquire() as conn:
@@ -1638,10 +1645,10 @@ class Database:
                 row = await conn.fetchrow(
                     """INSERT INTO expenses
                            (amount, description, category, payment_method,
-                            vat_amount, is_vat_included)
-                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+                            vat_amount, is_vat_included, is_paid, is_non_cash)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id""",
                     amount, description, category, payment_method,
-                    round(vat_amount, 2), is_vat_included,
+                    round(vat_amount, 2), is_vat_included, is_paid, is_non_cash,
                 )
                 expense_id = row["id"]
                 label = description or category or f"Expense #{expense_id}"
@@ -1660,8 +1667,201 @@ class Database:
             "payment_method": payment_method,
             "vat_amount": round(vat_amount, 2),
             "is_vat_included": is_vat_included,
+            "is_paid": is_paid,
+            "is_non_cash": is_non_cash,
         }, reference_id=f"expense:{expense_id}")
         return expense_id
+
+    async def create_inventory_shortage_expense(
+        self,
+        oem_code: str,
+        name: str,
+        shortage_qty: float,
+        unit_cost: float,
+    ) -> Dict[str, Any]:
+        """Record an inventory shortage detected during a stock count.
+
+        Runs atomically in one transaction:
+          1. Reduce inventory_batches.remaining_quantity FIFO by shortage_qty.
+          2. Set products.current_stock -= shortage_qty.
+          3. Insert expense row: is_non_cash=True, is_paid=True, payment_method='credit'.
+             amount = shortage_qty * unit_cost.
+          4. Post ledger pair:
+               DR 7500 Inventory Write-off = loss_value
+               CR 1600 Inventory           = loss_value
+             No cash/bank account is touched — this is a pure P&L write-off.
+
+        Returns: {expense_id, product_id, shortage_qty, unit_cost, loss_value, new_stock}
+        """
+        if shortage_qty <= 0:
+            raise ValueError("shortage_qty must be > 0")
+        loss_value = round(float(shortage_qty) * float(unit_cost), 2)
+        ref = f"stockcount:shortage:{oem_code}"
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                product_row = await conn.fetchrow(
+                    "SELECT id, current_stock FROM products WHERE oem_code = $1",
+                    oem_code,
+                )
+                if not product_row:
+                    raise ValueError(f"პროდუქტი OEM '{oem_code}' ვერ მოიძებნა")
+                product_id: int = product_row["id"]
+
+                # FIFO consume from inventory batches
+                remaining_to_remove = float(shortage_qty)
+                if loss_value > 0:
+                    batches = await conn.fetch(
+                        """SELECT id, remaining_quantity FROM inventory_batches
+                           WHERE product_id = $1 AND remaining_quantity > 0
+                           ORDER BY received_at ASC, id ASC""",
+                        product_id,
+                    )
+                    for batch in batches:
+                        if remaining_to_remove <= 0:
+                            break
+                        can_take = min(float(batch["remaining_quantity"]), remaining_to_remove)
+                        await conn.execute(
+                            """UPDATE inventory_batches
+                               SET remaining_quantity = remaining_quantity - $1
+                               WHERE id = $2""",
+                            can_take, batch["id"],
+                        )
+                        remaining_to_remove -= can_take
+
+                # Update current_stock
+                stock_row = await conn.fetchrow(
+                    """UPDATE products
+                       SET current_stock = current_stock - $1
+                       WHERE id = $2 RETURNING current_stock""",
+                    int(shortage_qty), product_id,
+                )
+                new_stock = int(stock_row["current_stock"]) if stock_row else 0
+
+                # Insert expense (non-cash write-off)
+                desc = f"Inventory Shortage: {oem_code} - {name}"
+                expense_row = await conn.fetchrow(
+                    """INSERT INTO expenses
+                           (amount, description, category, payment_method,
+                            is_paid, is_non_cash)
+                       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id""",
+                    loss_value if loss_value > 0 else 0.01,
+                    desc,
+                    "საწყობის ნაკლი",
+                    "credit",
+                    True,
+                    True,
+                )
+                expense_id: int = expense_row["id"]
+
+                # Ledger: DR 7500 Write-off / CR 1600 Inventory (only when there is a value)
+                if loss_value > 0:
+                    await conn.execute(
+                        """INSERT INTO ledger
+                               (transaction_date, account_code, debit_amount, credit_amount,
+                                description, reference_id)
+                           VALUES (NOW(), $1, $2, 0, $3, $4)""",
+                        self.ACCOUNT_INVENTORY_WRITEOFF, loss_value,
+                        f"Inventory shortage — {name} (OEM {oem_code})", ref,
+                    )
+                    await conn.execute(
+                        """INSERT INTO ledger
+                               (transaction_date, account_code, debit_amount, credit_amount,
+                                description, reference_id)
+                           VALUES (NOW(), $1, 0, $2, $3, $4)""",
+                        self.ACCOUNT_INVENTORY, loss_value,
+                        f"Inventory shortage — {name} (OEM {oem_code})", ref,
+                    )
+
+        result = {
+            "expense_id": expense_id,
+            "product_id": product_id,
+            "shortage_qty": shortage_qty,
+            "unit_cost": unit_cost,
+            "loss_value": loss_value,
+            "new_stock": new_stock,
+        }
+        self._audit("inventory_shortage", result, reference_id=ref)
+        return result
+
+    async def record_inventory_overage(
+        self,
+        oem_code: str,
+        name: str,
+        overage_qty: float,
+    ) -> Dict[str, Any]:
+        """Record an inventory overage detected during a stock count.
+
+        Updates products.current_stock += overage_qty and posts a ledger entry:
+            DR 1600 Inventory = overage_value (at WAC)
+            CR 7500 Inventory Write-off (contra — reversal of prior write-off if any)
+
+        When no WAC exists the overage is recorded at zero value (stock-only adjustment).
+        Returns: {product_id, overage_qty, wac, overage_value, new_stock}
+        """
+        if overage_qty <= 0:
+            raise ValueError("overage_qty must be > 0")
+        ref = f"stockcount:overage:{oem_code}"
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                product_row = await conn.fetchrow(
+                    "SELECT id, current_stock FROM products WHERE oem_code = $1",
+                    oem_code,
+                )
+                if not product_row:
+                    raise ValueError(f"პროდუქტი OEM '{oem_code}' ვერ მოიძებნა")
+                product_id = product_row["id"]
+
+                wac_row = await conn.fetchrow(
+                    """SELECT SUM(remaining_quantity * unit_cost) AS tc,
+                              SUM(remaining_quantity)             AS tq
+                       FROM inventory_batches
+                       WHERE product_id = $1 AND remaining_quantity > 0""",
+                    product_id,
+                )
+                wac = (
+                    float(wac_row["tc"]) / float(wac_row["tq"])
+                    if wac_row and wac_row["tq"] and float(wac_row["tq"]) > 0
+                    else 0.0
+                )
+                overage_value = round(overage_qty * wac, 2)
+
+                stock_row = await conn.fetchrow(
+                    """UPDATE products
+                       SET current_stock = current_stock + $1
+                       WHERE id = $2 RETURNING current_stock""",
+                    int(overage_qty), product_id,
+                )
+                new_stock = int(stock_row["current_stock"]) if stock_row else 0
+
+                if overage_value > 0:
+                    await conn.execute(
+                        """INSERT INTO ledger
+                               (transaction_date, account_code, debit_amount, credit_amount,
+                                description, reference_id)
+                           VALUES (NOW(), $1, $2, 0, $3, $4)""",
+                        self.ACCOUNT_INVENTORY, overage_value,
+                        f"Inventory overage — {name} (OEM {oem_code})", ref,
+                    )
+                    await conn.execute(
+                        """INSERT INTO ledger
+                               (transaction_date, account_code, debit_amount, credit_amount,
+                                description, reference_id)
+                           VALUES (NOW(), $1, 0, $2, $3, $4)""",
+                        self.ACCOUNT_INVENTORY_WRITEOFF, overage_value,
+                        f"Inventory overage — {name} (OEM {oem_code})", ref,
+                    )
+
+        result = {
+            "product_id": product_id,
+            "overage_qty": overage_qty,
+            "wac": wac,
+            "overage_value": overage_value,
+            "new_stock": new_stock,
+        }
+        self._audit("inventory_overage", result, reference_id=ref)
+        return result
 
     async def get_weekly_expenses(self) -> List[ExpenseRow]:
         async with self.pool.acquire() as conn:
@@ -1712,7 +1912,7 @@ class Database:
                   ),
                   cash_e AS (
                     SELECT COALESCE(SUM(amount), 0) AS total
-                    FROM expenses WHERE payment_method = 'cash' AND is_paid = TRUE
+                    FROM expenses WHERE payment_method = 'cash' AND is_paid = TRUE AND is_non_cash = FALSE
                   ),
                   deps AS (
                     SELECT COALESCE(SUM(amount), 0) AS total FROM cash_deposits
