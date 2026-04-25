@@ -235,7 +235,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   // ── Validate ──────────────────────────────────────────────────────────────
   const validate = useCallback((): string[] => {
     const errs: string[] = [];
-    if (!supplier.trim()) errs.push("მიმწოდებელი სავალდებულოა");
+    if (!supplier.trim()) errs.push("მომწოდებელი სავალდებულოა");
     if (!date)            errs.push("თარიღი სავალდებულოა");
     if (rate <= 0)        errs.push("კურსი უნდა იყოს > 0");
     const validItems = items.filter((it) =>
@@ -397,7 +397,7 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             />
             <Input
               id={`${formIdBase}-supplier`}
-              label="მიმწოდებელი *"
+              label="მომწოდებელი *"
               placeholder="კომპანიის დასახელება"
               value={supplier}
               onChange={(e) => setSupplier(e.target.value)}

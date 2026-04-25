@@ -159,7 +159,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
             type="text"
-            placeholder="მიმწოდებელი, ინვოისი, შეფასება..."
+            placeholder="მომწოდებელი, ინვოისი, შეფასება..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && fetchRows()}
@@ -218,7 +218,7 @@ export function ErpImportsHistoryTable({ rows: initial }: { rows: ImportRow[] })
             <thead className="bg-muted/50">
               <tr className="text-left">
                 <th className="px-4 py-3 font-medium text-muted-foreground">თარიღი</th>
-                <th className="px-4 py-3 font-medium text-muted-foreground">მიმწოდებელი</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground">მომწოდებელი</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">ინვოისი</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">შეფასების #</th>
                 <th className="px-4 py-3 font-medium text-muted-foreground text-center">პოზ.</th>
