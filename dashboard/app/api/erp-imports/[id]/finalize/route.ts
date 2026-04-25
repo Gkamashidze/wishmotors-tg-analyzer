@@ -156,6 +156,16 @@ export async function POST(_req: NextRequest, { params }: Params) {
         }
       }
 
+      // VAT ledger: post positive input VAT (recoverable) for the import
+      const importVat = Number(imp.total_vat_cost ?? 0);
+      if (importVat > 0) {
+        await client.query(
+          `INSERT INTO vat_ledger (transaction_type, amount, reference_id, created_at)
+           VALUES ('import_vat', $1, $2, $3::date)`,
+          [importVat, `erp_import:${importId}`, importDate],
+        );
+      }
+
       // Mark completed
       await client.query(
         "UPDATE imports SET status = 'completed', updated_at = NOW() WHERE id = $1",

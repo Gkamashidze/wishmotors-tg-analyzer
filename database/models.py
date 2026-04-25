@@ -366,6 +366,30 @@ ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cogs NUMERIC(14, 2) NOT NULL 
 -- Back-fill from cost_amount for all existing rows.
 UPDATE sales         SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
 UPDATE deleted_sales SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
+
+-- Output VAT (18%) extracted from VAT-inclusive sale price: total - total/1.18
+-- Always computed at sale time regardless of is_vat_included flag.
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS output_vat NUMERIC(14, 2) NOT NULL DEFAULT 0;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS output_vat NUMERIC(14, 2) NOT NULL DEFAULT 0;
+
+-- VAT ledger: strict single-entry log of all VAT movements.
+-- amount > 0  → input VAT (recoverable, paid on imports)
+-- amount < 0  → output VAT (payable, collected on sales)
+-- Net VAT payable for a period = ABS(SUM(amount)) when sum is negative.
+CREATE TABLE IF NOT EXISTS vat_ledger (
+    id               SERIAL PRIMARY KEY,
+    transaction_type TEXT           NOT NULL,
+    amount           NUMERIC(14, 2) NOT NULL,
+    reference_id     TEXT,
+    created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT vat_ledger_type_check CHECK (
+        transaction_type IN ('import_vat', 'sales_vat', 'vat_payment')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_vat_ledger_created_at ON vat_ledger(created_at);
+CREATE INDEX IF NOT EXISTS idx_vat_ledger_type       ON vat_ledger(transaction_type);
+CREATE INDEX IF NOT EXISTS idx_vat_ledger_reference  ON vat_ledger(reference_id);
 """
 
 
@@ -407,6 +431,7 @@ class SaleRow(TypedDict):
     topic_message_id: Optional[int]
     vat_amount: float
     is_vat_included: bool
+    output_vat: float   # 18% VAT extracted from VAT-inclusive total: total - total/1.18
     cost_amount: float  # COGS snapshot (WAC at time of sale); used for reversals
     cogs: float         # Explicit COGS alias: quantity × unit_cost
     # Joined fields (present in report queries)

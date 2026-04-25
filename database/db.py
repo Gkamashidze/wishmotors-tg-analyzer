@@ -794,18 +794,20 @@ class Database:
         Returns (sale_id, new_stock_level).
         """
         revenue = round(float(unit_price) * int(quantity), 2)
+        # Output VAT extracted from VAT-inclusive total: total - total/1.18
+        output_vat = round(revenue - revenue / 1.18, 2)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     """INSERT INTO sales
                            (product_id, quantity, unit_price, payment_method,
                             seller_type, customer_name, notes,
-                            vat_amount, is_vat_included)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                            vat_amount, is_vat_included, output_vat)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                        RETURNING id""",
                     product_id, quantity, unit_price, payment_method,
                     seller_type, customer_name or None, notes,
-                    round(vat_amount, 2), is_vat_included,
+                    round(vat_amount, 2), is_vat_included, output_vat,
                 )
                 sale_id = row["id"]
 
@@ -842,6 +844,13 @@ class Database:
                     description=description,
                 )
 
+                # VAT ledger: negative = output VAT we owe to the tax authority
+                await conn.execute(
+                    """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
+                       VALUES ('sales_vat', $1, $2)""",
+                    -output_vat, f"sale:{sale_id}",
+                )
+
         self._audit("sale_created", {
             "sale_id": sale_id,
             "product_id": product_id,
@@ -856,6 +865,7 @@ class Database:
             "new_stock": new_stock,
             "vat_amount": round(vat_amount, 2),
             "is_vat_included": is_vat_included,
+            "output_vat": output_vat,
         }, reference_id=f"sale:{sale_id}")
         return sale_id, new_stock
 
@@ -908,6 +918,16 @@ class Database:
                     cost_amount=cost_amount,
                     description=f"Sale #{sale_id} — {label}",
                 )
+
+                # Reverse the VAT ledger entry: post positive contra-entry
+                output_vat = float(sale_dict.get("output_vat") or 0.0)
+                if output_vat > 0:
+                    await conn.execute(
+                        """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
+                           VALUES ('sales_vat', $1, $2)""",
+                        output_vat, f"reversal:sale:{sale_id}",
+                    )
+
                 await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
 
         self._audit("sale_deleted", sale_dict, reference_id=f"reversal:sale:{sale_id}")

@@ -1,14 +1,28 @@
 import "server-only";
 import { type NextRequest, NextResponse } from "next/server";
-import { queryOne } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+export type VatMonthRow = {
+  month: string;          // "YYYY-MM"
+  output_vat: number;     // გადასახდელი დღგ (from sales, positive value)
+  input_vat: number;      // ჩასათვლელი დღგ (from imports, positive value)
+  net_payable: number;    // გადასარიცხი დღგ = output_vat - input_vat
+};
+
 export type VatSummaryResponse = {
   period: { from: string; to: string };
-  vat_collected: number;   // from sales (output VAT)
-  vat_paid: number;        // from expenses (input VAT)
-  vat_payable: number;     // net amount due to tax authority = collected - paid
+  months: VatMonthRow[];
+  totals: {
+    output_vat: number;
+    input_vat: number;
+    net_payable: number;
+  };
+  // Legacy fields kept for backward compatibility with accounting/page.tsx
+  vat_collected: number;
+  vat_paid: number;
+  vat_payable: number;
 };
 
 // GET /api/accounting/vat?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -32,29 +46,52 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const salesVat = await queryOne<{ total: string }>(
-      `SELECT COALESCE(SUM(vat_amount), 0) AS total
-       FROM sales
-       WHERE is_vat_included = TRUE AND sold_at >= $1 AND sold_at <= $2`,
+    const rows = await query<{
+      month: string;
+      output_vat: string;
+      input_vat: string;
+    }>(
+      `SELECT
+         TO_CHAR(created_at AT TIME ZONE 'Asia/Tbilisi', 'YYYY-MM') AS month,
+         SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END)      AS output_vat,
+         SUM(CASE WHEN amount > 0 THEN amount      ELSE 0 END)      AS input_vat
+       FROM vat_ledger
+       WHERE transaction_type IN ('import_vat', 'sales_vat')
+         AND created_at >= $1
+         AND created_at <= $2
+       GROUP BY month
+       ORDER BY month DESC`,
       [from.toISOString(), to.toISOString()],
     );
 
-    const expenseVat = await queryOne<{ total: string }>(
-      `SELECT COALESCE(SUM(vat_amount), 0) AS total
-       FROM expenses
-       WHERE is_vat_included = TRUE AND created_at >= $1 AND created_at <= $2`,
-      [from.toISOString(), to.toISOString()],
-    );
+    const months: VatMonthRow[] = rows.map((r) => {
+      const outputVat = Number(r.output_vat);
+      const inputVat  = Number(r.input_vat);
+      return {
+        month:       r.month,
+        output_vat:  outputVat,
+        input_vat:   inputVat,
+        net_payable: Math.max(0, outputVat - inputVat),
+      };
+    });
 
-    const vatCollected = Number(salesVat?.total ?? 0);
-    const vatPaid      = Number(expenseVat?.total ?? 0);
-    const vatPayable   = vatCollected - vatPaid;
+    const totals = months.reduce(
+      (acc, m) => ({
+        output_vat:  acc.output_vat  + m.output_vat,
+        input_vat:   acc.input_vat   + m.input_vat,
+        net_payable: acc.net_payable + m.net_payable,
+      }),
+      { output_vat: 0, input_vat: 0, net_payable: 0 },
+    );
 
     const result: VatSummaryResponse = {
       period:        { from: fromStr, to: toStr },
-      vat_collected: vatCollected,
-      vat_paid:      vatPaid,
-      vat_payable:   vatPayable,
+      months,
+      totals,
+      // Legacy aliases
+      vat_collected: totals.output_vat,
+      vat_paid:      totals.input_vat,
+      vat_payable:   totals.net_payable,
     };
 
     return NextResponse.json(result);

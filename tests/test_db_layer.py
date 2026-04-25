@@ -112,8 +112,8 @@ class TestCreateSale:
 
         assert sale_id == 42
         assert new_stock == 8
-        # Revenue pair (DR cash, CR revenue) = 2 ledger INSERTs.
-        assert conn.execute.call_count == 2
+        # Revenue pair (DR cash, CR revenue) = 2 ledger INSERTs + 1 vat_ledger INSERT.
+        assert conn.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_no_product_id_returns_zero_stock(self):
@@ -134,8 +134,8 @@ class TestCreateSale:
 
         assert sale_id == 7
         assert new_stock == 0  # no product → stock unchanged
-        # Only the revenue/AR pair posts (DR 1400 AR, CR 6100 Revenue).
-        assert conn.execute.call_count == 2
+        # Revenue/AR pair (DR 1400 AR, CR 6100 Revenue) + 1 vat_ledger INSERT.
+        assert conn.execute.call_count == 3
 
     @pytest.mark.asyncio
     async def test_posts_cogs_pair_when_batches_exist(self):
@@ -163,8 +163,8 @@ class TestCreateSale:
         assert sale_id == 55
         assert new_stock == 3
         # 1 batch update + 1 UPDATE sales.cost_amount + 4 ledger INSERTs
-        # (revenue pair + COGS pair) = 6.
-        assert conn.execute.call_count == 6
+        # (revenue pair + COGS pair) + 1 vat_ledger INSERT = 7.
+        assert conn.execute.call_count == 7
 
 
 class TestDeleteSale:
