@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Persist import history rows
+    let fulfilledOrders = 0;
     for (const r of rows.parsed) {
       await query(
         `INSERT INTO imports_history
@@ -60,13 +61,20 @@ export async function POST(req: NextRequest) {
       );
 
       // Upsert product and update stock (WAC via inventory_batches)
-      await upsertProductWithBatch(r);
+      const productId = await upsertProductWithBatch(r);
+
+      // Auto-fulfill any active orders matching this product by OEM or product_id
+      if (productId) {
+        const fulfilled = await fulfillMatchingOrders(productId, r.oem);
+        fulfilledOrders += fulfilled;
+      }
     }
 
     return NextResponse.json({
       saved: rows.parsed.length,
       skipped: rows.errors.length,
       errors: rows.errors,
+      fulfilled_orders: fulfilledOrders,
     });
   } catch (err) {
     console.error("[imports POST]", err);
@@ -221,7 +229,7 @@ function sanitizeOem(v: unknown): string {
 
 // ── Upsert product + inventory batch ─────────────────────────────────────────
 
-async function upsertProductWithBatch(r: ParsedRow): Promise<void> {
+async function upsertProductWithBatch(r: ParsedRow): Promise<number | null> {
   const existing = await queryOne<{ id: number }>(
     "SELECT id FROM products WHERE oem_code = $1",
     [r.oem],
@@ -242,7 +250,7 @@ async function upsertProductWithBatch(r: ParsedRow): Promise<void> {
        RETURNING id`,
       [r.name, r.oem, r.totalUnitCostGel, r.unit, r.importDate],
     );
-    if (!row) return;
+    if (!row) return null;
     productId = row.id;
   }
 
@@ -274,4 +282,28 @@ async function upsertProductWithBatch(r: ParsedRow): Promise<void> {
      VALUES ($1::date, '2100', 0, $2, $3, $4)`,
     [r.importDate, totalCost, desc, ref],
   );
+
+  return productId;
+}
+
+// ── Auto-fulfill active orders matching an imported product ───────────────────
+// Active = any status that is not already done or cancelled.
+const INACTIVE_STATUSES = ["fulfilled", "delivered", "cancelled", "completed"];
+
+async function fulfillMatchingOrders(productId: number, oemCode: string): Promise<number> {
+  const placeholders = INACTIVE_STATUSES.map((_, i) => `$${i + 3}`).join(", ");
+  const result = await query(
+    `UPDATE orders
+     SET status = 'fulfilled',
+         notes  = CASE
+                    WHEN notes IS NULL OR notes = '' THEN 'Auto-fulfilled via import'
+                    ELSE notes || ' | Auto-fulfilled via import'
+                  END
+     WHERE status NOT IN (${placeholders})
+       AND (product_id = $1 OR oem_code = $2)`,
+    [productId, oemCode, ...INACTIVE_STATUSES],
+  );
+  // result is the command tag string like "UPDATE 3"
+  const match = String(result).match(/UPDATE (\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
 }

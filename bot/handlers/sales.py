@@ -292,21 +292,26 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
             "Low stock alert: %s — %d units remaining", product["name"], new_stock
         )
 
-    if new_stock == 0:
-        await db.create_order(
-            product_id=product["id"],
-            quantity_needed=product["min_stock"],
-            notes=f"ავტო: {product['name']} — 0-ზე ჩამოვიდა",
-        )
-        await message.bot.send_message(
-            chat_id=message.from_user.id,
-            text=(
-                f"🔔 <b>ავტოშეკვეთა!</b>\n"
-                f"📦 {product['name']} — საწყობი 0-ზე ჩამოვიდა.\n"
-                f"📋 შეკვეთა ავტომატურად შეიქმნა ({product['min_stock']}ც)."
-            ),
-            parse_mode=_PARSE,
-        )
+    _LOW_STOCK_THRESHOLD = 2
+    if new_stock <= _LOW_STOCK_THRESHOLD:
+        already_ordered = await db.has_active_order_for_product(product["id"])
+        if not already_ordered:
+            qty_needed = max(5, product.get("min_stock") or 5)
+            stock_label = "0-ზე ჩამოვიდა" if new_stock == 0 else f"{new_stock}ც-მდე ჩამოვიდა"
+            await db.create_order(
+                product_id=product["id"],
+                quantity_needed=qty_needed,
+                notes=f"ავტო-შეკვეთა: მარაგი ამოიწურება — {product['name']} ({stock_label})",
+            )
+            await message.bot.send_message(
+                chat_id=message.from_user.id,
+                text=(
+                    f"🔔 <b>ავტოშეკვეთა!</b>\n"
+                    f"📦 {html.escape(product['name'])} — მარაგი {stock_label}.\n"
+                    f"📋 შეკვეთა ავტომატურად შეიქმნა ({qty_needed}ც)."
+                ),
+                parse_mode=_PARSE,
+            )
 
 
 async def _record_sale_freeform(

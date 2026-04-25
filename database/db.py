@@ -1341,6 +1341,22 @@ class Database:
         }, reference_id=f"order:{order_id}")
         return order_id
 
+    async def has_active_order_for_product(self, product_id: int) -> bool:
+        """Return True if an open (non-completed) order already exists for this product.
+
+        Prevents duplicate auto-reorder entries when stock keeps falling.
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT EXISTS(
+                     SELECT 1 FROM orders
+                     WHERE product_id = $1
+                       AND status NOT IN ('fulfilled', 'delivered', 'cancelled', 'completed')
+                   ) AS exists""",
+                product_id,
+            )
+            return bool(row["exists"]) if row else False
+
     async def create_orders_bulk(
         self,
         items: List[Dict[str, Any]],

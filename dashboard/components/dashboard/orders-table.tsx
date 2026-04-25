@@ -17,7 +17,7 @@ import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
 import { cn } from "@/lib/utils";
 
 type PriorityFilter = "all" | "urgent" | "low";
-type StatusFilter = "all" | "new" | "processing" | "ordered" | "ready" | "delivered" | "cancelled";
+type StatusFilter = "all" | "new" | "processing" | "ordered" | "ready" | "delivered" | "cancelled" | "fulfilled";
 
 const PRIORITY_TABS: { key: PriorityFilter; label: string; icon?: string }[] = [
   { key: "all", label: "ყველა" },
@@ -32,6 +32,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "ordered",    label: "შეკვეთილი" },
   { key: "ready",      label: "მზადაა" },
   { key: "delivered",  label: "მიტანილი" },
+  { key: "fulfilled",  label: "შესრულდა (ავტო)" },
   { key: "cancelled",  label: "გაუქმებული" },
 ];
 
@@ -58,9 +59,19 @@ function statusBadge(s: string) {
     case "ordered":    return <Badge variant="default">შეკვეთილი</Badge>;
     case "ready":      return <Badge variant="success">მზადაა</Badge>;
     case "delivered":  return <Badge variant="success"><span aria-hidden="true">✅</span> მიტანილი</Badge>;
+    case "fulfilled":  return <Badge variant="success"><span aria-hidden="true">📦</span> შესრულდა (ავტო)</Badge>;
     case "cancelled":  return <Badge variant="muted">გაუქმებული</Badge>;
     default:           return <Badge variant="outline">{s}</Badge>;
   }
+}
+
+const PENDING_STATUSES = new Set(["new", "processing", "ordered", "ready"]);
+const FULFILLED_STATUSES = new Set(["delivered", "fulfilled"]);
+
+function procurementLabel(status: string): "pending" | "fulfilled" | "closed" {
+  if (PENDING_STATUSES.has(status)) return "pending";
+  if (FULFILLED_STATUSES.has(status)) return "fulfilled";
+  return "closed";
 }
 
 function formatDate(iso: string | null | undefined) {
@@ -93,6 +104,12 @@ function rowToEdit(r: OrderRow): EditState {
 export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]; products?: ProductRow[] }) {
   const rows = rawRows ?? [];
   const router = useRouter();
+
+  const summary = useMemo(() => ({
+    pending: rows.filter(r => PENDING_STATUSES.has(r.status)).length,
+    fulfilled: rows.filter(r => FULFILLED_STATUSES.has(r.status)).length,
+    total: rows.length,
+  }), [rows]);
   const [priority, setPriority] = useState<PriorityFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [queryText, setQueryText] = useState("");
@@ -235,6 +252,22 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
 
   return (
     <div className="space-y-4">
+      {/* Procurement summary bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 px-4 py-3">
+          <p className="text-xs text-muted-foreground mb-1">⏳ მოლოდინში</p>
+          <p className="text-2xl font-bold tabular-nums text-amber-700 dark:text-amber-400">{summary.pending}</p>
+        </div>
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-900 px-4 py-3">
+          <p className="text-xs text-muted-foreground mb-1">✅ შესრულდა</p>
+          <p className="text-2xl font-bold tabular-nums text-green-700 dark:text-green-400">{summary.fulfilled}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-xs text-muted-foreground mb-1">📋 სულ</p>
+          <p className="text-2xl font-bold tabular-nums">{summary.total}</p>
+        </div>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {PRIORITY_TABS.map((t) => {
@@ -277,9 +310,10 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
               <TableHead className="w-16">#</TableHead>
               <TableHead>პროდუქტი</TableHead>
               <TableHead>OEM</TableHead>
-              <TableHead className="text-right">რაოდენობა</TableHead>
+              <TableHead className="text-right">საჭ. რ-ბა</TableHead>
               <TableHead>პრიორიტეტი</TableHead>
               <TableHead>სტატუსი</TableHead>
+              <TableHead>წყარო</TableHead>
               <TableHead>თარიღი</TableHead>
               <TableHead className="min-w-[160px]">შენიშვნა</TableHead>
               <TableHead className="w-20 text-right">მოქ.</TableHead>
@@ -288,7 +322,7 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
                   <div className="space-y-2">
                     <p>{rows.length === 0 ? "შეკვეთები ვერ ჩაიტვირთა ან ჯერ არ არის დამატებული." : "შედეგი არ არის ამ ფილტრით."}</p>
                     {rows.length > 0 && (priority !== "all" || status !== "all" || queryText) && (
@@ -304,8 +338,11 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r, idx) => (
-                <TableRow key={r.id}>
+              filtered.map((r, idx) => {
+                const label = procurementLabel(r.status);
+                const isAutoOrder = r.notes?.startsWith("ავტო") ?? false;
+                return (
+                <TableRow key={r.id} className={label === "fulfilled" ? "opacity-60" : undefined}>
                   <TableCell className="font-medium tabular-nums text-muted-foreground">{idx + 1}</TableCell>
                   <TableCell className="font-medium">
                     {r.productName === "ძველი ჩანაწერი"
@@ -327,6 +364,12 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
                         <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </select>
+                  </TableCell>
+                  <TableCell>
+                    {isAutoOrder
+                      ? <Badge variant="outline" className="text-[10px] gap-1"><span aria-hidden="true">🤖</span> ავტო</Badge>
+                      : <Badge variant="outline" className="text-[10px] gap-1"><span aria-hidden="true">👤</span> ხელით</Badge>
+                    }
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{formatDate(r.createdAt)}</TableCell>
                   <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">{r.notes ?? "—"}</TableCell>
@@ -359,7 +402,8 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
+              );
+            })
             )}
           </TableBody>
         </Table>

@@ -17,7 +17,7 @@ interface OrderRecord {
 }
 
 const VALID_STATUSES = new Set([
-  "new", "processing", "ordered", "ready", "delivered", "cancelled",
+  "new", "processing", "ordered", "ready", "delivered", "cancelled", "fulfilled",
 ]);
 
 const GROUP_ID = Number(process.env.GROUP_ID ?? "0");
