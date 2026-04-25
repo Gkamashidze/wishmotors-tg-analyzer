@@ -410,6 +410,11 @@ CREATE TABLE IF NOT EXISTS vat_ledger (
 CREATE INDEX IF NOT EXISTS idx_vat_ledger_created_at ON vat_ledger(created_at);
 CREATE INDEX IF NOT EXISTS idx_vat_ledger_type       ON vat_ledger(transaction_type);
 CREATE INDEX IF NOT EXISTS idx_vat_ledger_reference  ON vat_ledger(reference_id);
+
+-- Expense category default: ensure existing NULLs and future rows without an
+-- explicit category land on 'general' rather than NULL.
+ALTER TABLE expenses ALTER COLUMN category SET DEFAULT 'general';
+UPDATE expenses SET category = 'general' WHERE category IS NULL OR category = '';
 """
 
 

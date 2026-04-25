@@ -188,6 +188,10 @@ _SALE_E = re.compile(
     re.UNICODE,
 )
 
+# Hashtag category prefix/suffix: #ხელფასი or #rent anywhere in the message.
+# Captures the word after # as the category; the # and word are stripped from the description.
+_HASHTAG_RE = re.compile(r"#(\S+)", re.UNICODE)
+
 # Expense: amount-first or description-first (positive). $ accepted too.
 _EXPENSE_AMOUNT_FIRST = re.compile(
     r"^(?P<amount>\d+(?:[.,]\d+)?)\s*[₾ლ$]\s+(?P<desc>.+)$", re.UNICODE
@@ -513,17 +517,43 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     return None
 
 
+def _extract_hashtag_category(text: str) -> tuple[str, Optional[str]]:
+    """Extract the first #hashtag from text as a category.
+
+    Returns (cleaned_text, category_or_none).
+    The hashtag token is stripped from the returned text.
+    """
+    m = _HASHTAG_RE.search(text)
+    if not m:
+        return text, None
+    category = m.group(1).strip()
+    cleaned = (text[: m.start()] + text[m.end():]).strip()
+    cleaned = " ".join(cleaned.split())  # collapse double spaces left by removal
+    return cleaned, category if category else None
+
+
 def parse_expense_message(text: str) -> Optional[ParsedExpense]:
     """
     Parse an expense message.
 
     Supported formats:
-      '50₾ ბენზინი'    — amount first
-      'ბენზინი 50₾'    — description first
-      '-11 დელივო'     — negative shorthand (minus prefix, no ₾ required)
-      '-20ლ საბაჟო'    — negative shorthand with ლ
+      '50₾ ბენზინი'         — amount first
+      'ბენზინი 50₾'         — description first
+      '-11 დელივო'           — negative shorthand (minus prefix, no ₾ required)
+      '-20ლ საბაჟო'          — negative shorthand with ლ
+      '#ხელფასი 500₾ გიო'   — hashtag sets category explicitly; overrides auto-detect
+      '500₾ #rent კომუნალი'  — hashtag may appear anywhere in the message
     """
     text = _normalize_text(text.strip())
+
+    # Extract explicit hashtag category before further parsing.
+    # Hashtag takes precedence over keyword auto-detection.
+    text, hashtag_category = _extract_hashtag_category(text)
+
+    def _category(desc: str) -> str:
+        if hashtag_category:
+            return hashtag_category
+        return detect_expense_category(desc) or "general"
 
     # Negative shorthand: "-11 დელივო" or "-20ლ საბაჟო"
     m = _EXPENSE_NEGATIVE.match(text)
@@ -532,7 +562,7 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
             description=desc,
-            category=detect_expense_category(desc),
+            category=_category(desc),
         )
 
     m = _EXPENSE_AMOUNT_FIRST.match(text)
@@ -541,7 +571,7 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
             description=desc,
-            category=detect_expense_category(desc),
+            category=_category(desc),
         )
 
     m = _EXPENSE_DESC_FIRST.match(text)
@@ -550,7 +580,7 @@ def parse_expense_message(text: str) -> Optional[ParsedExpense]:
         return ParsedExpense(
             amount=_parse_price(m.group("amount")),
             description=desc,
-            category=detect_expense_category(desc),
+            category=_category(desc),
         )
 
     return None

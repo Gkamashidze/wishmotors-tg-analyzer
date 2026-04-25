@@ -11,12 +11,14 @@ import { DashboardStats } from "@/components/dashboard/dashboard-stats";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { AiFinancialManager } from "@/components/dashboard/ai-financial-manager";
 import { AccountBalancesSection } from "@/components/dashboard/account-balances-section";
+import { ExpenseCategoryChart } from "@/components/dashboard/expense-category-chart";
 import { formatNumber } from "@/lib/utils";
 import {
   getDailySeries,
   getDashboardSummaryRange,
   getTopSellingProducts,
   getTopProfitableProducts,
+  getExpensesByCategory,
   type DashboardSummary,
 } from "@/lib/queries";
 import { TopProductsSection } from "@/components/dashboard/top-products-section";
@@ -45,7 +47,7 @@ export default async function DashboardPage() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const [summary, series, topSelling, topProfitable] = await Promise.all([
+  const [summary, series, topSelling, topProfitable, expenseCategories] = await Promise.all([
     getDashboardSummaryRange(monthStart, today).catch((err) => {
       console.error("[dashboard] getDashboardSummaryRange failed:", err);
       return DEFAULT_SUMMARY;
@@ -60,6 +62,10 @@ export default async function DashboardPage() {
     }),
     getTopProfitableProducts(10).catch((err) => {
       console.error("[dashboard] getTopProfitableProducts failed:", err);
+      return [];
+    }),
+    getExpensesByCategory().catch((err) => {
+      console.error("[dashboard] getExpensesByCategory failed:", err);
       return [];
     }),
   ]);
@@ -126,8 +132,22 @@ export default async function DashboardPage() {
           topProfitable={topProfitable}
         />
 
-        <section>
-          <AiFinancialManager />
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="lg:col-span-1">
+            <CardHeader>
+              <CardTitle>ხარჯები კატეგორიების მიხედვით</CardTitle>
+              <CardDescription>
+                გადახდილი საოპერაციო ხარჯები — ჯამური განაწილება
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ExpenseCategoryChart data={expenseCategories} />
+            </CardContent>
+          </Card>
+
+          <div className="lg:col-span-2">
+            <AiFinancialManager />
+          </div>
         </section>
       </main>
     </>

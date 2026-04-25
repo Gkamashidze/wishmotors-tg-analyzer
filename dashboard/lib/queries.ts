@@ -385,6 +385,26 @@ export async function getExpenses(limit: number = 500): Promise<ExpenseRow[]> {
   }));
 }
 
+// ─── Expenses by Category ────────────────────────────────────────────────────
+
+export type ExpenseCategoryRow = {
+  category: string;
+  total: number;
+};
+
+export async function getExpensesByCategory(): Promise<ExpenseCategoryRow[]> {
+  const rows = await query<{ category: string; total: string }>(
+    `SELECT COALESCE(NULLIF(TRIM(category), ''), 'general') AS category,
+            SUM(amount) AS total
+     FROM expenses
+     WHERE is_paid = TRUE AND is_non_cash = FALSE
+     GROUP BY 1
+     ORDER BY total DESC`,
+    [],
+  );
+  return rows.map((r) => ({ category: r.category, total: Number(r.total) }));
+}
+
 // ─── Products (Inventory) ─────────────────────────────────────────────────────
 
 export type ProductRow = {

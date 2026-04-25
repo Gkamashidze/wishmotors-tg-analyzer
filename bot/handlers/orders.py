@@ -217,7 +217,7 @@ async def handle_expense_message(message: Message, db: Database) -> None:
         expense_id = await db.create_expense(
             amount=parsed.amount,
             description=parsed.description,
-            category=parsed.category,
+            category=parsed.category or "general",
         )
 
         cat = _category_label(parsed.category)

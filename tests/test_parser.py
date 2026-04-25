@@ -331,6 +331,60 @@ class TestParseExpenseMessage:
         assert result is not None
         assert result.amount == 13.2
 
+    # ── category auto-detection ──────────────────────────────────────────────
+
+    def test_category_auto_fuel(self):
+        result = parse_expense_message("50₾ ბენზინი")
+        assert result is not None
+        assert result.category == "fuel"
+
+    def test_category_auto_salary(self):
+        result = parse_expense_message("1000₾ ხელფასი გიორგი")
+        assert result is not None
+        assert result.category == "salary"
+
+    def test_category_auto_unknown_defaults_to_general(self):
+        """No keyword match → 'general' default."""
+        result = parse_expense_message("500₾ სხვა")
+        assert result is not None
+        assert result.category == "general"
+
+    # ── hashtag category override ─────────────────────────────────────────────
+
+    def test_hashtag_amount_first(self):
+        """'#ხელფასი 500₾ გიორგის' → category=ხელფასი, amount=500."""
+        result = parse_expense_message("#ხელფასი 500₾ გიორგის")
+        assert result is not None
+        assert result.amount == 500.0
+        assert result.category == "ხელფასი"
+        assert "გიორგის" in result.description
+
+    def test_hashtag_desc_first(self):
+        """'ქირა 1000₾ #rent' → category=rent."""
+        result = parse_expense_message("ქირა 1000₾ #rent")
+        assert result is not None
+        assert result.amount == 1000.0
+        assert result.category == "rent"
+        assert result.description == "ქირა"
+
+    def test_hashtag_overrides_auto_detect(self):
+        """Hashtag overrides auto-detection even when description would match a keyword."""
+        result = parse_expense_message("200₾ ბენზინი #საწვავი")
+        assert result is not None
+        assert result.category == "საწვავი"  # hashtag wins over 'fuel' auto-detect
+
+    def test_hashtag_negative_shorthand(self):
+        result = parse_expense_message("-50 #office კანცელარია")
+        assert result is not None
+        assert result.amount == 50.0
+        assert result.category == "office"
+
+    def test_no_hashtag_general_fallback(self):
+        """No hashtag and no keyword match → category is 'general'."""
+        result = parse_expense_message("300₾ კომლექსი")
+        assert result is not None
+        assert result.category == "general"
+
 
 # ─── parse_order_message ─────────────────────────────────────────────────────
 
