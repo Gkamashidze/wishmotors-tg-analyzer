@@ -15,6 +15,7 @@ import {
   LifeBuoy,
   FileDown,
   FileText,
+  UserX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const NAV: NavItem[] = [
   { href: "/imports", label: "იმპორტი", icon: FileDown },
   { href: "/accounting", label: "ბუღალტერია", icon: BookOpen },
   { href: "/vat", label: "დღგ-ს დეკლარაცია", icon: FileText },
+  { href: "/debtors", label: "დებიტორები", icon: UserX },
 ];
 
 const BOTTOM_NAV: NavItem[] = [

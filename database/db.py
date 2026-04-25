@@ -774,6 +774,8 @@ class Database:
         notes: Optional[str] = None,
         vat_amount: float = 0.0,
         is_vat_included: bool = False,
+        client_name: Optional[str] = None,
+        payment_status: str = "paid",
     ) -> Tuple[int, int]:
         """Insert sale + decrement stock + post double-entry ledger, atomically.
 
@@ -786,9 +788,8 @@ class Database:
           5. Post two ledger pairs:
                • DR cash/bank/AR, CR 6100 Revenue         (quantity × unit_price)
                • DR 7100 COGS    , CR 1600 Inventory      (quantity × WAC)
-             For nisia (payment_method="credit") the first pair debits AR
-             1400 instead of cash, so settlement later is a pure cash-for-AR
-             swap.
+             For debt sales (payment_method="credit", payment_status="debt") the
+             first pair debits AR 1400 — Cash/Bank is untouched until settlement.
         Any failure rolls back everything — the ledger cannot desynchronise.
 
         Returns (sale_id, new_stock_level).
@@ -802,12 +803,14 @@ class Database:
                     """INSERT INTO sales
                            (product_id, quantity, unit_price, payment_method,
                             seller_type, customer_name, notes,
-                            vat_amount, is_vat_included, output_vat)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            vat_amount, is_vat_included, output_vat,
+                            client_name, payment_status)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                        RETURNING id""",
                     product_id, quantity, unit_price, payment_method,
                     seller_type, customer_name or None, notes,
                     round(vat_amount, 2), is_vat_included, output_vat,
+                    client_name or None, payment_status,
                 )
                 sale_id = row["id"]
 
@@ -831,9 +834,10 @@ class Database:
                             cost_amount, sale_id,
                         )
 
+                label = client_name or customer_name
                 description = (
-                    f"Sale #{sale_id} — {customer_name}"
-                    if customer_name else f"Sale #{sale_id}"
+                    f"Sale #{sale_id} — {label}"
+                    if label else f"Sale #{sale_id}"
                 )
                 await self._post_sale_ledger(
                     conn,
@@ -859,8 +863,10 @@ class Database:
             "revenue": revenue,
             "cost_amount": cost_amount,
             "payment_method": payment_method,
+            "payment_status": payment_status,
             "seller_type": seller_type,
             "customer_name": customer_name,
+            "client_name": client_name,
             "notes": notes,
             "new_stock": new_stock,
             "vat_amount": round(vat_amount, 2),
@@ -2127,7 +2133,7 @@ class Database:
 
 
     async def pay_sale(self, sale_id: int, amount: float, payment_method: str) -> float:
-        """Pay a single nisia fully or partially + post AR settlement.
+        """Pay a single nisia/debt sale fully or partially + post AR settlement.
 
         If amount >= sale total: marks sale paid, posts full settlement.
         If amount < sale total: reduces unit_price, posts partial settlement.
@@ -2139,7 +2145,7 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    """SELECT unit_price, quantity, customer_name
+                    """SELECT unit_price, quantity, customer_name, client_name
                        FROM sales
                        WHERE id = $1 AND payment_method = 'credit'
                        FOR UPDATE""",
@@ -2148,10 +2154,12 @@ class Database:
                 if not row:
                     return -1.0  # sale not found or already paid
                 sale_total = float(row["unit_price"]) * row["quantity"]
-                label = row["customer_name"] or f"Sale #{sale_id}"
+                label = row["client_name"] or row["customer_name"] or f"Sale #{sale_id}"
                 if amount >= sale_total:
                     await conn.execute(
-                        "UPDATE sales SET payment_method = $1 WHERE id = $2",
+                        """UPDATE sales
+                           SET payment_method = $1, payment_status = 'paid'
+                           WHERE id = $2""",
                         payment_method, sale_id,
                     )
                     await self._post_settlement_ledger(
@@ -2159,7 +2167,7 @@ class Database:
                         reference_id=f"payment:{sale_id}",
                         payment_method=payment_method,
                         amount=round(sale_total, 2),
-                        description=f"Nisia payment #{sale_id} — {label}",
+                        description=f"Debt collected #{sale_id} — {label}",
                     )
                     return 0.0
                 else:
@@ -2174,9 +2182,38 @@ class Database:
                         reference_id=f"payment:{sale_id}",
                         payment_method=payment_method,
                         amount=round(float(amount), 2),
-                        description=f"Nisia partial payment #{sale_id} — {label}",
+                        description=f"Debt partial payment #{sale_id} — {label}",
                     )
                     return remaining
+
+    async def get_debtors(self) -> list:
+        """Return all outstanding debt sales grouped by client_name.
+
+        Each group includes the list of individual sales and total owed.
+        Only sales with payment_status='debt' are returned.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT
+                       s.id,
+                       s.quantity,
+                       s.unit_price,
+                       s.sold_at,
+                       s.client_name,
+                       s.customer_name,
+                       s.notes,
+                       COALESCE(p.name, s.notes, 'უცნობი პროდუქტი') AS product_name,
+                       p.oem_code,
+                       ROUND(s.quantity * s.unit_price, 2) AS total_amount
+                   FROM sales s
+                   LEFT JOIN products p ON p.id = s.product_id
+                   WHERE s.payment_status = 'debt'
+                     AND s.status != 'returned'
+                   ORDER BY
+                       COALESCE(s.client_name, s.customer_name, ''),
+                       s.sold_at DESC""",
+            )
+            return self._rows(rows)
 
     async def get_unreceipted_company_sales(self) -> list:
         """Return all company (შპს) sales that haven't been receipted yet."""

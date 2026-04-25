@@ -364,6 +364,20 @@ CREATE INDEX IF NOT EXISTS idx_expenses_is_non_cash ON expenses(is_non_cash) WHE
 ALTER TABLE products ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS compatibility_notes TEXT;
 
+-- Accounts Receivable / Debtors: explicit debt tracking.
+-- client_name:    name of the debtor extracted from the debt keyword (ვალი + name).
+-- payment_status: 'paid' (default — all cash/transfer sales), 'debt' (outstanding credit
+--                 explicitly marked with ვალი/debt keyword in the sales message),
+--                 'unpaid' (reserved for partial payments or accrued liabilities).
+-- Debt sales route through payment_method='credit' → AR account 1400 in the ledger,
+-- keeping Cash/Bank balances untouched until the debt is collected via the dashboard.
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS client_name    TEXT;
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'paid';
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS client_name    TEXT;
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'paid';
+
+CREATE INDEX IF NOT EXISTS idx_sales_payment_status ON sales(payment_status) WHERE payment_status = 'debt';
+
 -- Explicit COGS column: quantity × WAC at time of sale (same value as
 -- cost_amount, kept as a named alias so reports can reference it directly).
 -- cost_amount remains for reversal / ledger-posting backward compatibility.
@@ -432,6 +446,8 @@ class SaleRow(TypedDict):
     payment_method: str
     seller_type: str
     customer_name: Optional[str]
+    client_name: Optional[str]    # debtor name extracted from ვალი keyword
+    payment_status: str           # 'paid' | 'debt' | 'unpaid'
     sold_at: object  # datetime
     notes: Optional[str]
     receipt_printed: bool

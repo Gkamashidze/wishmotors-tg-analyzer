@@ -174,6 +174,8 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
                 seller_type=parsed.seller_type,
                 customer_name=parsed.customer_name or None,
                 notes=raw if not product else None,
+                client_name=parsed.debt_client or None,
+                payment_status="debt" if parsed.is_debt else "paid",
             )
             grand_total += parsed.quantity * parsed.price
             results.append((parsed, product, sale_id))
@@ -217,6 +219,8 @@ async def _handle_dual_sale(message: Message, db: Database, dual: list) -> None:
             seller_type=parsed.seller_type,
             customer_name=parsed.customer_name or None,
             notes=raw if not product else None,
+            client_name=parsed.debt_client or None,
+            payment_status="debt" if parsed.is_debt else "paid",
         )
         grand_total += parsed.quantity * parsed.price
         results.append((parsed, product, sale_id))
@@ -238,6 +242,8 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
         payment_method=parsed.payment_method,
         seller_type=parsed.seller_type,
         customer_name=parsed.customer_name or None,
+        client_name=parsed.debt_client or None,
+        payment_status="debt" if parsed.is_debt else "paid",
     )
     low = new_stock <= product["min_stock"]
 
@@ -315,6 +321,8 @@ async def _record_sale_freeform(
         seller_type=parsed.seller_type,
         customer_name=parsed.customer_name or None,
         notes=product_name,
+        client_name=parsed.debt_client or None,
+        payment_status="debt" if parsed.is_debt else "paid",
     )
 
     await message.bot.send_message(
