@@ -1067,7 +1067,27 @@ export function ProductsTable({
             <Input id="prod-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
             <div className="grid grid-cols-2 gap-3">
               <Input id="prod-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
-              <Input id="prod-category" label="ტიპი / კატეგორია" type="text" value={editState.category} onChange={set("category")} placeholder="მაგ: ფილტრი, სარკე..." />
+              <Select
+                id="prod-category"
+                label="ტიპი / კატეგორია"
+                value={editState.category}
+                onChange={(e) => setEditState((prev) => prev ? { ...prev, category: e.target.value } : prev)}
+                options={[
+                  { value: "",                         label: "— აირჩიეთ —" },
+                  { value: "ძრავი",                    label: "ძრავი" },
+                  { value: "გადაცემათა კოლოფი",        label: "გადაცემათა კოლოფი" },
+                  { value: "სამუხრუჭე სისტემა",        label: "სამუხრუჭე სისტემა" },
+                  { value: "სარეზინო სისტემა",         label: "სარეზინო სისტემა" },
+                  { value: "საჭე და მართვა",           label: "საჭე და მართვა" },
+                  { value: "ელექტრიკა და სენსორები",   label: "ელექტრიკა და სენსორები" },
+                  { value: "განათება",                 label: "განათება" },
+                  { value: "ფილტრები",                 label: "ფილტრები" },
+                  { value: "გაგრილება",                label: "გაგრილება" },
+                  { value: "საწვავის სისტემა",         label: "საწვავის სისტემა" },
+                  { value: "სხეული",                   label: "სხეული" },
+                  { value: "სხვადასხვა",               label: "სხვადასხვა" },
+                ]}
+              />
             </div>
             <Input
               id="prod-compat"
