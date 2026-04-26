@@ -420,6 +420,48 @@ UPDATE expenses SET category = 'general' WHERE category IS NULL OR category = ''
 -- This one-time back-fill ensures the VAT dashboard (which filters on 'llc')
 -- picks up all historic შპს sales correctly.
 UPDATE sales SET seller_type = 'llc' WHERE seller_type = 'company';
+
+-- Back-fill output_vat for LLC sales where it was never computed at sale time.
+UPDATE sales
+SET output_vat = ROUND(unit_price * quantity - (unit_price * quantity) / 1.18, 2)
+WHERE seller_type = 'llc' AND output_vat = 0;
+
+-- Back-fill vat_ledger entries for LLC sales that have none (preserves original sold_at).
+INSERT INTO vat_ledger (transaction_type, amount, reference_id, created_at)
+SELECT
+  'sales_vat',
+  -s.output_vat,
+  'sale:' || s.id::text,
+  s.sold_at
+FROM sales s
+LEFT JOIN vat_ledger vl
+  ON vl.reference_id = 'sale:' || s.id::text
+  AND vl.transaction_type = 'sales_vat'
+WHERE s.seller_type = 'llc'
+  AND vl.id IS NULL
+  AND s.output_vat > 0;
+
+-- Reclassify VAT in the double-entry ledger: move VAT portion from 6100 to 3330.
+-- Only runs for LLC sales that don't already have a reclassification entry.
+INSERT INTO ledger (account_code, debit_amount, credit_amount, description, reference_id)
+SELECT
+  '6100', s.output_vat, 0,
+  'VAT reclassification — Sale #' || s.id::text,
+  'vat_reclass:sale:' || s.id::text
+FROM sales s
+LEFT JOIN ledger l ON l.reference_id = 'vat_reclass:sale:' || s.id::text
+WHERE s.seller_type = 'llc' AND s.output_vat > 0 AND l.id IS NULL;
+
+INSERT INTO ledger (account_code, debit_amount, credit_amount, description, reference_id)
+SELECT
+  '3330', 0, s.output_vat,
+  'VAT reclassification — Sale #' || s.id::text,
+  'vat_reclass:sale:' || s.id::text
+FROM sales s
+LEFT JOIN ledger l
+  ON l.reference_id = 'vat_reclass:sale:' || s.id::text
+  AND l.account_code = '3330'
+WHERE s.seller_type = 'llc' AND s.output_vat > 0 AND l.id IS NULL;
 """
 
 
