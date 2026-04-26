@@ -176,6 +176,7 @@ class Database:
                                 'model',     pc.model,
                                 'drive',     pc.drive,
                                 'engine',    pc.engine,
+                                'fuel_type', pc.fuel_type,
                                 'year_from', pc.year_from,
                                 'year_to',   pc.year_to
                             ) ORDER BY pc.model

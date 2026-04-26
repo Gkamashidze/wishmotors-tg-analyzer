@@ -474,6 +474,9 @@ CREATE TABLE IF NOT EXISTS product_compatibility (
   year_to    INTEGER
 );
 CREATE INDEX IF NOT EXISTS product_compatibility_product_id_idx ON product_compatibility(product_id);
+
+-- Fuel type field for compatibility entries (ბენზინი / დიზელი / ჰიბრიდი).
+ALTER TABLE product_compatibility ADD COLUMN IF NOT EXISTS fuel_type TEXT;
 """
 
 

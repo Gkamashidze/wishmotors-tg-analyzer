@@ -39,6 +39,8 @@ def _fmt_compat(compat_entries, notes: Optional[str]) -> str:
             parts.append(c["drive"])
         if c.get("engine"):
             parts.append(c["engine"])
+        if c.get("fuel_type"):
+            parts.append(c["fuel_type"])
         if c.get("year_from") or c.get("year_to"):
             parts.append(f"{c.get('year_from', '?')}–{c.get('year_to', '?')}")
         lines.append(" · ".join(p for p in parts if p))

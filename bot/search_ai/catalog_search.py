@@ -51,6 +51,8 @@ def _build_catalog_text(products: List[dict]) -> str:
                 c_str += f" {c['drive']}"
             if c.get("engine"):
                 c_str += f" {c['engine']}"
+            if c.get("fuel_type"):
+                c_str += f" {c['fuel_type']}"
             if c.get("year_from") or c.get("year_to"):
                 c_str += f" {c.get('year_from', '?')}–{c.get('year_to', '?')}"
             compat_parts.append(c_str)

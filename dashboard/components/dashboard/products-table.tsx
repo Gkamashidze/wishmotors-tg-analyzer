@@ -119,16 +119,18 @@ const SSANGYONG_MODELS = [
 ] as const;
 
 const DRIVE_OPTIONS = ["წინა", "უკანა", "4x4"] as const;
+const FUEL_OPTIONS = ["ბენზინი", "დიზელი", "ჰიბრიდი"] as const;
 
 interface NewCompatState {
   model: string;
   drive: string;
   engine: string;
+  fuel_type: string;
   year_from: string;
   year_to: string;
 }
 
-const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", year_from: "", year_to: "" };
+const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", fuel_type: "", year_from: "", year_to: "" };
 
 // ─── Product edit / add state ─────────────────────────────────────────────────
 
@@ -443,6 +445,7 @@ export function ProductsTable({
           model: newCompat.model,
           drive: newCompat.drive || null,
           engine: newCompat.engine.trim() || null,
+          fuel_type: newCompat.fuel_type || null,
           year_from: newCompat.year_from ? Number(newCompat.year_from) : null,
           year_to: newCompat.year_to ? Number(newCompat.year_to) : null,
         }),
@@ -1187,6 +1190,7 @@ export function ProductsTable({
                         <span className="font-medium">{c.model}</span>
                         {c.drive && <span className="ml-1.5 text-muted-foreground">· {c.drive}</span>}
                         {c.engine && <span className="ml-1.5 text-muted-foreground">· {c.engine}</span>}
+                        {c.fuelType && <span className="ml-1.5 text-muted-foreground">· {c.fuelType}</span>}
                         {(c.yearFrom || c.yearTo) && (
                           <span className="ml-1.5 text-muted-foreground">
                             · {c.yearFrom ?? "?"} – {c.yearTo ?? "?"}
@@ -1236,6 +1240,16 @@ export function ProductsTable({
                   value={newCompat.engine}
                   onChange={(e) => setNewCompat((p) => ({ ...p, engine: e.target.value }))}
                   placeholder="სურვილისამებრ"
+                />
+                <Select
+                  id="nc-fuel"
+                  label="საწვავი"
+                  value={newCompat.fuel_type}
+                  onChange={(e) => setNewCompat((p) => ({ ...p, fuel_type: e.target.value }))}
+                  options={[
+                    { value: "", label: "— ყველა —" },
+                    ...FUEL_OPTIONS.map((f) => ({ value: f, label: f })),
+                  ]}
                 />
                 <div className="flex gap-1.5 items-end">
                   <Input

@@ -446,6 +446,7 @@ export type CompatibilityRow = {
   model: string;
   drive: string | null;
   engine: string | null;
+  fuelType: string | null;
   yearFrom: number | null;
   yearTo: number | null;
 };
