@@ -48,11 +48,11 @@ export default async function DashboardPage() {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const [summary, series, topSelling, topProfitable, expenseCategories] = await Promise.all([
-    getDashboardSummaryRange(monthStart, today).catch((err) => {
+    getDashboardSummaryRange(monthStart, today, "all").catch((err) => {
       console.error("[dashboard] getDashboardSummaryRange failed:", err);
       return DEFAULT_SUMMARY;
     }),
-    getDailySeries(30).catch((err) => {
+    getDailySeries(30, "all").catch((err) => {
       console.error("[dashboard] getDailySeries failed:", err);
       return [];
     }),

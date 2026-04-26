@@ -2,6 +2,8 @@ import "server-only";
 import { unstable_noStore as noStore } from "next/cache";
 import { query, queryOne } from "./db";
 
+export type SellerFilter = "all" | "llc" | "individual";
+
 export type DashboardSummary = {
   totalSales: number;
   totalExpenses: number;
@@ -113,7 +115,12 @@ export type DailyPoint = {
   profit: number;
 };
 
-export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
+export async function getDailySeries(
+  days: number = 30,
+  sellerType: SellerFilter = "all",
+): Promise<DailyPoint[]> {
+  const sellerParam = sellerType === "all" ? null : sellerType;
+
   const rows = await query<{
     day: Date;
     sales: string | null;
@@ -136,7 +143,7 @@ export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
       FROM sales
       WHERE sold_at >= date_trunc('day', NOW()) - (($1::int - 1) || ' days')::interval
         AND status != 'returned'
-        AND seller_type = 'llc'
+        AND ($2::text IS NULL OR seller_type = $2::text)
       GROUP BY 1
     ),
     exp_per_day AS (
@@ -155,7 +162,7 @@ export async function getDailySeries(days: number = 30): Promise<DailyPoint[]> {
     LEFT JOIN exp_per_day   e ON e.day = day_series.day
     ORDER BY day_series.day ASC
     `,
-    [days],
+    [days, sellerParam],
   );
 
   return rows.map((r) => {
@@ -437,7 +444,10 @@ export type ProductRow = {
 export async function getDashboardSummaryRange(
   from: Date,
   to: Date,
+  sellerType: SellerFilter = "all",
 ): Promise<DashboardSummary> {
+  const sellerParam = sellerType === "all" ? null : sellerType;
+
   const row = await queryOne<{
     total_sales: string | null;
     total_cogs: string | null;
@@ -463,7 +473,7 @@ export async function getDashboardSummaryRange(
         WHERE sold_at >= $1::timestamptz
           AND sold_at <  $2::timestamptz + INTERVAL '1 day'
           AND status != 'returned'
-          AND seller_type = 'llc'
+          AND ($3::text IS NULL OR seller_type = $3::text)
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS total_expenses
@@ -498,7 +508,7 @@ export async function getDashboardSummaryRange(
       ord_agg.orders_cancelled
     FROM sales_agg, exp_agg, ord_agg
     `,
-    [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)],
+    [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10), sellerParam],
   );
 
   const totalSales = Number(row?.total_sales ?? 0);

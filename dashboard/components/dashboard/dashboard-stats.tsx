@@ -9,7 +9,7 @@ import { startOfMonth, format } from "date-fns";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { DateRangePicker, type DateRange } from "@/components/dashboard/date-range-picker";
 import { formatGEL, formatNumber } from "@/lib/utils";
-import type { DashboardSummary } from "@/lib/queries";
+import type { DashboardSummary, SellerFilter } from "@/lib/queries";
 import type { FinancialMetricsData as FinancialMetricsResponse } from "@/lib/financial-queries";
 
 interface DashboardStatsProps {
@@ -25,24 +25,31 @@ const EMPTY_METRICS: FinancialMetricsResponse = {
   totalInventoryValueGel: 0,
 };
 
+const SELLER_OPTIONS: { value: SellerFilter; label: string }[] = [
+  { value: "all",        label: "ყველა"  },
+  { value: "llc",        label: "შპს"    },
+  { value: "individual", label: "ფზ"     },
+];
+
 export function DashboardStats({ initial }: DashboardStatsProps) {
   const today = new Date();
   const [range, setRange] = useState<DateRange>({
     from: startOfMonth(today),
     to: today,
   });
+  const [sellerType, setSellerType] = useState<SellerFilter>("all");
   const [summary, setSummary] = useState<DashboardSummary>(initial);
   const [metrics, setMetrics] = useState<FinancialMetricsResponse>(EMPTY_METRICS);
   const [loading, setLoading] = useState(false);
 
-  const fetchAll = useCallback(async (newRange: DateRange) => {
+  const fetchAll = useCallback(async (newRange: DateRange, seller: SellerFilter) => {
     setLoading(true);
     const from = format(newRange.from, "yyyy-MM-dd");
     const to = format(newRange.to, "yyyy-MM-dd");
     try {
       const [summaryRes, metricsRes] = await Promise.all([
-        fetch(`/api/dashboard/summary?from=${from}&to=${to}`),
-        fetch(`/api/financial-metrics?from=${from}&to=${to}`),
+        fetch(`/api/dashboard/summary?from=${from}&to=${to}&sellerType=${seller}`),
+        fetch(`/api/financial-metrics?from=${from}&to=${to}&sellerType=${seller}`),
       ]);
       if (summaryRes.ok) setSummary(await summaryRes.json());
       if (metricsRes.ok) setMetrics(await metricsRes.json());
@@ -52,16 +59,24 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
   }, []);
 
   useEffect(() => {
-    fetchAll(range);
+    fetchAll(range, sellerType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRangeChange = useCallback(
     (newRange: DateRange) => {
       setRange(newRange);
-      fetchAll(newRange);
+      fetchAll(newRange, sellerType);
     },
-    [fetchAll],
+    [fetchAll, sellerType],
+  );
+
+  const handleSellerChange = useCallback(
+    (seller: SellerFilter) => {
+      setSellerType(seller);
+      fetchAll(range, seller);
+    },
+    [fetchAll, range],
   );
 
   const netTone = summary.netProfit >= 0 ? "success" : ("destructive" as const);
@@ -74,7 +89,10 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3 pb-1">
-        <DateRangePicker value={range} onChange={handleRangeChange} defaultPreset="month" />
+        <div className="flex items-center gap-3 flex-wrap">
+          <DateRangePicker value={range} onChange={handleRangeChange} defaultPreset="month" />
+          <SellerFilterTabs value={sellerType} onChange={handleSellerChange} />
+        </div>
         {loading && (
           <span className="text-xs text-muted-foreground animate-pulse">
             მოიტვირთება...
@@ -168,6 +186,33 @@ export function DashboardStats({ initial }: DashboardStatsProps) {
           tooltip="რეალურად ხელზე არსებული ფული — შემოსულობებს მინუს ხარჯები და მარაგებში გადახდილი თანხა."
         />
       </section>
+    </div>
+  );
+}
+
+function SellerFilterTabs({
+  value,
+  onChange,
+}: {
+  value: SellerFilter;
+  onChange: (v: SellerFilter) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-border bg-muted p-0.5 gap-0.5">
+      {SELLER_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={[
+            "px-3 py-1 text-xs font-medium rounded-md transition-colors",
+            value === opt.value
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }

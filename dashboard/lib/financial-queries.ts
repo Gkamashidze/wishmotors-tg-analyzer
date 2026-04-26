@@ -1,5 +1,6 @@
 import "server-only";
 import { queryOne, query } from "./db";
+import type { SellerFilter } from "./queries";
 
 export type FinancialMetricsData = {
   inventoryTurnoverRatio: number;
@@ -24,7 +25,10 @@ export type ProductMetricRow = {
 export async function getGlobalFinancialMetrics(
   from: Date,
   to: Date,
+  sellerType: SellerFilter = "all",
 ): Promise<FinancialMetricsData> {
+  const sellerParam = sellerType === "all" ? null : sellerType;
+
   const row = await queryOne<{
     revenue: string;
     cogs: string;
@@ -46,6 +50,7 @@ export async function getGlobalFinancialMetrics(
         WHERE sold_at >= $1::timestamptz
           AND sold_at <  $2::timestamptz + INTERVAL '1 day'
           AND status != 'returned'
+          AND ($3::text IS NULL OR seller_type = $3::text)
       ),
       exp_agg AS (
         SELECT COALESCE(SUM(amount), 0) AS expenses
@@ -66,7 +71,9 @@ export async function getGlobalFinancialMetrics(
       ),
       alltime_sales AS (
         SELECT COALESCE(SUM(unit_price * quantity), 0) AS total_rev
-        FROM sales WHERE status != 'returned'
+        FROM sales
+        WHERE status != 'returned'
+          AND ($3::text IS NULL OR seller_type = $3::text)
       ),
       alltime_exp AS (
         SELECT COALESCE(SUM(amount), 0) AS total_exp FROM expenses
@@ -79,7 +86,7 @@ export async function getGlobalFinancialMetrics(
     FROM sales_agg s, exp_agg e, returns_agg r, inv_val i,
          alltime_sales at, alltime_exp ae
     `,
-    [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)],
+    [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10), sellerParam],
   );
 
   const revenue = Number(row?.revenue ?? 0);
