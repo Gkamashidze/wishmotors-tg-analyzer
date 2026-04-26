@@ -24,6 +24,7 @@ interface EditState {
   min_stock: string;
   unit_price: string;
   unit: string;
+  compatibility_notes: string;
 }
 
 function rowToEdit(r: ProductRow): EditState {
@@ -34,6 +35,7 @@ function rowToEdit(r: ProductRow): EditState {
     min_stock: String(r.minStock),
     unit_price: String(r.unitPrice),
     unit: r.unit,
+    compatibility_notes: r.compatibilityNotes ?? "",
   };
 }
 
@@ -82,6 +84,7 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
           min_stock: Number(editState.min_stock),
           unit_price: Number(editState.unit_price),
           unit: editState.unit,
+          compatibility_notes: editState.compatibility_notes || null,
         }),
       });
       if (!res.ok) throw new Error("server error");
@@ -231,6 +234,17 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
             <div className="grid grid-cols-2 gap-3">
               <Input id="inv-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
               <Input id="inv-unit" label="ერთეული" type="text" value={editState.unit} onChange={set("unit")} placeholder="მაგ. ც, კგ, ლ" />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="inv-compat" className="text-sm font-medium">თავსებადი მოდელები</label>
+              <textarea
+                id="inv-compat"
+                rows={3}
+                value={editState.compatibility_notes}
+                onChange={(e) => setEditState((prev) => prev ? { ...prev, compatibility_notes: e.target.value } : prev)}
+                placeholder="მაგ: Toyota Camry 2006-2011, Honda Accord 2008-2012"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+              />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={closeEdit} disabled={saving} className="cursor-pointer">გაუქმება</Button>
