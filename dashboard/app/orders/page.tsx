@@ -24,7 +24,7 @@ export default async function OrdersPage() {
   return (
     <>
       <TopBar title="შეკვეთები" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         {fetchError ? (
           <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-8 text-center space-y-2">
             <p className="text-destructive font-semibold text-base">

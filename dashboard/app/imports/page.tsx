@@ -93,7 +93,7 @@ export default async function ImportsPage() {
   return (
     <>
       <TopBar title="იმპორტი" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         <Card>
           <CardHeader>
             <CardTitle>იმპორტის ისტორია</CardTitle>

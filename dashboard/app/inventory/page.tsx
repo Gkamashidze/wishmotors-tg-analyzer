@@ -12,7 +12,7 @@ export default async function InventoryPage() {
   return (
     <>
       <TopBar title="მარაგი" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         <Card>
           <CardHeader>
             <CardTitle>საწყობის მარაგი</CardTitle>

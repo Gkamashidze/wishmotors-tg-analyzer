@@ -73,7 +73,7 @@ export default async function DashboardPage() {
   return (
     <>
       <TopBar title="მთავარი დაფა" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         <DashboardStats initial={summary} />
 
         <AccountBalancesSection />
@@ -81,7 +81,7 @@ export default async function DashboardPage() {
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
             <CardHeader>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                 <div>
                   <CardTitle>ფინანსური მოძრაობა</CardTitle>
                   <CardDescription>

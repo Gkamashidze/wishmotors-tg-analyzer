@@ -105,7 +105,7 @@ export default async function DebtorsPage() {
   return (
     <>
       <TopBar title="ნისია" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
 
         {/* Summary banner */}
         <div className="flex items-center gap-4 flex-wrap">

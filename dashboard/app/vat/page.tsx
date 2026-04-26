@@ -215,7 +215,7 @@ export default function VatPage() {
   return (
     <>
       <TopBar title="დღგ-ს დეკლარაცია" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
 
         {/* Header controls */}
         <div className="flex flex-wrap items-center justify-between gap-3">

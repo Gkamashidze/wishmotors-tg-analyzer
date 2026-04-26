@@ -36,7 +36,7 @@ export default async function ImportDetailPage({ params }: Params) {
         title={isCompleted ? `იმპორტი #${importId}` : `Draft #${importId}`}
         backHref="/imports"
       />
-      <main className="p-6 space-y-6 animate-fade-in max-w-7xl">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in max-w-7xl">
         {isCompleted && (
           <div className="rounded-lg border border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
             ეს იმპორტი <strong>დასრულებულია</strong>. სტოკი განახლდა. გაუქმებისთვის

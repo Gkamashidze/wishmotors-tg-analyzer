@@ -19,7 +19,7 @@ export default async function ProductsPage({
   return (
     <>
       <TopBar title="პროდუქცია" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         <Card className="border-amber-200 dark:border-amber-900">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

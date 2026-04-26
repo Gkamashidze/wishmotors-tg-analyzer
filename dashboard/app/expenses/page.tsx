@@ -12,7 +12,7 @@ export default async function ExpensesPage() {
   return (
     <>
       <TopBar title="ხარჯები" />
-      <main className="p-6 space-y-6 animate-fade-in">
+      <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
         <Card>
           <CardHeader>
             <CardTitle>ხარჯების ჟურნალი</CardTitle>
