@@ -166,7 +166,7 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
               <TableHead className="text-right">მარაგი</TableHead>
               <TableHead className="text-right">მინ.</TableHead>
               <TableHead>სტატუსი</TableHead>
-              <TableHead className="text-right">ფასი</TableHead>
+              <TableHead className="text-right">გასაყიდი ფასი</TableHead>
               <TableHead>ერთ.</TableHead>
               <TableHead>თარიღი</TableHead>
               <TableHead className="w-20 text-right">მოქ.</TableHead>
@@ -229,7 +229,7 @@ export function InventoryTable({ rows }: { rows: ProductRow[] }) {
               <Input id="inv-min" label="მინიმალური მარაგი" type="number" min="0" value={editState.min_stock} onChange={set("min_stock")} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Input id="inv-price" label="ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
+              <Input id="inv-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
               <Input id="inv-unit" label="ერთეული" type="text" value={editState.unit} onChange={set("unit")} placeholder="მაგ. ც, კგ, ლ" />
             </div>
             <div className="flex justify-end gap-2 pt-2">
