@@ -462,6 +462,18 @@ LEFT JOIN ledger l
   ON l.reference_id = 'vat_reclass:sale:' || s.id::text
   AND l.account_code = '3330'
 WHERE s.seller_type = 'llc' AND s.output_vat > 0 AND l.id IS NULL;
+
+-- Structured vehicle compatibility per product (model, drive, engine, year range).
+CREATE TABLE IF NOT EXISTS product_compatibility (
+  id         SERIAL PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  model      TEXT NOT NULL,
+  drive      TEXT,
+  engine     TEXT,
+  year_from  INTEGER,
+  year_to    INTEGER
+);
+CREATE INDEX IF NOT EXISTS product_compatibility_product_id_idx ON product_compatibility(product_id);
 """
 
 

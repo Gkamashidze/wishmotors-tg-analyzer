@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { ViewField, ViewFieldGrid } from "@/components/ui/view-field";
-import type { ProductRow } from "@/lib/queries";
+import type { ProductRow, CompatibilityRow } from "@/lib/queries";
 import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 import type { ProductMetricRow } from "@/lib/financial-queries";
 import { formatGEL, formatNumber, cn } from "@/lib/utils";
@@ -104,6 +104,31 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
     </div>
   );
 }
+
+// ─── Compatibility constants ──────────────────────────────────────────────────
+
+const SSANGYONG_MODELS = [
+  "Korando Sport",
+  "Korando C",
+  "Rexton",
+  "Turismo",
+  "G4 Rexton",
+  "Korando II",
+  "Musso (GRAND)",
+  "Tivoli",
+] as const;
+
+const DRIVE_OPTIONS = ["წინა", "უკანა", "4x4"] as const;
+
+interface NewCompatState {
+  model: string;
+  drive: string;
+  engine: string;
+  year_from: string;
+  year_to: string;
+}
+
+const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", year_from: "", year_to: "" };
 
 // ─── Product edit / add state ─────────────────────────────────────────────────
 
@@ -207,6 +232,12 @@ export function ProductsTable({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Compatibility entries state
+  const [compatEntries, setCompatEntries] = useState<CompatibilityRow[]>([]);
+  const [compatLoading, setCompatLoading] = useState(false);
+  const [newCompat, setNewCompat] = useState<NewCompatState>(DEFAULT_NEW_COMPAT);
+  const [compatAdding, setCompatAdding] = useState(false);
 
   // Add product wizard state
   const [isAdding, setIsAdding] = useState(false);
@@ -384,12 +415,52 @@ export function ProductsTable({
   // ── Product edit/delete ─────────────────────────────────────────────────────
 
   const openEdit = useCallback((r: ProductRow) => {
-    setEditRow(r); setEditState(rowToEdit(r));
+    setEditRow(r);
+    setEditState(rowToEdit(r));
+    setCompatEntries([]);
+    setNewCompat(DEFAULT_NEW_COMPAT);
+    setCompatLoading(true);
+    fetch(`/api/products/${r.id}/compatibility`)
+      .then((res) => res.json())
+      .then((data: CompatibilityRow[]) => setCompatEntries(data))
+      .catch(() => {})
+      .finally(() => setCompatLoading(false));
   }, []);
 
   const closeEdit = useCallback(() => {
     setEditRow(null); setEditState(null); setSaveError(null);
+    setCompatEntries([]); setNewCompat(DEFAULT_NEW_COMPAT);
   }, []);
+
+  const handleAddCompat = useCallback(async () => {
+    if (!editRow || !newCompat.model) return;
+    setCompatAdding(true);
+    try {
+      const res = await fetch(`/api/products/${editRow.id}/compatibility`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: newCompat.model,
+          drive: newCompat.drive || null,
+          engine: newCompat.engine.trim() || null,
+          year_from: newCompat.year_from ? Number(newCompat.year_from) : null,
+          year_to: newCompat.year_to ? Number(newCompat.year_to) : null,
+        }),
+      });
+      if (!res.ok) return;
+      const created = await res.json() as CompatibilityRow;
+      setCompatEntries((prev) => [...prev, created]);
+      setNewCompat(DEFAULT_NEW_COMPAT);
+    } finally {
+      setCompatAdding(false);
+    }
+  }, [editRow, newCompat]);
+
+  const handleDeleteCompat = useCallback(async (compatId: number) => {
+    if (!editRow) return;
+    await fetch(`/api/products/${editRow.id}/compatibility/${compatId}`, { method: "DELETE" });
+    setCompatEntries((prev) => prev.filter((c) => c.id !== compatId));
+  }, [editRow]);
 
   const handleSave = useCallback(async () => {
     if (!editRow || !editState) return;
@@ -1101,13 +1172,112 @@ export function ProductsTable({
                 ]}
               />
             </div>
+            {/* Structured compatibility */}
+            <div className="space-y-2 rounded-xl border border-border p-3">
+              <p className="text-sm font-medium">თავსებადი მოდელები</p>
+
+              {/* Existing entries */}
+              {compatLoading ? (
+                <p className="text-xs text-muted-foreground">იტვირთება...</p>
+              ) : compatEntries.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {compatEntries.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-1.5 text-sm">
+                      <span>
+                        <span className="font-medium">{c.model}</span>
+                        {c.drive && <span className="ml-1.5 text-muted-foreground">· {c.drive}</span>}
+                        {c.engine && <span className="ml-1.5 text-muted-foreground">· {c.engine}</span>}
+                        {(c.yearFrom || c.yearTo) && (
+                          <span className="ml-1.5 text-muted-foreground">
+                            · {c.yearFrom ?? "?"} – {c.yearTo ?? "?"}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteCompat(c.id)}
+                        className="text-destructive hover:text-destructive/80 text-xs font-medium cursor-pointer"
+                        aria-label="წაშლა"
+                      >
+                        წაშლა
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">ჩანაწერი არ არის</p>
+              )}
+
+              {/* Add new entry form */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Select
+                  id="nc-model"
+                  label="მოდელი *"
+                  value={newCompat.model}
+                  onChange={(e) => setNewCompat((p) => ({ ...p, model: e.target.value }))}
+                  options={[
+                    { value: "", label: "— აირჩიეთ —" },
+                    ...SSANGYONG_MODELS.map((m) => ({ value: m, label: m })),
+                  ]}
+                />
+                <Select
+                  id="nc-drive"
+                  label="წამყვანი"
+                  value={newCompat.drive}
+                  onChange={(e) => setNewCompat((p) => ({ ...p, drive: e.target.value }))}
+                  options={[
+                    { value: "", label: "— ყველა —" },
+                    ...DRIVE_OPTIONS.map((d) => ({ value: d, label: d })),
+                  ]}
+                />
+                <Input
+                  id="nc-engine"
+                  label="ძრავი (მაგ: 2.0, 2.7)"
+                  type="text"
+                  value={newCompat.engine}
+                  onChange={(e) => setNewCompat((p) => ({ ...p, engine: e.target.value }))}
+                  placeholder="სურვილისამებრ"
+                />
+                <div className="flex gap-1.5 items-end">
+                  <Input
+                    id="nc-yfrom"
+                    label="წელი: დან"
+                    type="number"
+                    min="1990"
+                    max="2030"
+                    value={newCompat.year_from}
+                    onChange={(e) => setNewCompat((p) => ({ ...p, year_from: e.target.value }))}
+                    placeholder="2008"
+                  />
+                  <Input
+                    id="nc-yto"
+                    label="მდე"
+                    type="number"
+                    min="1990"
+                    max="2030"
+                    value={newCompat.year_to}
+                    onChange={(e) => setNewCompat((p) => ({ ...p, year_to: e.target.value }))}
+                    placeholder="2014"
+                  />
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAddCompat}
+                disabled={!newCompat.model || compatAdding}
+                className="cursor-pointer w-full"
+              >
+                {compatAdding ? "ემატება..." : "+ დამატება"}
+              </Button>
+            </div>
+
             <Input
               id="prod-compat"
-              label="თავსებადობა / დამატ. ინფორმაცია"
+              label="დამატებითი შენიშვნა"
               type="text"
               value={editState.compatibility_notes}
               onChange={set("compatibility_notes")}
-              placeholder="მაგ: Toyota Corolla 2008–2015, 1.6L"
+              placeholder="სხვა ინფო (სურვილისამებრ)"
             />
             {saveError && (
               <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">

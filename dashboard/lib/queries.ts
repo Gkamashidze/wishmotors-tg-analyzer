@@ -441,6 +441,15 @@ export type ProductRow = {
   createdAt: string;
 };
 
+export type CompatibilityRow = {
+  id: number;
+  model: string;
+  drive: string | null;
+  engine: string | null;
+  yearFrom: number | null;
+  yearTo: number | null;
+};
+
 export async function getDashboardSummaryRange(
   from: Date,
   to: Date,
