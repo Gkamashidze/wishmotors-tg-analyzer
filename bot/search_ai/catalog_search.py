@@ -100,6 +100,14 @@ async def search_catalog(query: str, products: List[dict]) -> List[int]:
 
     first = response.content[0]
     raw = first.text.strip() if hasattr(first, "text") else ""
+
+    # Strip markdown code fences if Claude wrapped the response
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
     try:
         ids = json.loads(raw)
         if isinstance(ids, list):
