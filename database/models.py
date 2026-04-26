@@ -415,6 +415,11 @@ CREATE INDEX IF NOT EXISTS idx_vat_ledger_reference  ON vat_ledger(reference_id)
 -- explicit category land on 'general' rather than NULL.
 ALTER TABLE expenses ALTER COLUMN category SET DEFAULT 'general';
 UPDATE expenses SET category = 'general' WHERE category IS NULL OR category = '';
+
+-- Normalise seller_type: wizard previously stored 'company' instead of 'llc'.
+-- This one-time back-fill ensures the VAT dashboard (which filters on 'llc')
+-- picks up all historic შპს sales correctly.
+UPDATE sales SET seller_type = 'llc' WHERE seller_type = 'company';
 """
 
 
