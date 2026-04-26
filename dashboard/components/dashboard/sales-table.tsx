@@ -257,7 +257,7 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
               <TableHead className="text-right">რ-ბა</TableHead>
               <TableHead className="text-right">ფასი</TableHead>
               <TableHead className="text-right">ჯამი</TableHead>
-              <TableHead className="text-right">ღირ.</TableHead>
+              <TableHead className="text-right">თვითღ.</TableHead>
               <TableHead className="text-right">მოგება</TableHead>
               <TableHead className="text-right">დღგ</TableHead>
               <TableHead>გადახდა</TableHead>
@@ -282,6 +282,9 @@ export function SalesTable({ rows, products }: { rows: SaleRow[]; products: Prod
                     <TableCell className="tabular-nums text-muted-foreground text-xs">{idx + 1}</TableCell>
                     <TableCell className="font-medium">
                       {r.productName ?? <span className="text-muted-foreground italic">—</span>}
+                      {r.oemCode && (
+                        <div className="text-xs text-muted-foreground font-normal">{r.oemCode}</div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatNumber(r.quantity)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatGEL(r.unitPrice)}</TableCell>
