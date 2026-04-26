@@ -165,7 +165,11 @@ function MonthTable({ months }: { months: VatMonthRow[] }) {
                     <td
                       className={cn(
                         "px-4 py-3 text-right font-semibold tabular-nums",
-                        row.net_payable > 0 ? "text-amber-600" : "text-muted-foreground",
+                        row.net_payable > 0
+                          ? "text-amber-600"
+                          : row.net_payable < 0
+                          ? "text-green-600"
+                          : "text-muted-foreground",
                       )}
                     >
                       {fmt(row.net_payable)} ₾
@@ -286,8 +290,8 @@ export default function VatPage() {
               title="გადასარიცხი დღგ (სახელმწიფოში)"
               amount={totals.net_payable}
               icon={Wallet}
-              colorClass={totals.net_payable > 0 ? "text-amber-600" : "text-muted-foreground"}
-              subtitle="Output − Input = სანიაღვრო"
+              colorClass={totals.net_payable > 0 ? "text-amber-600" : totals.net_payable < 0 ? "text-green-600" : "text-muted-foreground"}
+              subtitle={totals.net_payable < 0 ? "ჩასათვლელი > გადასახდელი — კრედიტი" : "Output − Input = სანიაღვრო"}
             />
           </div>
         )}

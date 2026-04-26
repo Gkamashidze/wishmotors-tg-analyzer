@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
         month:       r.month,
         output_vat:  outputVat,
         input_vat:   inputVat,
-        net_payable: Math.max(0, outputVat - inputVat),
+        net_payable: outputVat - inputVat,
       };
     });
 
