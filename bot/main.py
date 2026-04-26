@@ -31,6 +31,7 @@ from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
 from bot.handlers.period_report import period_router
 from bot.handlers.sales import sales_router
+from bot.handlers.search import search_router
 from bot.reports.formatter import format_weekly_report
 from database.db import Database
 
@@ -202,6 +203,7 @@ async def main() -> None:
     dp.include_router(orders_router)
     dp.include_router(period_router)
     dp.include_router(commands_router)
+    dp.include_router(search_router)  # last: catches unhandled DM text as search
 
     tz = pytz.timezone(config.TIMEZONE)
     scheduler = AsyncIOScheduler(timezone=tz)

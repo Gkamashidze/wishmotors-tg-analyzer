@@ -162,6 +162,34 @@ class Database:
             rows = await conn.fetch("SELECT * FROM products ORDER BY name")
             return self._rows(rows)  # type: ignore[return-value]
 
+    async def get_catalog_for_search(self) -> List[dict]:
+        """Return all products with structured compatibility entries for AI search."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    p.id, p.name, p.oem_code, p.current_stock, p.unit_price,
+                    p.unit, p.category, p.compatibility_notes,
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'model',     pc.model,
+                                'drive',     pc.drive,
+                                'engine',    pc.engine,
+                                'year_from', pc.year_from,
+                                'year_to',   pc.year_to
+                            ) ORDER BY pc.model
+                        ) FILTER (WHERE pc.id IS NOT NULL),
+                        '[]'::json
+                    ) AS compat_entries
+                FROM products p
+                LEFT JOIN product_compatibility pc ON pc.product_id = p.id
+                GROUP BY p.id
+                ORDER BY p.name
+                """
+            )
+            return [dict(r) for r in rows]
+
     async def get_low_stock_products(self) -> List[ProductRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
