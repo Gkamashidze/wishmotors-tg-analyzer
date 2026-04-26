@@ -801,8 +801,16 @@ import { PRODUCTS_PAGE_SIZE } from "./constants";
 export async function getProductsPaged(
   page: number,
   limit: number = PRODUCTS_PAGE_SIZE,
+  search?: string,
 ): Promise<{ rows: ProductRow[]; total: number }> {
   const offset = (Math.max(1, page) - 1) * limit;
+  const q = search?.trim() ?? "";
+  const params: unknown[] = q
+    ? [limit, offset, `%${q}%`]
+    : [limit, offset];
+  const whereClause = q
+    ? `WHERE name ILIKE $3 OR oem_code ILIKE $3 OR category ILIKE $3 OR compatibility_notes ILIKE $3`
+    : "";
   const rows = await query<{
     id: number;
     name: string;
@@ -820,9 +828,10 @@ export async function getProductsPaged(
             category, compatibility_notes, created_at,
             COUNT(*) OVER() AS total_count
      FROM products
+     ${whereClause}
      ORDER BY name ASC, created_at DESC
      LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    params,
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;

@@ -10,11 +10,12 @@ export const revalidate = 0;
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
 }) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1));
-  const { rows: products, total } = await getProductsPaged(page);
+  const search = params.search ?? "";
+  const { rows: products, total } = await getProductsPaged(page, undefined, search);
 
   return (
     <>
@@ -43,7 +44,7 @@ export default async function ProductsPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ProductsTable rows={products} total={total} page={page} />
+            <ProductsTable rows={products} total={total} page={page} search={search} />
           </CardContent>
         </Card>
       </main>

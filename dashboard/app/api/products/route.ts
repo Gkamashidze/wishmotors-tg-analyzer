@@ -5,9 +5,25 @@ import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const negativeOnly = searchParams.get("negativeStock") === "true";
+  const search = searchParams.get("search")?.trim() ?? "";
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? PRODUCTS_PAGE_SIZE)));
   const offset = (page - 1) * limit;
+
+  const conditions: string[] = [];
+  const params: unknown[] = [limit, offset];
+  let p = 3;
+
+  if (negativeOnly) {
+    conditions.push("current_stock < 0");
+  }
+  if (search) {
+    conditions.push(`(name ILIKE $${p} OR oem_code ILIKE $${p} OR category ILIKE $${p} OR compatibility_notes ILIKE $${p})`);
+    params.push(`%${search}%`);
+    p++;
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const rows = await query<{
     id: number;
@@ -26,10 +42,10 @@ export async function GET(req: NextRequest) {
             category, compatibility_notes, created_at,
             COUNT(*) OVER() AS total_count
      FROM products
-     ${negativeOnly ? "WHERE current_stock < 0" : ""}
+     ${where}
      ORDER BY name ASC, created_at DESC
      LIMIT $1 OFFSET $2`,
-    [limit, offset],
+    params,
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus } from "lucide-react";
 import {
@@ -180,13 +180,16 @@ export function ProductsTable({
   rows,
   total,
   page,
+  search: initialSearch = "",
 }: {
   rows: ProductRow[];
   total: number;
   page: number;
+  search?: string;
 }) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
 
   useEffect(() => {
@@ -243,8 +246,11 @@ export function ProductsTable({
   const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE));
 
   const goToPage = useCallback((p: number) => {
-    router.push(`?page=${p}`);
-  }, [router]);
+    const params = new URLSearchParams();
+    params.set("page", String(p));
+    if (search.trim()) params.set("search", search.trim());
+    router.push(`?${params.toString()}`);
+  }, [router, search]);
 
   // ── Load transactions when viewRow changes ──────────────────────────────────
 
@@ -280,16 +286,21 @@ export function ProductsTable({
     return () => { cancelled = true; };
   }, [viewRow?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Filtered rows (client-side within current page) ─────────────────────────
+  // ── Search (server-side — updates URL, triggers server re-render) ─────────────
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      [r.name, r.oemCode ?? "", r.category ?? "", r.compatibilityNotes ?? ""]
-        .join(" ").toLowerCase().includes(q),
-    );
-  }, [rows, search]);
+  const handleSearch = useCallback((value: string) => {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      if (value.trim()) params.set("search", value.trim());
+      router.push(`?${params.toString()}`);
+    }, 350);
+  }, [router]);
+
+  // rows are already filtered server-side; no client-side filtering needed
+  const filtered = useMemo(() => rows, [rows]);
 
   // ── Add product ─────────────────────────────────────────────────────────────
 
@@ -360,6 +371,7 @@ export function ProductsTable({
       closeAdd();
       router.push("?page=1");
       router.refresh();
+
     } finally {
       setAddSaving(false);
     }
@@ -576,7 +588,7 @@ export function ProductsTable({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
           placeholder="ძიება (დასახელება, OEM, კატეგორია...)"
           aria-label="ძიება პროდუქციაში"
           className="h-9 w-80 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
