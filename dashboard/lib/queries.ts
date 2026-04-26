@@ -438,6 +438,7 @@ export type ProductRow = {
   unit: string;
   category: string | null;
   compatibilityNotes: string | null;
+  compatCount: number;
   createdAt: string;
 };
 
@@ -788,13 +789,19 @@ export async function getProducts(): Promise<ProductRow[]> {
     unit: string;
     category: string | null;
     compatibility_notes: string | null;
+    compat_count: string;
     created_at: Date;
   }>(
     `
-    SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit,
-           category, compatibility_notes, created_at
-    FROM products
-    ORDER BY name ASC, created_at DESC
+    WITH cc AS (
+      SELECT product_id, COUNT(*) AS cnt FROM product_compatibility GROUP BY product_id
+    )
+    SELECT p.id, p.name, p.oem_code, p.current_stock, p.min_stock, p.unit_price, p.unit,
+           p.category, p.compatibility_notes, p.created_at,
+           COALESCE(cc.cnt, 0) AS compat_count
+    FROM products p
+    LEFT JOIN cc ON cc.product_id = p.id
+    ORDER BY p.name ASC, p.created_at DESC
 `,
   );
 
@@ -808,6 +815,7 @@ export async function getProducts(): Promise<ProductRow[]> {
     unit: r.unit,
     category: r.category,
     compatibilityNotes: r.compatibility_notes,
+    compatCount: Number(r.compat_count),
     createdAt:
       r.created_at instanceof Date
         ? r.created_at.toISOString()
@@ -829,7 +837,7 @@ export async function getProductsPaged(
     ? [limit, offset, `%${q}%`]
     : [limit, offset];
   const whereClause = q
-    ? `WHERE name ILIKE $3 OR oem_code ILIKE $3 OR category ILIKE $3 OR compatibility_notes ILIKE $3`
+    ? `WHERE p.name ILIKE $3 OR p.oem_code ILIKE $3 OR p.category ILIKE $3 OR p.compatibility_notes ILIKE $3`
     : "";
   const rows = await query<{
     id: number;
@@ -841,15 +849,21 @@ export async function getProductsPaged(
     unit: string;
     category: string | null;
     compatibility_notes: string | null;
+    compat_count: string;
     created_at: Date;
     total_count: string;
   }>(
-    `SELECT id, name, oem_code, current_stock, min_stock, unit_price, unit,
-            category, compatibility_notes, created_at,
+    `WITH cc AS (
+       SELECT product_id, COUNT(*) AS cnt FROM product_compatibility GROUP BY product_id
+     )
+     SELECT p.id, p.name, p.oem_code, p.current_stock, p.min_stock, p.unit_price, p.unit,
+            p.category, p.compatibility_notes, p.created_at,
+            COALESCE(cc.cnt, 0) AS compat_count,
             COUNT(*) OVER() AS total_count
-     FROM products
+     FROM products p
+     LEFT JOIN cc ON cc.product_id = p.id
      ${whereClause}
-     ORDER BY name ASC, created_at DESC
+     ORDER BY p.name ASC, p.created_at DESC
      LIMIT $1 OFFSET $2`,
     params,
   );
@@ -866,6 +880,7 @@ export async function getProductsPaged(
       unit: r.unit,
       category: r.category,
       compatibilityNotes: r.compatibility_notes,
+      compatCount: Number(r.compat_count),
       createdAt:
         r.created_at instanceof Date
           ? r.created_at.toISOString()

@@ -170,6 +170,15 @@ class Database:
                 SELECT
                     p.id, p.name, p.oem_code, p.current_stock, p.unit_price,
                     p.unit, p.category, p.compatibility_notes,
+                    (
+                        SELECT ROUND(
+                            SUM(ib.remaining_quantity * ib.unit_cost)::numeric
+                            / NULLIF(SUM(ib.remaining_quantity), 0),
+                            2
+                        )
+                        FROM inventory_batches ib
+                        WHERE ib.product_id = p.id AND ib.remaining_quantity > 0
+                    ) AS unit_cost,
                     COALESCE(
                         json_agg(
                             json_build_object(

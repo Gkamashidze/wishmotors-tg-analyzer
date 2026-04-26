@@ -719,8 +719,14 @@ export function ProductsTable({
                   <TableCell className="text-right tabular-nums text-sm font-medium">
                     {formatGEL(r.unitPrice)}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                    {r.compatibilityNotes ?? <span className="italic">—</span>}
+                  <TableCell className="text-xs max-w-[200px] truncate">
+                    {r.compatCount > 0 ? (
+                      <span className="text-[hsl(var(--success))] font-medium">✓ {r.compatCount} ჩანაწ.</span>
+                    ) : r.compatibilityNotes ? (
+                      <span className="text-muted-foreground truncate">{r.compatibilityNotes}</span>
+                    ) : (
+                      <span className="italic text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
