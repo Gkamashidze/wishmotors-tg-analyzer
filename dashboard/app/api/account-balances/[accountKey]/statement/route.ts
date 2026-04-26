@@ -69,6 +69,48 @@ export async function GET(
     let rawRows: TxnRow[] = [];
 
     if (!isUSD) {
+      const extraClauses = accountKey === "cash_gel"
+        ? `
+         UNION ALL
+
+         SELECT
+           returned_at AS txn_date,
+           '↩ დაბრუნება #' || id::text AS description,
+           0::numeric AS credit,
+           refund_amount::numeric AS debit
+         FROM returns
+         WHERE COALESCE(refund_method, 'cash') = 'cash'
+
+         UNION ALL
+
+         SELECT
+           created_at AS txn_date,
+           '🏦 ბანკში ჩარიცხვა' AS description,
+           0::numeric AS credit,
+           amount::numeric AS debit
+         FROM cash_deposits`
+        : accountKey === "bank_gel"
+        ? `
+         UNION ALL
+
+         SELECT
+           returned_at AS txn_date,
+           '↩ დაბრუნება #' || id::text AS description,
+           0::numeric AS credit,
+           refund_amount::numeric AS debit
+         FROM returns
+         WHERE refund_method = 'bank'
+
+         UNION ALL
+
+         SELECT
+           created_at AS txn_date,
+           '🏦 სალაროდან ჩარიცხვა' AS description,
+           amount::numeric AS credit,
+           0::numeric AS debit
+         FROM cash_deposits`
+        : "";
+
       rawRows = await query<TxnRow>(
         `SELECT
            sold_at AS txn_date,
@@ -76,7 +118,7 @@ export async function GET(
            (quantity * unit_price)::numeric AS credit,
            0::numeric AS debit
          FROM sales
-         WHERE payment_method = $1
+         WHERE payment_method = $1 AND status != 'returned'
 
          UNION ALL
 
@@ -86,7 +128,7 @@ export async function GET(
            0::numeric AS credit,
            amount::numeric AS debit
          FROM expenses
-         WHERE payment_method = $1 AND is_paid = true
+         WHERE payment_method = $1 AND is_paid = true AND is_non_cash = false
 
          UNION ALL
 
@@ -107,6 +149,8 @@ export async function GET(
            0::numeric AS debit
          FROM transfers
          WHERE to_account = $2
+
+         ${extraClauses}
 
          ORDER BY txn_date ASC`,
         [pmMethod, accountKey],
