@@ -81,6 +81,7 @@ def _delete_keyboard_batch(sale_ids: list[int]) -> InlineKeyboardMarkup:
 @sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
     text = (message.text or "").strip()
+    user_id = message.from_user.id
     try:
         # Multi-line → batch handler (one customer, many items)
         if "\n" in text:
@@ -101,21 +102,30 @@ async def handle_sales_text(message: Message, db: Database) -> None:
 
         raw = parsed.raw_product
 
-        product = await db.get_product_by_oem(raw)
+        # If the message has no product identifier (e.g. "2ც 45₾"), check for a
+        # pending barcode scan and inject its OEM code + name.
+        from bot.handlers.barcode import bc_consume
+        bc = bc_consume(user_id) if not raw else None
+        if bc:
+            raw = bc["oem"]
+
+        product = await db.get_product_by_oem(raw) if raw else None
         if not product and raw:
             product = await db.get_product_by_partial_oem(raw)
-        if not product:
+        if not product and raw:
             product = await db.get_product_by_name(raw)
 
         if not product:
             if parsed.is_return:
                 await message.bot.send_message(
-                    chat_id=message.from_user.id,
-                    text=f"⚠️ პროდუქტი <b>{html.escape(raw)}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
+                    chat_id=user_id,
+                    text=f"⚠️ პროდუქტი <b>{html.escape(raw or '')}</b> ვერ მოიძებნა. დაბრუნება ვერ ჩაიწერება.",
                     parse_mode=_PARSE,
                 )
                 return
-            await _record_sale_freeform(message, db, raw, parsed)
+            # Use barcode-suggested name when available, otherwise fall back to raw text
+            display_name = (bc["name_ka"] or bc["name_en"]) if bc else None
+            await _record_sale_freeform(message, db, display_name or raw or text, parsed)
             return
 
         if parsed.is_return:

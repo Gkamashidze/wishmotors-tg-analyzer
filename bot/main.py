@@ -25,6 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import config
 from bot.financial_ai import generate_weekly_advice
 from bot.handlers.addorder import addorder_router
+from bot.handlers.barcode import barcode_router
 from database.audit_log import AuditLogger
 from bot.handlers.commands import commands_router
 from bot.handlers.wizard import wizard_router
@@ -199,6 +200,7 @@ async def main() -> None:
 
     dp.include_router(wizard_router)
     dp.include_router(addorder_router)
+    dp.include_router(barcode_router)
     dp.include_router(sales_router)
     dp.include_router(orders_router)
     dp.include_router(period_router)

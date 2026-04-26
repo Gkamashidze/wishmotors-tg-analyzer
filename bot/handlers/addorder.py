@@ -24,12 +24,14 @@ the wizard. State is always cleared on:
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
+from io import BytesIO
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from aiogram import F, Router
+from aiogram import F, Router, Bot
 from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -339,7 +341,87 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Step 1: OEM code input ──────────────────────────────────────────────────
+# ─── Step 1a: OEM via barcode photo ──────────────────────────────────────────
+
+@addorder_router.message(AddOrderWizard.oem, IsAdmin(), _PRIVATE, F.photo)
+async def on_oem_photo(message: Message, state: FSMContext, bot: Bot) -> None:
+    """Decode barcode from a photo at the OEM step, then extract part name."""
+    from bot.barcode.decoder import decode_barcode, extract_part_info
+
+    photo = message.photo[-1]
+    file_info = await bot.get_file(photo.file_id)
+    buf = BytesIO()
+    await bot.download_file(file_info.file_path, destination=buf)
+    image_bytes = buf.getvalue()
+
+    oem = await asyncio.get_running_loop().run_in_executor(None, decode_barcode, image_bytes)
+
+    if not oem:
+        await message.answer(
+            "❌ შტრიხკოდი ვერ წაიკითხა. ჩაწერე OEM კოდი ხელით:",
+            parse_mode=_PARSE,
+        )
+        return
+
+    oem_clean = oem.strip()
+    if not _OEM_RE.match(oem_clean):
+        await message.answer(
+            f"⚠️ შტრიხკოდი წაიკითხა (<code>{_e(oem_clean)}</code>), "
+            "მაგრამ OEM ფორმატი არ ემთხვევა (მინ. 4 ლათინური/ციფრი).\n"
+            "ჩაწერე OEM ხელით:",
+            parse_mode=_PARSE,
+        )
+        return
+
+    await message.answer(
+        f"📷 <b>OEM: <code>{_e(oem_clean)}</code></b> — ეტიკეტი მუშავდება...",
+        parse_mode=_PARSE,
+    )
+    await state.update_data(current_oem_code=oem_clean)
+
+    name_ka, name_en = await extract_part_info(image_bytes)
+
+    if name_ka or name_en:
+        name_full = f"{name_ka} ({name_en})" if (name_ka and name_en) else (name_ka or name_en)
+        await state.update_data(bc_suggested_name=name_ka or name_en)
+        kb = _kb(
+            [_btn("✅ კი, ასე", "ao:bc_name_yes"),
+             _btn("✎ სახელი ხელით", "ao:bc_name_manual")],
+            _CANCEL_ROW,
+        )
+        await message.answer(
+            f"📷 <b>OEM: <code>{_e(oem_clean)}</code></b>\n"
+            f"🔤 <b>{_e(name_full)}</b>\n\n"
+            "ასე ჩავწეროთ?",
+            parse_mode=_PARSE,
+            reply_markup=kb,
+        )
+    else:
+        await _ask_for_name(message, state, oem_clean)
+
+
+@addorder_router.callback_query(F.data == "ao:bc_name_yes", IsAdmin(), StateFilter(AddOrderWizard.oem))
+async def cb_ao_bc_name_yes(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    data = await state.get_data()
+    product_name = data.get("bc_suggested_name") or "უცნობი"
+    await state.update_data(current_product_name=product_name, bc_suggested_name=None)
+    await _goto_quantity(callback.message, state, product_name, edit=True)
+    await callback.answer()
+
+
+@addorder_router.callback_query(F.data == "ao:bc_name_manual", IsAdmin(), StateFilter(AddOrderWizard.oem))
+async def cb_ao_bc_name_manual(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    data = await state.get_data()
+    oem = data.get("current_oem_code") or ""
+    await state.update_data(bc_suggested_name=None)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _ask_for_name(callback.message, state, oem)
+    await callback.answer()
+
+
+# ─── Step 1b: OEM code input (text) ──────────────────────────────────────────
 
 @addorder_router.message(AddOrderWizard.oem, IsAdmin(), _PRIVATE)
 async def on_oem_input(message: Message, state: FSMContext) -> None:

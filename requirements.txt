@@ -9,3 +9,5 @@ typing-extensions==4.11.0
 redis==5.0.8
 anthropic==0.39.0
 httpx>=0.23.0,<0.28.0
+Pillow>=10.0.0
+zxingcpp>=2.2.0
