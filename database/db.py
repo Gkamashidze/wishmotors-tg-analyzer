@@ -297,8 +297,9 @@ class Database:
     ACCOUNT_CASH              = "1100"
     ACCOUNT_BANK              = "1200"
     ACCOUNT_AR                = "1400"
-    ACCOUNT_INVENTORY         = "1600"
-    ACCOUNT_ACCOUNTS_PAYABLE  = "2100"
+    ACCOUNT_INVENTORY         = "1610"
+    ACCOUNT_ACCOUNTS_PAYABLE  = "3110"
+    ACCOUNT_VAT_PAYABLE       = "3330"
     ACCOUNT_REVENUE           = "6100"
     ACCOUNT_COGS              = "7100"
     ACCOUNT_OPERATING_EXPENSE = "7400"
@@ -441,23 +442,50 @@ class Database:
         revenue: float,
         cost_amount: float,
         description: str,
+        seller_type: str = "individual",
+        output_vat: float = 0.0,
     ) -> None:
         """Post the revenue + COGS pair for one sale.
 
-        - Revenue: DR cash/bank/AR (depending on payment_method), CR 6100.
-        - COGS   : DR 7100, CR 1600 (only when cost_amount > 0).
-        Together these two pairs keep SUM(debit) == SUM(credit) for this sale.
+        For individual (ფზ) sales:
+          DR cash/bank/AR, CR 6100 (full amount)
+
+        For LLC (შპს) sales the price is VAT-inclusive, so revenue is split:
+          DR cash/bank/AR (full), CR 6100 (net = revenue/1.18), CR 3330 (VAT)
+
+        COGS: DR 7100, CR 1610 (only when cost_amount > 0).
         """
         reference = f"sale:{sale_id}"
         debit_account = cls._payment_account(payment_method)
-        await cls._post_ledger_pair(
-            conn,
-            debit_account=debit_account,
-            credit_account=cls.ACCOUNT_REVENUE,
-            amount=revenue,
-            description=description,
-            reference_id=reference,
-        )
+
+        if seller_type == "llc" and output_vat > 0:
+            net_revenue = round(revenue - output_vat, 2)
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=debit_account,
+                credit_account=cls.ACCOUNT_REVENUE,
+                amount=net_revenue,
+                description=description,
+                reference_id=reference,
+            )
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=debit_account,
+                credit_account=cls.ACCOUNT_VAT_PAYABLE,
+                amount=output_vat,
+                description=f"დღგ — {description}",
+                reference_id=reference,
+            )
+        else:
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=debit_account,
+                credit_account=cls.ACCOUNT_REVENUE,
+                amount=revenue,
+                description=description,
+                reference_id=reference,
+            )
+
         await cls._post_ledger_pair(
             conn,
             debit_account=cls.ACCOUNT_COGS,
@@ -477,6 +505,8 @@ class Database:
         revenue: float,
         cost_amount: float,
         description: str,
+        seller_type: str = "individual",
+        output_vat: float = 0.0,
     ) -> None:
         """Reverse the revenue + COGS pair for one sale (contra-entries).
 
@@ -485,14 +515,35 @@ class Database:
         """
         reference = f"sale:{sale_id}"
         credit_account = cls._payment_account(payment_method)
-        await cls._post_ledger_pair(
-            conn,
-            debit_account=cls.ACCOUNT_REVENUE,
-            credit_account=credit_account,
-            amount=revenue,
-            description=f"REVERSAL — {description}",
-            reference_id=reference,
-        )
+
+        if seller_type == "llc" and output_vat > 0:
+            net_revenue = round(revenue - output_vat, 2)
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=cls.ACCOUNT_REVENUE,
+                credit_account=credit_account,
+                amount=net_revenue,
+                description=f"REVERSAL — {description}",
+                reference_id=reference,
+            )
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=cls.ACCOUNT_VAT_PAYABLE,
+                credit_account=credit_account,
+                amount=output_vat,
+                description=f"REVERSAL დღგ — {description}",
+                reference_id=reference,
+            )
+        else:
+            await cls._post_ledger_pair(
+                conn,
+                debit_account=cls.ACCOUNT_REVENUE,
+                credit_account=credit_account,
+                amount=revenue,
+                description=f"REVERSAL — {description}",
+                reference_id=reference,
+            )
+
         await cls._post_ledger_pair(
             conn,
             debit_account=cls.ACCOUNT_INVENTORY,
@@ -846,14 +897,17 @@ class Database:
                     revenue=revenue,
                     cost_amount=cost_amount,
                     description=description,
+                    seller_type=seller_type,
+                    output_vat=output_vat,
                 )
 
-                # VAT ledger: negative = output VAT we owe to the tax authority
-                await conn.execute(
-                    """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
-                       VALUES ('sales_vat', $1, $2)""",
-                    -output_vat, f"sale:{sale_id}",
-                )
+                # VAT ledger: only for LLC (შპს) sales — output VAT owed to tax authority
+                if seller_type == "llc" and output_vat > 0:
+                    await conn.execute(
+                        """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
+                           VALUES ('sales_vat', $1, $2)""",
+                        -output_vat, f"sale:{sale_id}",
+                    )
 
         self._audit("sale_created", {
             "sale_id": sale_id,
@@ -916,6 +970,9 @@ class Database:
                         note=f"Reversal of sale #{sale_id}",
                     )
 
+                seller_type = sale_dict.get("seller_type", "individual")
+                output_vat = float(sale_dict.get("output_vat") or 0.0)
+
                 await self._reverse_sale_ledger(
                     conn,
                     sale_id=sale_id,
@@ -923,11 +980,12 @@ class Database:
                     revenue=revenue,
                     cost_amount=cost_amount,
                     description=f"Sale #{sale_id} — {label}",
+                    seller_type=seller_type,
+                    output_vat=output_vat,
                 )
 
-                # Reverse the VAT ledger entry: post positive contra-entry
-                output_vat = float(sale_dict.get("output_vat") or 0.0)
-                if output_vat > 0:
+                # Reverse the VAT ledger entry: only for LLC sales
+                if seller_type == "llc" and output_vat > 0:
                     await conn.execute(
                         """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
                            VALUES ('sales_vat', $1, $2)""",

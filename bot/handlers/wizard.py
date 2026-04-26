@@ -368,12 +368,19 @@ async def sale_payment(callback: CallbackQuery, state: FSMContext) -> None:
 )
 async def sale_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
-    seller = callback.data.split(":", 2)[2]  # company / individual
-    await state.update_data(seller_type=seller)
-    await state.set_state(SaleWizard.vat)
+    raw = callback.data.split(":", 2)[2]  # company / individual
+    seller = "llc" if raw == "company" else "individual"
     d = await state.get_data()
     total = float(d["unit_price"]) * int(d["quantity"])
-    await _ask_vat(callback.message, total, edit=True)
+    is_vat_included = seller == "llc"
+    vat_amount = _calc_vat(total) if is_vat_included else 0.0
+    await state.update_data(
+        seller_type=seller,
+        is_vat_included=is_vat_included,
+        vat_amount=vat_amount,
+    )
+    await state.set_state(SaleWizard.confirm)
+    await _show_sale_confirm(callback.message, state, edit=True)
 
 
 @wizard_router.callback_query(
@@ -575,12 +582,19 @@ async def nisia_price_input(message: Message, state: FSMContext) -> None:
 )
 async def nisia_seller_type(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
-    seller = callback.data.split(":", 2)[2]  # company / individual
-    await state.update_data(seller_type=seller)
-    await state.set_state(NisiaWizard.vat)
+    raw = callback.data.split(":", 2)[2]  # company / individual
+    seller = "llc" if raw == "company" else "individual"
     d = await state.get_data()
     total = float(d["unit_price"]) * int(d["quantity"])
-    await _ask_vat(callback.message, total, edit=True)
+    is_vat_included = seller == "llc"
+    vat_amount = _calc_vat(total) if is_vat_included else 0.0
+    await state.update_data(
+        seller_type=seller,
+        is_vat_included=is_vat_included,
+        vat_amount=vat_amount,
+    )
+    await state.set_state(NisiaWizard.confirm)
+    await _show_nisia_confirm(callback.message, state, send=False)
 
 
 @wizard_router.callback_query(
@@ -2217,21 +2231,25 @@ async def _handle_price_input(message: Message, state: FSMContext, wizard: str) 
 
 async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> None:
     d = await state.get_data()
-    qty         = d["quantity"]
-    unit_price  = d["unit_price"]
-    payment     = d["payment"]
-    product     = d["product_name"]
-    seller      = d.get("seller_type", "individual")
-    total       = qty * unit_price
-    pay_label   = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
-    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
+    qty              = d["quantity"]
+    unit_price       = d["unit_price"]
+    payment          = d["payment"]
+    product          = d["product_name"]
+    seller           = d.get("seller_type", "individual")
+    is_vat_included  = d.get("is_vat_included", False)
+    vat_amount       = d.get("vat_amount", 0.0)
+    total            = qty * unit_price
+    pay_label        = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(payment, payment)
+    seller_label     = "🏢 შპს" if seller == "llc" else "👤 ფზ პირი"
+    vat_line         = f"\n🧾 დღგ 18%: <b>{vat_amount:.2f}₾</b>" if is_vat_included else ""
 
     text = (
         f"✅ <b>ნაბიჯი 6/6 — გადამოწმება</b>\n\n"
         f"📦 პროდუქტი: <b>{_e(product)}</b>\n"
         f"🔢 რაოდ: {qty}ც × {unit_price:.2f}₾ = <b>{total:.2f}₾</b>\n"
         f"💳 გადახდა: {pay_label}\n"
-        f"🏢 გამყიდველი: {seller_label}\n\n"
+        f"🏢 გამყიდველი: {seller_label}"
+        f"{vat_line}\n\n"
         "ყველაფერი სწორია?"
     )
     kb = _kb(
@@ -2245,13 +2263,16 @@ async def _show_sale_confirm(msg: Message, state: FSMContext, edit: bool) -> Non
 
 async def _show_nisia_confirm(msg: Message, state: FSMContext, send: bool) -> None:
     d = await state.get_data()
-    qty          = d["quantity"]
-    unit_price   = d["unit_price"]
-    product      = d["product_name"]
-    customer     = d["customer_name"]
-    seller       = d.get("seller_type", "individual")
-    total        = qty * unit_price
-    seller_label = "🏢 შპს" if seller == "company" else "👤 ფზ პირი"
+    qty              = d["quantity"]
+    unit_price       = d["unit_price"]
+    product          = d["product_name"]
+    customer         = d["customer_name"]
+    seller           = d.get("seller_type", "individual")
+    is_vat_included  = d.get("is_vat_included", False)
+    vat_amount       = d.get("vat_amount", 0.0)
+    total            = qty * unit_price
+    seller_label     = "🏢 შპს" if seller == "llc" else "👤 ფზ პირი"
+    vat_line         = f"\n🧾 დღგ 18%: <b>{vat_amount:.2f}₾</b>" if is_vat_included else ""
 
     text = (
         f"✅ <b>ნაბიჯი 6/6 — გადამოწმება</b>\n\n"
@@ -2259,7 +2280,8 @@ async def _show_nisia_confirm(msg: Message, state: FSMContext, send: bool) -> No
         f"📦 პროდუქტი: <b>{_e(product)}</b>\n"
         f"🔢 რაოდ: {qty}ც × {unit_price:.2f}₾ = <b>{total:.2f}₾</b>\n"
         f"💳 ნისია 📋\n"
-        f"🏢 გამყიდველი: {seller_label}\n\n"
+        f"🏢 გამყიდველი: {seller_label}"
+        f"{vat_line}\n\n"
         "ყველაფერი სწორია?"
     )
     kb = _kb(

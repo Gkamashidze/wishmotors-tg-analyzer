@@ -41,9 +41,10 @@ const SEED_ACCOUNTS = [
   { code: "2100", name: "ძირითადი საშუალებები",             type: "asset",     description: "გრძელვადიანი ძირითადი საშუალებები",               parentCode: null },
   // Equity
   { code: "3100", name: "კაპიტალი",                         type: "equity",    description: "მფლობელის კაპიტალი",                             parentCode: null },
-  // Liabilities — supplier payables
+  // Liabilities — supplier payables & VAT
   { code: "3110", name: "კრედიტორები (ადგილობრივი)",        type: "liability", description: "ადგილობრივ მომწოდებლებზე გადასახდელი",             parentCode: null },
   { code: "3190", name: "კრედიტორები (საზღვარგარეთი)",      type: "liability", description: "საგარეო მომწოდებლებზე გადასახდელი",               parentCode: null },
+  { code: "3330", name: "გადასახდელი დღგ",                   type: "liability", description: "დღგ-ს გადასახდელი ბიუჯეტში (შპს-ის გაყიდვები)",  parentCode: null },
   // Revenue
   { code: "6100", name: "გაყიდვების შემოსავალი",            type: "revenue",   description: "საქონლის რეალიზაციით მიღებული შემოსავალი",        parentCode: null },
   // Expenses
