@@ -211,9 +211,9 @@ class Database:
         self,
         name: str,
         oem_code: Optional[str],
-        stock: int,
-        min_stock: int,
-        price: float,
+        stock: int = 0,
+        min_stock: int = 0,
+        price: float = 0.0,
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(

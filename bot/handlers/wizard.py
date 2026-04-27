@@ -2202,16 +2202,9 @@ async def _handle_new_product_name(
     d = await state.get_data()
     entered_oem: Optional[str] = d.get("entered_oem")
 
-    # When we arrived here via OEM-not-found path, auto-create the product and
-    # move straight to quantity (unit_price starts at 0, updated on next import).
+    # OEM-not-found path — create product with just name + OEM, then continue.
     if entered_oem:
-        new_id = await db.create_product(
-            name=name,
-            oem_code=entered_oem,
-            stock=0,
-            min_stock=0,
-            price=0.0,
-        )
+        new_id = await db.create_product(name=name, oem_code=entered_oem)
         await state.update_data(product_id=new_id, is_freeform=False)
         await message.answer(
             f"✅ <b>{_e(name)}</b> ბაზაში დაემატა!\n"
@@ -2247,13 +2240,7 @@ async def _handle_new_product_price(
     name = d.get("product_name") or "უცნობი"
     oem = d.get("entered_oem")
 
-    new_id = await db.create_product(
-        name=name,
-        oem_code=oem,
-        stock=0,
-        min_stock=0,
-        price=price,
-    )
+    new_id = await db.create_product(name=name, oem_code=oem, price=price)
     await state.update_data(product_id=new_id, is_freeform=False)
 
     oem_line = f"\nOEM: <code>{_e(oem)}</code>" if oem else ""
