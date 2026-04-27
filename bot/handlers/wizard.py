@@ -13,9 +13,11 @@ Product / Quantity / Price as separate fields; Name and Phone are
 stored together in sales.customer_name and are parsed/recombined
 transparently.
 """
+import asyncio
 import html
 import logging
 import re
+from io import BytesIO
 from typing import Optional, Tuple
 
 from aiogram import F, Router
@@ -538,6 +540,146 @@ async def nisia_customer_input(message: Message, state: FSMContext, db: Database
 @wizard_router.message(NisiaWizard.oem, IsAdmin(), _PRIVATE)
 async def nisia_oem_input(message: Message, state: FSMContext, db: Database) -> None:
     await _handle_wizard_oem_input(message, state, db, wizard="nisia")
+
+
+@wizard_router.message(
+    StateFilter(SaleWizard.oem, NisiaWizard.oem),
+    IsAdmin(),
+    _PRIVATE,
+    F.photo,
+)
+async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) -> None:
+    """Barcode photo sent at the OEM step — decode + Vision name extraction."""
+    from bot.barcode.decoder import decode_barcode, extract_part_info
+
+    assert message.bot is not None
+    photo = message.photo[-1]
+    file_info = await message.bot.get_file(photo.file_id)
+    buf = BytesIO()
+    await message.bot.download_file(file_info.file_path, destination=buf)
+    image_bytes = buf.getvalue()
+
+    oem = await asyncio.get_running_loop().run_in_executor(None, decode_barcode, image_bytes)
+
+    if not oem:
+        await message.answer(
+            "❌ შტრიხკოდი ვერ წაიკითხა.\nგადაიღე ახლოდან ან ჩაწერე OEM კოდი ხელით:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+        return
+
+    await state.update_data(entered_oem=oem)
+    current_state = await state.get_state()
+    wizard = "sale" if "SaleWizard" in (current_state or "") else "nisia"
+
+    product = await db.get_product_by_oem(oem)
+    if product:
+        await state.update_data(
+            product_id=product["id"],
+            product_name=product["name"],
+            oem_code=product.get("oem_code"),
+            is_freeform=False,
+        )
+        await message.answer(
+            f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n📦 <b>{_e(product['name'])}</b>",
+            parse_mode=_PARSE,
+        )
+        await _goto_quantity(message, state, wizard, product["name"], send=True)
+        return
+
+    await message.answer(
+        f"📷 OEM <code>{_e(oem)}</code> — ბაზაში არ არის. ეტიკეტი მუშავდება...",
+        parse_mode=_PARSE,
+    )
+    name_ka, name_en = await extract_part_info(image_bytes)
+    await state.update_data(bc_name_ka=name_ka, bc_name_en=name_en)
+
+    new_name_state = SaleWizard.new_product_name if wizard == "sale" else NisiaWizard.new_product_name
+    await state.set_state(new_name_state)
+    step = "2" if wizard == "sale" else "3"
+
+    if name_ka or name_en:
+        disp_ka = name_ka or name_en
+        disp_en = f" ({name_en})" if name_en and name_ka else ""
+        await message.answer(
+            f"🔤 ეტიკეტიდან: <b>{_e(disp_ka)}{_e(disp_en)}</b>\n\n"
+            f"➕ <b>ნაბიჯი {step}/6</b> — ასე ჩავწეროთ?",
+            parse_mode=_PARSE,
+            reply_markup=_kb(
+                [_btn(f"✅ კი: {disp_ka[:35]}", "wiz:bc_name:yes")],
+                [_btn("✎ სხვა სახელი", "wiz:bc_name:manual")],
+                _CANCEL_ROW,
+            ),
+        )
+    else:
+        await message.answer(
+            f"📷 OEM: <code>{_e(oem)}</code>\n\n"
+            f"➕ <b>ნაბიჯი {step}/6</b> — შეიყვანე ნაწილის <b>დასახელება</b>:",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+
+
+@wizard_router.callback_query(
+    F.data == "wiz:bc_name:yes",
+    IsAdmin(),
+    StateFilter(SaleWizard.new_product_name, NisiaWizard.new_product_name),
+)
+async def wizard_bc_name_confirm(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
+    assert isinstance(callback.message, Message)
+    d = await state.get_data()
+    name_ka: str = d.get("bc_name_ka") or ""
+    name_en: str = d.get("bc_name_en") or ""
+    name = name_ka or name_en
+    if not name:
+        await callback.answer("სახელი ვერ მოიძებნა", show_alert=True)
+        return
+
+    current_state = await state.get_state()
+    wizard = "sale" if "SaleWizard" in (current_state or "") else "nisia"
+    entered_oem: Optional[str] = d.get("entered_oem")
+
+    await state.update_data(product_name=name)
+
+    if entered_oem:
+        new_id = await db.create_product(
+            name=name, oem_code=entered_oem, stock=0, min_stock=0, price=0.0,
+        )
+        await state.update_data(product_id=new_id, is_freeform=False)
+        await callback.message.edit_text(
+            f"✅ <b>{_e(name)}</b> ბაზაში დაემატა!\nOEM: <code>{_e(entered_oem)}</code>",
+            parse_mode=_PARSE,
+        )
+        await _goto_quantity(callback.message, state, wizard, name, send=True)
+    else:
+        price_state = SaleWizard.new_product_price if wizard == "sale" else NisiaWizard.new_product_price
+        await state.set_state(price_state)
+        await callback.message.edit_text(
+            f"✅ <b>{_e(name)}</b>\n\n💰 შეიყვანეთ ნაწილის <b>ერთეულის ფასი</b> (₾):",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+    await callback.answer()
+
+
+@wizard_router.callback_query(
+    F.data == "wiz:bc_name:manual",
+    IsAdmin(),
+    StateFilter(SaleWizard.new_product_name, NisiaWizard.new_product_name),
+)
+async def wizard_bc_name_manual(callback: CallbackQuery, state: FSMContext) -> None:
+    assert isinstance(callback.message, Message)
+    current_state = await state.get_state()
+    step = "2" if "SaleWizard" in (current_state or "") else "3"
+    await callback.message.edit_text(
+        f"✏️ <b>ნაბიჯი {step}/6</b> — შეიყვანე ნაწილის <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+    await callback.answer()
 
 
 @wizard_router.message(NisiaWizard.product, IsAdmin(), _PRIVATE)
