@@ -581,8 +581,10 @@ async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) ->
             oem_code=product.get("oem_code"),
             is_freeform=False,
         )
+        wac = await db.get_product_wac(product["id"])
+        cost_line = f"\n💰 თვითღირებულება: <b>{wac:.2f} ₾</b>" if wac > 0 else "\n💰 თვითღირებულება: -"
         await message.answer(
-            f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n📦 <b>{_e(product['name'])}</b>",
+            f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n📦 <b>{_e(product['name'])}</b>{cost_line}",
             parse_mode=_PARSE,
         )
         await _goto_quantity(message, state, wizard, product["name"], send=True)
