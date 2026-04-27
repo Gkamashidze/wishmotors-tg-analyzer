@@ -90,7 +90,7 @@ class TestGetProductById:
 class TestCreateSale:
     @pytest.mark.asyncio
     async def test_returns_sale_id_and_new_stock(self):
-        """Product sale with no active batches: revenue pair posts, no COGS."""
+        """LLC product sale with no active batches: revenue+VAT pairs post, no COGS."""
         db = _make_db()
         pool, conn = _make_pool_mock()
 
@@ -108,17 +108,18 @@ class TestCreateSale:
             quantity=2,
             unit_price=30.0,
             payment_method="cash",
+            seller_type="llc",
         )
 
         assert sale_id == 42
         assert new_stock == 8
-        # Revenue pair (DR cash, CR revenue) = 2 ledger INSERTs.
-        # vat_ledger INSERT only fires for seller_type="llc" — not here.
-        assert conn.execute.call_count == 2
+        # LLC with output_vat > 0: net-revenue pair (2) + VAT pair (2) = 4 ledger INSERTs
+        # + 1 vat_ledger INSERT = 5 total. No COGS (cost=0).
+        assert conn.execute.call_count == 5
 
     @pytest.mark.asyncio
     async def test_no_product_id_returns_zero_stock(self):
-        """Freeform nisia sale: no stock/batches touched, AR pair posted."""
+        """LLC freeform nisia: no stock/batches touched, AR+VAT pairs posted."""
         db = _make_db()
         pool, conn = _make_pool_mock()
         conn.fetchrow = AsyncMock(return_value={"id": 7})
@@ -131,13 +132,14 @@ class TestCreateSale:
             quantity=1,
             unit_price=20.0,
             payment_method="credit",
+            seller_type="llc",
         )
 
         assert sale_id == 7
         assert new_stock == 0  # no product → stock unchanged
-        # Revenue/AR pair (DR 1400 AR, CR 6100 Revenue) = 2 ledger INSERTs.
-        # vat_ledger INSERT only fires for seller_type="llc" — not here.
-        assert conn.execute.call_count == 2
+        # LLC with output_vat > 0: net-revenue pair (2) + VAT pair (2) = 4 ledger INSERTs
+        # + 1 vat_ledger INSERT = 5 total. No COGS (no product).
+        assert conn.execute.call_count == 5
 
     @pytest.mark.asyncio
     async def test_posts_cogs_pair_when_batches_exist(self):
@@ -160,14 +162,15 @@ class TestCreateSale:
             quantity=2,
             unit_price=30.0,
             payment_method="cash",
+            seller_type="llc",
         )
 
         assert sale_id == 55
         assert new_stock == 3
-        # 1 batch update + 1 UPDATE sales.cost_amount + 4 ledger INSERTs
-        # (revenue pair + COGS pair) = 6.
-        # vat_ledger INSERT only fires for seller_type="llc" — not here.
-        assert conn.execute.call_count == 6
+        # 1 batch UPDATE + 1 UPDATE sales.cost_amount
+        # + 6 ledger INSERTs (net-revenue pair + VAT pair + COGS pair)
+        # + 1 vat_ledger INSERT = 9 total.
+        assert conn.execute.call_count == 9
 
 
 class TestDeleteSale:
@@ -188,9 +191,9 @@ class TestDeleteSale:
         fake_sale = {
             "id": 5, "product_id": 1, "quantity": 2,
             "unit_price": 30.0, "payment_method": "cash",
-            "seller_type": "individual", "customer_name": None,
+            "seller_type": "llc", "buyer_type": "retail", "customer_name": None,
             "sold_at": None, "notes": None,
-            "cost_amount": 20.0,
+            "cost_amount": 20.0, "output_vat": 0.0,
         }
         conn.fetchrow = AsyncMock(return_value=fake_sale)
         conn.execute = AsyncMock()
@@ -199,7 +202,7 @@ class TestDeleteSale:
         result = await db.delete_sale(5)
         assert result is not None
         assert result["id"] == 5
-        # Expected executes:
+        # Expected executes (LLC seller, output_vat=0, buyer_type=retail):
         #   1. UPDATE products (stock restore)
         #   2. INSERT inventory_batches (restore batch at original cost)
         #   3..4. Revenue reversal pair (DR revenue, CR cash)
@@ -216,6 +219,7 @@ class TestMarkSalePaid:
         pool, conn = _make_pool_mock()
         conn.fetchrow = AsyncMock(return_value={
             "id": 1, "unit_price": 30.0, "quantity": 2, "customer_name": "Giorgi",
+            "client_name": None, "seller_type": "llc", "buyer_type": "retail",
         })
         conn.execute = AsyncMock()
         db._pool = pool
@@ -223,6 +227,7 @@ class TestMarkSalePaid:
         result = await db.mark_sale_paid(1, "cash")
         assert result is True
         # UPDATE sales.payment_method + 2 ledger INSERTs (settlement pair).
+        # seller_type="llc" triggers ledger; buyer_type="retail" → 1410 1, no extra fetchrow.
         assert conn.execute.call_count == 3
 
     @pytest.mark.asyncio
