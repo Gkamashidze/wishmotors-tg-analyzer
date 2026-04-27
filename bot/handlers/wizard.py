@@ -2048,16 +2048,20 @@ async def _handle_wizard_oem_input(
                 is_freeform=False,
             )
             rec_price = product.get("recommended_price")
+            wac = await db.get_product_wac(product["id"])
+            cost_line = f"\n💰 თვითღირებულება: <b>{wac:.2f} ₾</b>" if wac > 0 else "\n💰 თვითღირებულება: -"
             if rec_price is not None and float(rec_price) > 0:
                 found_text = (
                     f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
                     f"📦 <b>{_e(product['name'])}</b>\n\n"
                     f"💡 რეკომენდებული გასაყიდი ფასია: <b>{float(rec_price):.2f} ₾</b>"
+                    f"{cost_line}"
                 )
             else:
                 found_text = (
                     f"✅ OEM <code>{_e(oem)}</code> — ბაზაში ნაპოვნია:\n"
                     f"📦 <b>{_e(product['name'])}</b>"
+                    f"{cost_line}"
                 )
             await message.answer(found_text, parse_mode=_PARSE)
             await _goto_quantity(message, state, wizard, product["name"], send=True)
