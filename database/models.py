@@ -477,6 +477,44 @@ CREATE INDEX IF NOT EXISTS product_compatibility_product_id_idx ON product_compa
 
 -- Fuel type field for compatibility entries (ბენზინი / დიზელი / ჰიბრიდი).
 ALTER TABLE product_compatibility ADD COLUMN IF NOT EXISTS fuel_type TEXT;
+
+-- ─── Selling entity / buyer type split ───────────────────────────────────────
+-- seller_type already captures WHICH ENTITY IS SELLING ('llc' | 'individual').
+-- buyer_type captures WHO IS BUYING ('retail' | 'business').
+-- Only LLC sales enter formal accounting. ფ.პ sales appear in management reports only.
+ALTER TABLE sales         ADD COLUMN IF NOT EXISTS buyer_type TEXT NOT NULL DEFAULT 'retail';
+ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS buyer_type TEXT NOT NULL DEFAULT 'retail';
+
+-- Business customers: each gets a sequential sub-account under 1410 (starting at 2).
+-- 1410 1 = retail (fixed), 1410 2, 1410 3, ... = individual business customers.
+CREATE SEQUENCE IF NOT EXISTS business_customer_account_seq START 2;
+CREATE TABLE IF NOT EXISTS business_customers (
+    id             SERIAL PRIMARY KEY,
+    name           TEXT           NOT NULL UNIQUE,
+    account_number INTEGER        NOT NULL UNIQUE DEFAULT nextval('business_customer_account_seq'),
+    created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_business_customers_name ON business_customers(name);
+
+-- Reverse ledger entries for ფ.პ outstanding debt sales (payment_status='debt',
+-- seller_type='individual'). These should not be in formal accounting.
+-- Idempotent: skips rows already reversed (checked by reference_id prefix).
+INSERT INTO ledger (account_code, debit_amount, credit_amount, description, reference_id, transaction_date)
+SELECT
+    l.account_code,
+    l.credit_amount,
+    l.debit_amount,
+    'FZ_REVERSAL: ' || COALESCE(l.description, ''),
+    'fz_reversal:' || l.id::text,
+    NOW()
+FROM ledger l
+INNER JOIN sales s ON l.reference_id = 'sale:' || s.id::text
+WHERE s.seller_type = 'individual'
+  AND s.payment_status = 'debt'
+  AND NOT EXISTS (
+      SELECT 1 FROM ledger l2
+      WHERE l2.reference_id = 'fz_reversal:' || l.id::text
+  );
 """
 
 
@@ -511,7 +549,8 @@ class SaleRow(TypedDict):
     quantity: int
     unit_price: float
     payment_method: str
-    seller_type: str
+    seller_type: str   # 'llc' | 'individual' — which entity is SELLING
+    buyer_type: str    # 'retail' | 'business' — who is BUYING
     customer_name: Optional[str]
     client_name: Optional[str]    # debtor name extracted from ვალი keyword
     payment_status: str           # 'paid' | 'debt' | 'unpaid'

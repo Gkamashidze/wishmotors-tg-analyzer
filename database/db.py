@@ -334,7 +334,8 @@ class Database:
 
     ACCOUNT_CASH              = "1100"
     ACCOUNT_BANK              = "1200"
-    ACCOUNT_AR                = "1400"
+    ACCOUNT_AR                = "1400"   # legacy ფ.პ ნისია — kept for migration compat
+    ACCOUNT_RETAIL_AR         = "1410 1" # LLC retail ნისია (საცალო მოთხოვნები)
     ACCOUNT_INVENTORY         = "1610"
     ACCOUNT_ACCOUNTS_PAYABLE  = "3110"
     ACCOUNT_VAT_PAYABLE       = "3330"
@@ -343,18 +344,66 @@ class Database:
     ACCOUNT_OPERATING_EXPENSE = "7400"
     ACCOUNT_INVENTORY_WRITEOFF = "7500"
 
-    # payment_method → debit-side account used when posting revenue or
-    # settling a nisia payment. "credit" (ნისია) routes to AR because no cash
-    # has changed hands yet.
-    _PAYMENT_TO_ACCOUNT = {
-        "cash":     ACCOUNT_CASH,
-        "transfer": ACCOUNT_BANK,
-        "credit":   ACCOUNT_AR,
-    }
-
     @classmethod
-    def _payment_account(cls, payment_method: str) -> str:
-        return cls._PAYMENT_TO_ACCOUNT.get(payment_method, cls.ACCOUNT_CASH)
+    def _payment_account(
+        cls,
+        payment_method: str,
+        buyer_type: str = "retail",
+        business_account: Optional[str] = None,
+    ) -> str:
+        """Return the debit-side account for a sale or AR-side for settlement.
+
+        cash/transfer → direct to 1100/1200 (no AR intermediary).
+        credit + retail → 1410 1 (retail AR sub-account).
+        credit + business → 1410 N (specific business customer sub-account).
+        """
+        if payment_method == "cash":
+            return cls.ACCOUNT_CASH
+        if payment_method == "transfer":
+            return cls.ACCOUNT_BANK
+        if buyer_type == "business" and business_account:
+            return business_account
+        return cls.ACCOUNT_RETAIL_AR
+
+    @staticmethod
+    async def _get_or_create_business_customer(conn: Any, name: str) -> str:
+        """Return account code for a business customer (e.g. '1410 2'), creating if new."""
+        row = await conn.fetchrow(
+            "SELECT account_number FROM business_customers WHERE name = $1", name
+        )
+        if row:
+            return f"1410 {row['account_number']}"
+        new = await conn.fetchrow(
+            "INSERT INTO business_customers (name) VALUES ($1) RETURNING account_number",
+            name,
+        )
+        acct_num = new["account_number"]
+        code = f"1410 {acct_num}"
+        parent = await conn.fetchrow(
+            "SELECT id FROM chart_of_accounts WHERE code = '1410'"
+        )
+        await conn.execute(
+            """INSERT INTO chart_of_accounts (code, name, type, description, parent_id)
+               VALUES ($1, $2, 'asset', $3, $4)
+               ON CONFLICT (code) DO NOTHING""",
+            code, name,
+            f"მოთხოვნები მყიდველ-მეწარმეზე: {name}",
+            parent["id"] if parent else None,
+        )
+        return code
+
+    @staticmethod
+    async def _get_ar_account_for_sale(conn: Any, sale: dict) -> str:
+        """Return the correct AR account for a sale: 1410 1 (retail) or 1410 N (business)."""
+        if sale.get("buyer_type") == "business":
+            name = sale.get("client_name") or sale.get("customer_name")
+            if name:
+                row = await conn.fetchrow(
+                    "SELECT account_number FROM business_customers WHERE name = $1", name
+                )
+                if row:
+                    return f"1410 {row['account_number']}"
+        return "1410 1"
 
     @staticmethod
     async def _post_ledger_pair(
@@ -482,21 +531,24 @@ class Database:
         description: str,
         seller_type: str = "individual",
         output_vat: float = 0.0,
+        buyer_type: str = "retail",
+        business_account: Optional[str] = None,
     ) -> None:
-        """Post the revenue + COGS pair for one sale.
+        """Post revenue + COGS for one sale.
 
-        For individual (ფზ) sales:
-          DR cash/bank/AR, CR 6100 (full amount)
-
-        For LLC (შპს) sales the price is VAT-inclusive, so revenue is split:
-          DR cash/bank/AR (full), CR 6100 (net = revenue/1.18), CR 3330 (VAT)
-
-        COGS: DR 7100, CR 1610 (only when cost_amount > 0).
+        ფ.პ (individual) sales: skip entirely — management reports only.
+        LLC retail: DR 1410 1 / CR 6100 (+ COGS pair).
+        LLC business cash/transfer: DR 1100/1200 / CR 6100 (+ COGS pair).
+        LLC business consignment: DR 1410 N / CR 6100 (+ COGS pair).
+        LLC sales with VAT: revenue split between 6100 (net) and 3330 (VAT).
         """
-        reference = f"sale:{sale_id}"
-        debit_account = cls._payment_account(payment_method)
+        if seller_type == "individual":
+            return  # ფ.პ sales do not enter formal accounting
 
-        if seller_type == "llc" and output_vat > 0:
+        reference = f"sale:{sale_id}"
+        debit_account = cls._payment_account(payment_method, buyer_type, business_account)
+
+        if output_vat > 0:
             net_revenue = round(revenue - output_vat, 2)
             await cls._post_ledger_pair(
                 conn,
@@ -545,16 +597,20 @@ class Database:
         description: str,
         seller_type: str = "individual",
         output_vat: float = 0.0,
+        buyer_type: str = "retail",
+        business_account: Optional[str] = None,
     ) -> None:
-        """Reverse the revenue + COGS pair for one sale (contra-entries).
+        """Reverse revenue + COGS for one sale (contra-entries, audit trail preserved).
 
-        Same reference_id as the original so SUM(ledger) for this sale == 0
-        after reversal. No rows are deleted — the audit trail stays intact.
+        ფ.პ (individual) sales: skip — nothing was posted.
         """
-        reference = f"sale:{sale_id}"
-        credit_account = cls._payment_account(payment_method)
+        if seller_type == "individual":
+            return  # nothing was posted originally
 
-        if seller_type == "llc" and output_vat > 0:
+        reference = f"sale:{sale_id}"
+        credit_account = cls._payment_account(payment_method, buyer_type, business_account)
+
+        if output_vat > 0:
             net_revenue = round(revenue - output_vat, 2)
             await cls._post_ledger_pair(
                 conn,
@@ -600,22 +656,21 @@ class Database:
         payment_method: str,
         amount: float,
         description: str,
+        ar_account: Optional[str] = None,
     ) -> None:
-        """Post a nisia (AR) settlement: DR cash/bank, CR 1400 AR.
+        """Post an AR settlement: DR cash/bank, CR ar_account.
 
-        Used whenever a credit sale is paid (fully, partially, or in bulk).
-        Original "sale:{id}" ledger rows stay intact; settlement lives under
-        its own reference so the audit trail separates revenue from cash
-        collection.
+        ar_account defaults to 1410 1 (LLC retail). Pass 1410 N for business customers.
+        ფ.პ settlements should not call this — they have no ledger entry to settle.
         """
         if payment_method not in ("cash", "transfer"):
-            # Nothing to do — "credit → credit" isn't a settlement.
             return
         debit_account = cls._payment_account(payment_method)
+        credit_account = ar_account or cls.ACCOUNT_RETAIL_AR
         await cls._post_ledger_pair(
             conn,
             debit_account=debit_account,
-            credit_account=cls.ACCOUNT_AR,
+            credit_account=credit_account,
             amount=amount,
             description=description,
             reference_id=reference_id,
@@ -859,6 +914,7 @@ class Database:
         unit_price: float,
         payment_method: str,
         seller_type: str = "individual",
+        buyer_type: str = "retail",
         customer_name: Optional[str] = None,
         notes: Optional[str] = None,
         vat_amount: float = 0.0,
@@ -868,36 +924,43 @@ class Database:
     ) -> Tuple[int, int]:
         """Insert sale + decrement stock + post double-entry ledger, atomically.
 
-        One ACID transaction performs, in order:
-          1. INSERT the sales row (cost_amount filled in at step 4).
-          2. UPDATE products.current_stock (−quantity).
-          3. FIFO-consume inventory_batches.remaining_quantity (WAC per unit).
-          4. Persist cost_amount on the sale so reversals can cancel the
-             exact COGS originally booked.
-          5. Post two ledger pairs:
-               • DR cash/bank/AR, CR 6100 Revenue         (quantity × unit_price)
-               • DR 7100 COGS    , CR 1600 Inventory      (quantity × WAC)
-             For debt sales (payment_method="credit", payment_status="debt") the
-             first pair debits AR 1400 — Cash/Bank is untouched until settlement.
-        Any failure rolls back everything — the ledger cannot desynchronise.
+        ფ.პ (seller_type='individual') sales: saved to DB for management reports
+        but NO ledger entries are posted.
+
+        LLC sales enter formal accounting:
+          - retail cash/transfer: DR 1100/1200, CR 6100
+          - retail credit (ნისია): DR 1410 1, CR 6100
+          - business cash/transfer: DR 1100/1200, CR 6100
+          - business consignment (credit): DR 1410 N, CR 6100
+          + COGS pair: DR 7100, CR 1610
 
         Returns (sale_id, new_stock_level).
         """
         revenue = round(float(unit_price) * int(quantity), 2)
-        # Output VAT extracted from VAT-inclusive total: total - total/1.18
-        output_vat = round(revenue - revenue / 1.18, 2)
+        output_vat = round(revenue - revenue / 1.18, 2) if seller_type == "llc" else 0.0
+        business_account: Optional[str] = None
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                # Resolve business customer account before INSERT (inside transaction)
+                if (seller_type == "llc" and buyer_type == "business"
+                        and payment_method == "credit"):
+                    name = client_name or customer_name
+                    if name:
+                        business_account = await self._get_or_create_business_customer(
+                            conn, name
+                        )
+
                 row = await conn.fetchrow(
                     """INSERT INTO sales
                            (product_id, quantity, unit_price, payment_method,
-                            seller_type, customer_name, notes,
+                            seller_type, buyer_type, customer_name, notes,
                             vat_amount, is_vat_included, output_vat,
                             client_name, payment_status)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                        RETURNING id""",
                     product_id, quantity, unit_price, payment_method,
-                    seller_type, customer_name or None, notes,
+                    seller_type, buyer_type, customer_name or None, notes,
                     round(vat_amount, 2), is_vat_included, output_vat,
                     client_name or None, payment_status,
                 )
@@ -937,9 +1000,10 @@ class Database:
                     description=description,
                     seller_type=seller_type,
                     output_vat=output_vat,
+                    buyer_type=buyer_type,
+                    business_account=business_account,
                 )
 
-                # VAT ledger: only for LLC (შპს) sales — output VAT owed to tax authority
                 if seller_type == "llc" and output_vat > 0:
                     await conn.execute(
                         """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
@@ -957,6 +1021,7 @@ class Database:
             "payment_method": payment_method,
             "payment_status": payment_status,
             "seller_type": seller_type,
+            "buyer_type": buyer_type,
             "customer_name": customer_name,
             "client_name": client_name,
             "notes": notes,
@@ -1009,7 +1074,12 @@ class Database:
                     )
 
                 seller_type = sale_dict.get("seller_type", "individual")
+                buyer_type = sale_dict.get("buyer_type", "retail")
                 output_vat = float(sale_dict.get("output_vat") or 0.0)
+
+                business_account: Optional[str] = None
+                if seller_type == "llc" and buyer_type == "business" and pm == "credit":
+                    business_account = await self._get_ar_account_for_sale(conn, sale_dict)
 
                 await self._reverse_sale_ledger(
                     conn,
@@ -1020,6 +1090,8 @@ class Database:
                     description=f"Sale #{sale_id} — {label}",
                     seller_type=seller_type,
                     output_vat=output_vat,
+                    buyer_type=buyer_type,
+                    business_account=business_account,
                 )
 
                 # Reverse the VAT ledger entry: only for LLC sales
@@ -1048,7 +1120,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 sale = await conn.fetchrow(
-                    """SELECT id, unit_price, quantity, customer_name
+                    """SELECT id, unit_price, quantity, customer_name, client_name,
+                              seller_type, buyer_type
                        FROM sales
                        WHERE id = $1 AND payment_method = 'credit'
                        FOR UPDATE""",
@@ -1056,19 +1129,23 @@ class Database:
                 )
                 if not sale:
                     return False
+                sale_dict = dict(sale)
                 amount = round(float(sale["unit_price"]) * int(sale["quantity"]), 2)
                 await conn.execute(
-                    "UPDATE sales SET payment_method = $1 WHERE id = $2",
+                    "UPDATE sales SET payment_method = $1, payment_status = 'paid' WHERE id = $2",
                     payment_method, sale_id,
                 )
-                label = sale["customer_name"] or f"Sale #{sale_id}"
-                await self._post_settlement_ledger(
-                    conn,
-                    reference_id=f"payment:{sale_id}",
-                    payment_method=payment_method,
-                    amount=amount,
-                    description=f"Nisia payment #{sale_id} — {label}",
-                )
+                if sale_dict.get("seller_type") == "llc":
+                    label = sale["client_name"] or sale["customer_name"] or f"Sale #{sale_id}"
+                    ar_account = await self._get_ar_account_for_sale(conn, sale_dict)
+                    await self._post_settlement_ledger(
+                        conn,
+                        reference_id=f"payment:{sale_id}",
+                        payment_method=payment_method,
+                        amount=amount,
+                        description=f"Nisia payment #{sale_id} — {label}",
+                        ar_account=ar_account,
+                    )
         self._audit("nisia_paid", {
             "sale_id": sale_id,
             "payment_method": payment_method,
@@ -1078,42 +1155,53 @@ class Database:
         return True
 
     async def mark_customer_sales_paid(self, customer_name: str, payment_method: str) -> int:
-        """Mark all credit sales for a customer as paid + post one AR settlement.
+        """Mark all credit sales for a customer as paid + post AR settlement for LLC sales.
 
-        One ledger entry is posted for the aggregate total (DR cash/bank,
-        CR 1400 AR). Reference is "payment:customer:{name}:{timestamp}" so
-        every bulk payoff is individually auditable. Returns the number of
-        sales updated.
+        ფ.პ sales: payment_method updated, no ledger entry.
+        LLC sales: payment_method updated + settlement entry (DR cash/bank, CR 1410 x).
+        Returns total number of sales updated.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 rows = await conn.fetch(
-                    """SELECT id, unit_price, quantity
+                    """SELECT id, unit_price, quantity, seller_type, buyer_type,
+                              client_name, customer_name
                        FROM sales
-                       WHERE payment_method = 'credit' AND customer_name = $1
+                       WHERE payment_method = 'credit'
+                         AND (customer_name = $1 OR client_name = $1)
                        FOR UPDATE""",
                     customer_name,
                 )
                 if not rows:
                     return 0
-                total = round(
-                    sum(float(r["unit_price"]) * int(r["quantity"]) for r in rows),
-                    2,
-                )
+
+                llc_total = 0.0
+                llc_ar_account: Optional[str] = None
+
+                for r in rows:
+                    row_total = float(r["unit_price"]) * int(r["quantity"])
+                    if r["seller_type"] == "llc":
+                        llc_total += row_total
+                        if llc_ar_account is None:
+                            llc_ar_account = await self._get_ar_account_for_sale(conn, dict(r))
+
                 result = await conn.execute(
                     """UPDATE sales
-                       SET payment_method = $1
-                       WHERE payment_method = 'credit' AND customer_name = $2""",
+                       SET payment_method = $1, payment_status = 'paid'
+                       WHERE payment_method = 'credit'
+                         AND (customer_name = $2 OR client_name = $2)""",
                     payment_method, customer_name,
                 )
-                stamp = self._now().strftime("%Y%m%d%H%M%S")
-                await self._post_settlement_ledger(
-                    conn,
-                    reference_id=f"payment:customer:{customer_name}:{stamp}",
-                    payment_method=payment_method,
-                    amount=total,
-                    description=f"Nisia bulk payoff — {customer_name}",
-                )
+                if llc_total > 0 and llc_ar_account:
+                    stamp = self._now().strftime("%Y%m%d%H%M%S")
+                    await self._post_settlement_ledger(
+                        conn,
+                        reference_id=f"payment:customer:{customer_name}:{stamp}",
+                        payment_method=payment_method,
+                        amount=round(llc_total, 2),
+                        description=f"Nisia bulk payoff — {customer_name}",
+                        ar_account=llc_ar_account,
+                    )
                 return int(result.split()[-1])
 
     async def rename_customer(self, old_name: str, new_name: str) -> int:
@@ -1140,7 +1228,8 @@ class Database:
                 row = await conn.fetchrow(
                     """SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
                        FROM sales
-                       WHERE payment_method = 'credit' AND customer_name = $1""",
+                       WHERE payment_method = 'credit'
+                         AND (customer_name = $1 OR client_name = $1)""",
                     customer_name,
                 )
                 return float(row["total"]) if row else 0.0
@@ -1148,54 +1237,67 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 rows = await conn.fetch(
-                    """SELECT id, unit_price, quantity
+                    """SELECT id, unit_price, quantity, seller_type, buyer_type,
+                              client_name, customer_name
                        FROM sales
-                       WHERE payment_method = 'credit' AND customer_name = $1
+                       WHERE payment_method = 'credit'
+                         AND (customer_name = $1 OR client_name = $1)
                        ORDER BY sold_at ASC
                        FOR UPDATE""",
                     customer_name,
                 )
                 remaining_payment = amount
                 applied = 0.0
+                applied_llc = 0.0
+                llc_ar_account: Optional[str] = None
+
                 for row in rows:
                     if remaining_payment <= 0:
                         break
                     sale_total = float(row["unit_price"]) * row["quantity"]
+                    is_llc = row["seller_type"] == "llc"
                     if remaining_payment >= sale_total:
-                        # Fully covers this sale — mark as paid
                         await conn.execute(
-                            "UPDATE sales SET payment_method = 'cash' WHERE id = $1",
+                            "UPDATE sales SET payment_method = 'cash', payment_status = 'paid' WHERE id = $1",
                             row["id"],
                         )
                         remaining_payment -= sale_total
                         applied += sale_total
+                        if is_llc:
+                            applied_llc += sale_total
+                            if llc_ar_account is None:
+                                llc_ar_account = await self._get_ar_account_for_sale(conn, dict(row))
                     else:
-                        # Partially covers this sale — reduce its unit_price
                         new_total = sale_total - remaining_payment
                         new_price = new_total / row["quantity"]
                         await conn.execute(
                             "UPDATE sales SET unit_price = $1 WHERE id = $2",
                             new_price, row["id"],
                         )
+                        if is_llc:
+                            applied_llc += remaining_payment
+                            if llc_ar_account is None:
+                                llc_ar_account = await self._get_ar_account_for_sale(conn, dict(row))
                         applied += remaining_payment
                         remaining_payment = 0.0
                         break
 
-                if applied > 0:
+                if applied_llc > 0 and llc_ar_account:
                     stamp = self._now().strftime("%Y%m%d%H%M%S")
                     await self._post_settlement_ledger(
                         conn,
                         reference_id=f"payment:customer:{customer_name}:{stamp}",
                         payment_method="cash",
-                        amount=round(applied, 2),
+                        amount=round(applied_llc, 2),
                         description=f"Nisia partial payment — {customer_name}",
+                        ar_account=llc_ar_account,
                     )
 
-                # Return the remaining debt for this customer
                 total_row = await conn.fetchrow(
                     """SELECT COALESCE(SUM(unit_price * quantity), 0.0) AS remaining
                        FROM sales
-                       WHERE payment_method = 'credit' AND customer_name = $1""",
+                       WHERE payment_method = 'credit'
+                         AND (customer_name = $1 OR client_name = $1)""",
                     customer_name,
                 )
                 return float(total_row["remaining"]) if total_row else 0.0
@@ -2299,10 +2401,10 @@ class Database:
                     return remaining
 
     async def get_debtors(self) -> list:
-        """Return all outstanding debt sales grouped by client_name.
+        """Return all outstanding ნისიები grouped by customer name.
 
-        Each group includes the list of individual sales and total owed.
-        Only sales with payment_status='debt' are returned.
+        Includes both LLC and ფ.პ debt sales so management reports show everything.
+        Each row includes seller_type so callers can distinguish accounting vs non-accounting.
         """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -2314,6 +2416,8 @@ class Database:
                        s.client_name,
                        s.customer_name,
                        s.notes,
+                       s.seller_type,
+                       s.buyer_type,
                        COALESCE(p.name, s.notes, 'უცნობი პროდუქტი') AS product_name,
                        p.oem_code,
                        ROUND(s.quantity * s.unit_price, 2) AS total_amount
@@ -2322,6 +2426,7 @@ class Database:
                    WHERE s.payment_status = 'debt'
                      AND s.status != 'returned'
                    ORDER BY
+                       s.seller_type DESC,
                        COALESCE(s.client_name, s.customer_name, ''),
                        s.sold_at DESC""",
             )
@@ -2337,7 +2442,7 @@ class Database:
                           p.name AS product_name
                    FROM sales s
                    LEFT JOIN products p ON p.id = s.product_id
-                   WHERE s.seller_type = 'company'
+                   WHERE s.seller_type = 'llc'
                      AND s.receipt_printed = FALSE
                    ORDER BY s.sold_at ASC""",
             )

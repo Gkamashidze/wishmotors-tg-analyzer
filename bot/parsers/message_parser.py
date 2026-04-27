@@ -52,7 +52,8 @@ class ParsedSale:
     price: float
     payment_method: str    # cash | transfer | credit
     is_return: bool = False
-    seller_type: str = "individual"   # individual (ფზ) | llc (შპს)
+    seller_type: str = "individual"   # individual (ფზ selling entity) | llc (შპს selling entity)
+    buyer_type: str = "retail"        # retail (ფიზ. პირი buyer) | business (მეწარმე buyer)
     customer_name: str = ""
     notes: str = ""
     # Split-payment marker fields (set when "მომცა/ხელზე X დარჩა Y" is parsed)
@@ -115,6 +116,11 @@ _TRANSFER_RE = re.compile(
     re.UNICODE | re.IGNORECASE,
 )
 _LLC_RE = re.compile(r"შპს\s*-?\s*დან|შპსდან", re.UNICODE | re.IGNORECASE)
+# Buyer is a business (მეწარმე) — as opposed to a retail individual
+_BUSINESS_BUYER_RE = re.compile(
+    r"მეწარმე[ზს]?|შპს\s*-?\s*ზე|შპსზე|ინდ\.?\s*მეწ",
+    re.UNICODE | re.IGNORECASE,
+)
 _RETURN_RE = re.compile(r"დაბრუნება|გაცვლა", re.UNICODE | re.IGNORECASE)
 # "ნისია" / "ნისიები" used inline (e.g. "სარკე 1ც 30₾ ნისიები") → credit, not customer name
 _CREDIT_KEYWORD_RE = re.compile(r"^ნისი", re.UNICODE | re.IGNORECASE)
@@ -287,31 +293,38 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-def _parse_rest(rest: Optional[str]) -> Tuple[str, str, str, bool]:
+def _parse_rest(rest: Optional[str]) -> Tuple[str, str, str, str, bool]:
     """
     Parse the 'rest' text that follows the price in a sale message.
 
-    Returns (payment_method, seller_type, customer_name, is_debt).
+    Returns (payment_method, seller_type, buyer_type, customer_name, is_debt).
 
     Processing order:
-      1. Remove LLC keyword if present → seller_type = 'llc'
-      2. Find first payment keyword → payment_method
+      1. Remove LLC selling-entity keyword → seller_type = 'llc'
+      2. Remove business-buyer keyword → buyer_type = 'business'
+      3. Find first payment keyword → payment_method
          ვალი/debt keyword → credit + is_debt=True
-      3. Remaining tokens → customer_name (debtor name when is_debt=True)
+      4. Remaining tokens → customer_name
     """
     if not rest:
-        return PAYMENT_CREDIT, "individual", "", False
+        return PAYMENT_CREDIT, "individual", "retail", "", False
 
     rest = rest.strip()
     seller = "individual"
+    buyer = "retail"
 
-    # Detect and remove LLC keyword first
+    # Detect and remove LLC selling-entity keyword (შპსდან / შპს-დან)
     llc_match = _LLC_RE.search(rest)
     if llc_match:
         seller = "llc"
         rest = (rest[: llc_match.start()] + rest[llc_match.end():]).strip()
 
-    # Walk tokens to find first payment keyword
+    # Detect and remove business-buyer keyword (მეწარმეზე / შპსზე / ინდ.მეწ)
+    biz_match = _BUSINESS_BUYER_RE.search(rest)
+    if biz_match:
+        buyer = "business"
+        rest = (rest[: biz_match.start()] + rest[biz_match.end():]).strip()
+
     tokens = rest.split()
     payment = PAYMENT_CREDIT
     payment_found = False
@@ -340,7 +353,7 @@ def _parse_rest(rest: Optional[str]) -> Tuple[str, str, str, bool]:
         remaining.append(token)
 
     customer = _DARCHA_STRIP_RE.sub(" ", " ".join(remaining)).strip()
-    return payment, seller, customer, is_debt
+    return payment, seller, buyer, customer, is_debt
 
 
 def _parse_price(raw: str) -> float:
@@ -390,7 +403,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     # Pattern B: explicit კოდი: prefix
     m = _SALE_B.search(text)
     if m:
-        payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+        payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         return ParsedSale(
             raw_product=m.group("product").strip(),
             quantity=int(float(m.group("qty"))),
@@ -398,6 +411,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
+            buyer_type=buyer,
             customer_name=customer,
             is_debt=is_debt,
             debt_client=customer if is_debt else "",
@@ -411,7 +425,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
         raw_price = _parse_price(m.group("price"))
         # "ჯამში" means the price is the total; derive unit price
         unit_price = (raw_price / qty) if (m.group("total_flag") and qty > 0) else raw_price
-        payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+        payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         # LLC keyword may appear before the quantity (e.g., "სარკე შპსდან 1ც 30₾")
         if seller == "individual" and _LLC_RE.search(product_raw):
             seller = "llc"
@@ -423,6 +437,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
+            buyer_type=buyer,
             customer_name=customer,
             is_debt=is_debt,
             debt_client=customer if is_debt else "",
@@ -431,7 +446,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     # Pattern D: qty+price shorthand "1ც 40ლ დარიცხა"
     m = _SALE_D.match(text)
     if m:
-        payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+        payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         return ParsedSale(
             raw_product="",
             quantity=int(m.group("qty")),
@@ -439,6 +454,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
+            buyer_type=buyer,
             customer_name=customer,
             is_debt=is_debt,
             debt_client=customer if is_debt else "",
@@ -447,7 +463,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     # Pattern C: price-only shorthand "30ლ ხელზე" or "30ლ"
     m = _SALE_C.match(text)
     if m:
-        payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+        payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         return ParsedSale(
             raw_product="",
             quantity=1,
@@ -455,6 +471,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
+            buyer_type=buyer,
             customer_name=customer,
             is_debt=is_debt,
             debt_client=customer if is_debt else "",
@@ -482,7 +499,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
     m = _SALE_E.match(text)
     if m:
         product_raw = m.group("product").strip()
-        payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+        payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         # LLC keyword may appear in the product field before the price
         # e.g., "უპორნები შპსდან 350ლ" → product="უპორნები", seller=llc
         if seller == "individual" and _LLC_RE.search(product_raw):
@@ -495,6 +512,7 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
             payment_method=payment,
             is_return=is_return,
             seller_type=seller,
+            buyer_type=buyer,
             customer_name=customer,
             is_debt=is_debt,
             debt_client=customer if is_debt else "",
@@ -607,7 +625,7 @@ def parse_dual_sale_message(text: str) -> Optional[List[ParsedSale]]:
     qty1 = int(m.group("qty1"))
     qty2 = int(m.group("qty2"))
     total = _parse_price(m.group("price"))
-    payment, seller, customer, is_debt = _parse_rest(m.group("rest"))
+    payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
 
     # Split total equally; derive unit price per product
     half = total / 2
@@ -616,11 +634,11 @@ def parse_dual_sale_message(text: str) -> Optional[List[ParsedSale]]:
 
     return [
         ParsedSale(raw_product=product1, quantity=qty1, price=unit1,
-                   payment_method=payment, seller_type=seller, customer_name=customer,
-                   is_debt=is_debt, debt_client=customer if is_debt else ""),
+                   payment_method=payment, seller_type=seller, buyer_type=buyer,
+                   customer_name=customer, is_debt=is_debt, debt_client=customer if is_debt else ""),
         ParsedSale(raw_product=product2, quantity=qty2, price=unit2,
-                   payment_method=payment, seller_type=seller, customer_name=customer,
-                   is_debt=is_debt, debt_client=customer if is_debt else ""),
+                   payment_method=payment, seller_type=seller, buyer_type=buyer,
+                   customer_name=customer, is_debt=is_debt, debt_client=customer if is_debt else ""),
     ]
 
 
