@@ -175,9 +175,12 @@ class ExpenseWizard(StatesGroup):
 
 
 class SaleEditWizard(StatesGroup):
-    field   = State()   # user picks which field to change
-    value   = State()   # user types new value (or picks via buttons)
-    confirm = State()   # final confirmation
+    field           = State()   # user picks which field to change
+    value           = State()   # user types new value (or picks via buttons)
+    product_oem     = State()   # step 1: user types OEM code
+    product_search  = State()   # step 2: user types product name
+    product_select  = State()   # user picks from search results or freeform
+    confirm         = State()   # final confirmation
 
 
 class NisiaEditWizard(StatesGroup):
@@ -1064,6 +1067,7 @@ _SALE_FIELDS = {
     "price": "ფასი (₾)",
     "pay":   "გადახდა",
     "cust":  "კლიენტი",
+    "prod":  "პროდუქტი",
 }
 
 
@@ -1073,6 +1077,7 @@ def _sale_edit_field_kb(sale_id: int, is_credit: bool) -> InlineKeyboardMarkup:
          _btn("💰 ფასი",       f"sef:{sale_id}:price")],
         [_btn("💳 გადახდა",    f"sef:{sale_id}:pay"),
          _btn("👤 კლიენტი",   f"sef:{sale_id}:cust")],
+        [_btn("📦 პროდუქტი",  f"sef:{sale_id}:prod")],
         [_btn("↩️ დაბრუნება",  f"ret:sale:{sale_id}")],
         _CANCEL_ROW,
     ]
@@ -1632,6 +1637,20 @@ async def sale_edit_field(callback: CallbackQuery, state: FSMContext, db: Databa
     sale_id = int(parts[1])
     field   = parts[2]
     await state.update_data(edit_field=field)
+
+    if field == "prod":
+        await state.set_state(SaleEditWizard.product_oem)
+        sale = await db.get_sale(sale_id)
+        current = (sale.get("product_name") or sale.get("notes") or "—") if sale else "—"
+        await callback.message.edit_text(
+            f"📦 ახლანდელი: <b>{_e(current)}</b>\n\n"
+            "1️⃣ ჩაწერე <b>OEM კოდი</b> (ან <code>-</code> თუ არ გაქვს):",
+            parse_mode=_PARSE,
+            reply_markup=_kb(_CANCEL_ROW),
+        )
+        await callback.answer()
+        return
+
     await state.set_state(SaleEditWizard.value)
 
     if field == "pay":
@@ -1718,6 +1737,131 @@ async def sale_edit_value_input(message: Message, state: FSMContext) -> None:
     )
 
 
+@wizard_router.message(SaleEditWizard.product_oem, IsAdmin(), _PRIVATE)
+async def sale_edit_product_oem_input(message: Message, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    oem = None if raw == "-" else (raw or None)
+    await state.update_data(_edit_oem=oem)
+    await state.set_state(SaleEditWizard.product_search)
+    oem_line = f"✅ OEM: <code>{_e(oem)}</code>\n\n" if oem else ""
+    await message.answer(
+        f"{oem_line}"
+        "2️⃣ ჩაწერე პროდუქტის <b>დასახელება</b>:",
+        parse_mode=_PARSE,
+        reply_markup=_kb(_CANCEL_ROW),
+    )
+
+
+@wizard_router.message(SaleEditWizard.product_search, IsAdmin(), _PRIVATE)
+async def sale_edit_product_search(
+    message: Message, state: FSMContext, db: Database,
+) -> None:
+    query = (message.text or "").strip()
+    if not query:
+        await message.answer("⚠️ ჩაწერე პროდუქტის დასახელება.", parse_mode=_PARSE)
+        return
+
+    data = await state.get_data()
+    edit_oem: Optional[str] = data.get("_edit_oem")
+
+    products: list = []
+    if edit_oem:
+        products = await db.search_products(edit_oem, limit=6)
+    if not products:
+        products = await db.search_products(query, limit=6)
+
+    _confirm_kb = _kb([_btn("✅ შენახვა", "wiz:econfirm:yes"), _btn("❌ გაუქმება", "wiz:econfirm:no")])
+
+    if len(products) == 1:
+        p = products[0]
+        await state.update_data(
+            edit_value={"product_id": p["id"], "product_name": p["name"], "freeform": False},
+            edit_display=p["name"],
+        )
+        await state.set_state(SaleEditWizard.confirm)
+        await message.answer(
+            f"📦 ახალი პროდუქტი: <b>{_e(p['name'])}</b>\n\nდაადასტურე?",
+            parse_mode=_PARSE,
+            reply_markup=_confirm_kb,
+        )
+        return
+
+    buttons: list = []
+    if len(products) > 1:
+        for p in products:
+            label = p["name"]
+            if p.get("oem_code"):
+                label += f" [{p['oem_code']}]"
+            buttons.append([_btn(label, f"sep:id:{p['id']}")])
+        buttons.append([_btn(f"❓ ჩაწერე თავისუფლად: {query[:30]}", "sep:free")])
+        buttons.append(_CANCEL_ROW)
+        await state.update_data(_pending_freeform_name=query)
+        await state.set_state(SaleEditWizard.product_select)
+        await message.answer(
+            f"🔍 <b>ვიპოვე {len(products)} პროდუქტი.</b> აირჩიე:",
+            parse_mode=_PARSE,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+        return
+
+    await state.update_data(_pending_freeform_name=query)
+    await state.set_state(SaleEditWizard.product_select)
+    await message.answer(
+        f"⚠️ <b>'{_e(query)}'</b> ბაზაში ვერ ვიპოვე.\n"
+        "ჩავწეროთ თავისუფალ ფორმატში? (product_id გაუქმდება)",
+        parse_mode=_PARSE,
+        reply_markup=_kb(
+            [_btn(f"✅ ჩაწერა: {query[:40]}", "sep:free")],
+            _CANCEL_ROW,
+        ),
+    )
+
+
+@wizard_router.callback_query(F.data.startswith("sep:"), IsAdmin(), StateFilter(SaleEditWizard.product_select))
+async def sale_edit_product_pick(
+    callback: CallbackQuery, state: FSMContext, db: Database,
+) -> None:
+    assert isinstance(callback.message, Message)
+    parts = callback.data.split(":")  # sep:free  |  sep:id:{pid}
+    d = await state.get_data()
+
+    if parts[1] == "free":
+        name = (d.get("_pending_freeform_name") or "").strip()
+        if not name:
+            await callback.answer("❌ სახელი ცარიელია", show_alert=True)
+            return
+        await state.update_data(
+            edit_value={"product_id": None, "product_name": name, "freeform": True},
+            edit_display=name,
+        )
+    elif parts[1] == "id" and len(parts) >= 3:
+        try:
+            pid = int(parts[2])
+        except ValueError:
+            await callback.answer("❌ შეცდომა", show_alert=True)
+            return
+        prod = await db.get_product_by_id(pid)
+        if not prod:
+            await callback.answer("⚠️ პროდუქტი ვერ მოიძებნა", show_alert=True)
+            return
+        await state.update_data(
+            edit_value={"product_id": pid, "product_name": prod["name"], "freeform": False},
+            edit_display=prod["name"],
+        )
+    else:
+        await callback.answer("❌ შეცდომა", show_alert=True)
+        return
+
+    display = (await state.get_data()).get("edit_display", "—")
+    await state.set_state(SaleEditWizard.confirm)
+    await callback.message.edit_text(
+        f"📦 ახალი პროდუქტი: <b>{_e(display)}</b>\n\nდაადასტურე?",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("✅ შენახვა", "wiz:econfirm:yes"), _btn("❌ გაუქმება", "wiz:econfirm:no")]),
+    )
+    await callback.answer()
+
+
 @wizard_router.callback_query(F.data == "wiz:econfirm:yes", IsAdmin(), StateFilter(SaleEditWizard.confirm))
 async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
@@ -1727,7 +1871,7 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
     new_val  = d["edit_value"]
     await state.clear()
 
-    kwargs = {}
+    kwargs: dict = {}
     if field == "qty":
         kwargs["quantity"] = new_val
     elif field == "price":
@@ -1736,6 +1880,16 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
         kwargs["payment_method"] = new_val
     elif field == "cust":
         kwargs["customer_name"] = new_val
+    elif field == "prod":
+        # new_val is {"product_id": Optional[int], "product_name": str, "freeform": bool}
+        if new_val.get("freeform"):
+            kwargs["clear_product"] = True
+            kwargs["notes"] = new_val["product_name"]
+        else:
+            kwargs["product_id"] = int(new_val["product_id"])
+            sale_now = await db.get_sale(sale_id)
+            if sale_now and sale_now.get("product_id") is None and sale_now.get("notes"):
+                kwargs["notes"] = ""
 
     updated = await db.edit_sale(sale_id, **kwargs)
     if not updated:
@@ -1749,9 +1903,11 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
     pay   = {"cash": "ხელზე 💵", "transfer": "დარიცხა 🏦", "credit": "ნისია 📋"}.get(
         updated["payment_method"], updated["payment_method"]
     )
+    prod_name = updated.get("product_name") or updated.get("notes") or "—"
 
     await callback.message.edit_text(
         f"✅ <b>გაყიდვა #{sale_id} განახლდა</b>\n"
+        f"📦 {_e(prod_name)}\n"
         f"🔢 {qty}ც × {price:.2f}₾ = <b>{qty * price:.2f}₾</b>\n"
         f"💳 {pay}",
         parse_mode=_PARSE,
