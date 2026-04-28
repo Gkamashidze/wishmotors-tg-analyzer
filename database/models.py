@@ -522,7 +522,7 @@ WHERE s.seller_type = 'individual'
 -- status: ordered → in_transit → arrived → delivered | cancelled
 CREATE TABLE IF NOT EXISTS personal_orders (
     id                 SERIAL PRIMARY KEY,
-    tracking_token     TEXT           UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(16), 'hex'),
+    tracking_token     TEXT           UNIQUE NOT NULL DEFAULT replace(gen_random_uuid()::text, '-', ''),
     customer_name      TEXT           NOT NULL,
     customer_contact   TEXT,
     part_name          TEXT           NOT NULL,
