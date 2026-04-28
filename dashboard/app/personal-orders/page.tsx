@@ -327,6 +327,17 @@ export default function PersonalOrdersPage() {
                             <div className="flex gap-1 justify-end">
                               <EditOrderDialog order={order} onUpdated={load} />
                               <Button variant="ghost" size="sm" onClick={() => copyLink(order.tracking_token)} title="ლინკის კოპირება">🔗</Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="წაშლა"
+                                onClick={async () => {
+                                  if (!confirm(`შეკვეთა #${order.id} წაიშლება. დარწმუნებული ხარ?`)) return;
+                                  await fetch(`/api/personal-orders/${order.id}`, { method: "DELETE" });
+                                  void load();
+                                }}
+                                className="text-red-500 hover:text-red-700"
+                              >🗑️</Button>
                             </div>
                           </td>
                         </tr>
