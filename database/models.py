@@ -547,6 +547,8 @@ CREATE TABLE IF NOT EXISTS personal_orders (
 CREATE INDEX IF NOT EXISTS idx_personal_orders_token      ON personal_orders(tracking_token);
 CREATE INDEX IF NOT EXISTS idx_personal_orders_created_at ON personal_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_personal_orders_status     ON personal_orders(status);
+
+ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_min NUMERIC(12, 2);
 """
 
 
@@ -702,6 +704,7 @@ class PersonalOrderRow(TypedDict):
     cost_price: Optional[float]
     transportation_cost: Optional[float]
     vat_amount: Optional[float]
+    sale_price_min: Optional[float]
     sale_price: float
     amount_paid: float
     status: str

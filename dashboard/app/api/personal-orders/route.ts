@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       cost_price: typeof body.cost_price === "number" ? body.cost_price : null,
       transportation_cost: typeof body.transportation_cost === "number" ? body.transportation_cost : null,
       vat_amount: typeof body.vat_amount === "number" ? body.vat_amount : null,
+      sale_price_min: typeof body.sale_price_min === "number" ? body.sale_price_min : null,
       sale_price,
       estimated_arrival: typeof body.estimated_arrival === "string" ? body.estimated_arrival || null : null,
       notes: typeof body.notes === "string" ? body.notes.trim() || null : null,

@@ -3070,6 +3070,7 @@ class Database:
         cost_price: Optional[float] = None,
         transportation_cost: Optional[float] = None,
         vat_amount: Optional[float] = None,
+        sale_price_min: Optional[float] = None,
         estimated_arrival: Optional[Any] = None,
         notes: Optional[str] = None,
     ) -> PersonalOrderRow:
@@ -3078,12 +3079,12 @@ class Database:
                 """INSERT INTO personal_orders
                        (customer_name, customer_contact, part_name, oem_code,
                         cost_price, transportation_cost, vat_amount,
-                        sale_price, estimated_arrival, notes)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        sale_price_min, sale_price, estimated_arrival, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                    RETURNING *""",
                 customer_name, customer_contact, part_name, oem_code,
                 cost_price, transportation_cost, vat_amount,
-                sale_price, estimated_arrival, notes,
+                sale_price_min, sale_price, estimated_arrival, notes,
             )
         return dict(row)  # type: ignore[return-value]
 
@@ -3120,7 +3121,7 @@ class Database:
         allowed = {
             "customer_name", "customer_contact", "part_name", "oem_code",
             "cost_price", "transportation_cost", "vat_amount",
-            "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
+            "sale_price_min", "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:

@@ -57,7 +57,8 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     customer_name: "", customer_contact: "", part_name: "", oem_code: "",
-    cost_price: "", transportation_cost: "", vat_amount: "", sale_price: "",
+    cost_price: "", transportation_cost: "", vat_amount: "",
+    sale_price_min: "", sale_price: "",
     estimated_arrival: "", notes: "",
   });
 
@@ -79,6 +80,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
       if (form.cost_price) body.cost_price = parseFloat(form.cost_price);
       if (form.transportation_cost) body.transportation_cost = parseFloat(form.transportation_cost);
       if (form.vat_amount) body.vat_amount = parseFloat(form.vat_amount);
+      if (form.sale_price_min) body.sale_price_min = parseFloat(form.sale_price_min);
       if (form.estimated_arrival) body.estimated_arrival = form.estimated_arrival;
       if (form.notes.trim()) body.notes = form.notes.trim();
 
@@ -89,7 +91,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
       });
       if (!res.ok) throw new Error("server error");
       setOpen(false);
-      setForm({ customer_name: "", customer_contact: "", part_name: "", oem_code: "", cost_price: "", transportation_cost: "", vat_amount: "", sale_price: "", estimated_arrival: "", notes: "" });
+      setForm({ customer_name: "", customer_contact: "", part_name: "", oem_code: "", cost_price: "", transportation_cost: "", vat_amount: "", sale_price_min: "", sale_price: "", estimated_arrival: "", notes: "" });
       onCreated();
     } catch {
       alert("შეცდომა შენახვისას. სცადე ხელახლა.");
@@ -127,7 +129,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
             <p className="text-xs font-medium text-muted-foreground mb-2">ფინანსური (მხოლოდ შენ ხედავ)</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-xs text-muted-foreground">თვითღირ. (₾)</label>
+                <label className="text-xs text-muted-foreground">ღირებულება ($)</label>
                 <Input type="number" step="0.01" min="0" value={form.cost_price} onChange={e => set("cost_price", e.target.value)} placeholder="0.00" />
               </div>
               <div>
@@ -139,16 +141,20 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
                 <Input type="number" step="0.01" min="0" value={form.vat_amount} onChange={e => set("vat_amount", e.target.value)} placeholder="0.00" />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <div>
+                <label className="text-xs text-muted-foreground">გასაყიდი დან (₾)</label>
+                <Input type="number" step="0.01" min="0" value={form.sale_price_min} onChange={e => set("sale_price_min", e.target.value)} placeholder="0.00" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">გასაყიდი მდე (₾) *</label>
+                <Input required type="number" step="0.01" min="0.01" value={form.sale_price} onChange={e => set("sale_price", e.target.value)} placeholder="0.00" />
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">გასაყიდი ფასი (₾) *</label>
-              <Input required type="number" step="0.01" min="0.01" value={form.sale_price} onChange={e => set("sale_price", e.target.value)} placeholder="0.00" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">ჩამოსვლის თარიღი</label>
-              <Input type="date" value={form.estimated_arrival} onChange={e => set("estimated_arrival", e.target.value)} />
-            </div>
+          <div>
+            <label className="text-xs text-muted-foreground">ჩამოსვლის თარიღი</label>
+            <Input type="date" value={form.estimated_arrival} onChange={e => set("estimated_arrival", e.target.value)} />
           </div>
           <div>
             <label className="text-xs text-muted-foreground">შენიშვნები</label>
@@ -308,7 +314,11 @@ export default function PersonalOrdersPage() {
                           <td className="py-2 pr-3">
                             <Badge variant={STATUS_VARIANTS[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                           </td>
-                          <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.sale_price))}</td>
+                          <td className="py-2 pr-3 text-right font-mono">
+                            {order.sale_price_min != null
+                              ? `${fmtGel(Number(order.sale_price_min))} – ${fmtGel(Number(order.sale_price))}`
+                              : fmtGel(Number(order.sale_price))}
+                          </td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtGel(remaining)}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(profit)}</td>

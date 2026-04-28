@@ -18,6 +18,7 @@ export interface PersonalOrderRow {
   cost_price: number | null;
   transportation_cost: number | null;
   vat_amount: number | null;
+  sale_price_min: number | null;
   sale_price: number;
   amount_paid: number;
   status: PersonalOrderStatus;
@@ -44,7 +45,7 @@ export async function getPersonalOrders(limit = 100): Promise<PersonalOrderRow[]
   return query<PersonalOrderRow>(
     `SELECT id, tracking_token, customer_name, customer_contact,
             part_name, oem_code, cost_price, transportation_cost, vat_amount,
-            sale_price, amount_paid, status, estimated_arrival, notes,
+            sale_price_min, sale_price, amount_paid, status, estimated_arrival, notes,
             created_at, updated_at
      FROM personal_orders
      ORDER BY created_at DESC
@@ -78,6 +79,7 @@ export async function createPersonalOrder(data: {
   cost_price?: number | null;
   transportation_cost?: number | null;
   vat_amount?: number | null;
+  sale_price_min?: number | null;
   sale_price: number;
   estimated_arrival?: string | null;
   notes?: string | null;
@@ -86,8 +88,8 @@ export async function createPersonalOrder(data: {
     `INSERT INTO personal_orders
        (customer_name, customer_contact, part_name, oem_code,
         cost_price, transportation_cost, vat_amount,
-        sale_price, estimated_arrival, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        sale_price_min, sale_price, estimated_arrival, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING *`,
     [
       data.customer_name,
@@ -97,6 +99,7 @@ export async function createPersonalOrder(data: {
       data.cost_price ?? null,
       data.transportation_cost ?? null,
       data.vat_amount ?? null,
+      data.sale_price_min ?? null,
       data.sale_price,
       data.estimated_arrival ?? null,
       data.notes ?? null,
@@ -112,7 +115,7 @@ export async function updatePersonalOrder(
   const allowed = [
     "customer_name", "customer_contact", "part_name", "oem_code",
     "cost_price", "transportation_cost", "vat_amount",
-    "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
+    "sale_price_min", "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
   ] as const;
   const entries = Object.entries(data).filter(([k]) => allowed.includes(k as typeof allowed[number]));
   if (!entries.length) return;
