@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 import asyncpg
@@ -3040,6 +3041,22 @@ class Database:
                 limit,
             )
         return [dict(r) for r in rows]
+
+    async def get_last_import_prices(self, oems: list[str]) -> dict[str, Decimal]:
+        """Return the most recent unit_price_usd per OEM from imports_history."""
+        if not oems:
+            return {}
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT DISTINCT ON (oem) oem, unit_price_usd
+                FROM imports_history
+                WHERE oem = ANY($1)
+                ORDER BY oem, import_date DESC, created_at DESC
+                """,
+                oems,
+            )
+        return {row["oem"]: row["unit_price_usd"] for row in rows}
 
     # ─── Personal Orders ──────────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import html
 import io
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any, Mapping, Optional
 
 import pytz
@@ -1723,6 +1724,45 @@ async def addproduct_price(message: Message, state: FSMContext, db: Database) ->
 
 
 
+def _build_price_change_lines(
+    price_changes: list[tuple[str, str, Decimal, Optional[Decimal]]],
+) -> list[str]:
+    """Build the price-change section lines for the import summary."""
+    changed: list[str] = []
+    new_products: list[str] = []
+    unchanged_count = 0
+
+    for oem, name, new_price, prev_price in price_changes:
+        label = html.escape(f"{oem} | {name[:30]}")
+        if prev_price is None:
+            new_products.append(f"🆕 {label}    <b>${new_price:.2f}</b>")
+        elif new_price == prev_price:
+            unchanged_count += 1
+        else:
+            arrow = "▲" if new_price > prev_price else "▼"
+            pct = ((new_price - prev_price) / prev_price * 100) if prev_price else Decimal(0)
+            sign = "+" if pct > 0 else "−"
+            changed.append(
+                f"{arrow} {label}    ${prev_price:.2f} → <b>${new_price:.2f}</b>"
+                f"  ({sign}{abs(pct):.0f}%)"
+            )
+
+    lines: list[str] = []
+    if not changed and not new_products and unchanged_count == 0:
+        return lines
+
+    lines.append("\n📊 <b>ფასების ცვლილება:</b>")
+    lines.extend(changed[:50])
+    lines.extend(new_products[:50])
+    if unchanged_count:
+        noun = "ნაწილს" if unchanged_count > 1 else "ნაწილს"
+        if not changed and not new_products:
+            lines.append(f"— ყველა {noun} ფასი არ შეცვლია")
+        else:
+            lines.append(f"— {unchanged_count} {noun} ფასი არ შეცვლია")
+    return lines
+
+
 # ─── /import — Excel cost-tracking import (9 columns) ────────────────────────
 
 class ImportState(StatesGroup):
@@ -1791,8 +1831,12 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
         )
         return
 
+    # Fetch previous prices for all OEMs before the loop (imports_history not yet updated)
+    prev_prices = await db.get_last_import_prices([r.oem for r in import_rows])
+
     # Persist to inventory (receive_inventory_batch) + imports_history atomically
     added = updated = failed = 0
+    price_changes: list[tuple] = []
     for r in import_rows:
         try:
             result = await db.receive_inventory_batch(
@@ -1808,6 +1852,7 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
                 added += 1
             else:
                 updated += 1
+            price_changes.append((r.oem, r.name, r.unit_price_usd, prev_prices.get(r.oem)))
         except Exception:
             failed += 1
 
@@ -1830,4 +1875,9 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
         if len(parse_errors) > 3:
             lines.append(f"  … და კიდევ {len(parse_errors) - 3}")
 
-    await status_msg.edit_text("\n".join(lines), parse_mode=_PARSE)
+    lines.extend(_build_price_change_lines(price_changes))
+
+    text = "\n".join(lines)
+    if len(text) > 4096:
+        text = text[:4050] + "\n…"
+    await status_msg.edit_text(text, parse_mode=_PARSE)
