@@ -61,6 +61,7 @@ class AddPOStates(StatesGroup):
     oem_code         = State()
     cost_price       = State()
     transport_vat    = State()
+    sale_price_min   = State()
     sale_price       = State()
     arrival_date     = State()
     confirm          = State()
@@ -316,9 +317,47 @@ async def po_got_transport_vat(message: Message, state: FSMContext) -> None:
         )
         return
     await state.update_data(transportation_cost=transport, vat_amount=vat)
+    await state.set_state(AddPOStates.sale_price_min)
+    await message.answer(
+        "<b>7/9</b> — გასაყიდი ფასი <b>დან</b> (₾):\n"
+        "მინიმალური ფასი. მაგ: <code>100.00</code>\n"
+        "არ იცი? — /skip",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("⏭ გამოტოვება", "po_skip_price_min"), _btn("❌ გაუქმება", "po_cancel")]),
+    )
+
+
+@personal_orders_router.callback_query(F.data == "po_skip_price_min")
+async def po_skip_price_min(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.update_data(sale_price_min=None)
+    await state.set_state(AddPOStates.sale_price)
+    await cb.message.edit_text(  # type: ignore[union-attr]
+        "<b>8/9</b> — გასაყიდი ფასი <b>მდე</b> (₾):\n"
+        "მაქსიმალური / საბოლოო ფასი. მაგ: <code>150.00</code>",
+        parse_mode=_PARSE,
+        reply_markup=_kb([_btn("❌ გაუქმება", "po_cancel")]),
+    )
+
+
+@personal_orders_router.message(StateFilter(AddPOStates.sale_price_min), _PRIVATE)
+async def po_got_sale_price_min(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if text.lower() == "/skip":
+        await state.update_data(sale_price_min=None)
+    else:
+        try:
+            price_min = float(text.replace(",", "."))
+            if price_min <= 0:
+                raise ValueError
+            await state.update_data(sale_price_min=price_min)
+        except ValueError:
+            await message.answer("გთხოვ შეიყვანო დადებითი რიცხვი ან /skip", parse_mode=_PARSE)
+            return
     await state.set_state(AddPOStates.sale_price)
     await message.answer(
-        "<b>7/8</b> — გასაყიდი ფასი (₾) — ეს მომხმარებელს ეჩვენება:",
+        "<b>8/9</b> — გასაყიდი ფასი <b>მდე</b> (₾):\n"
+        "მაქსიმალური / საბოლოო ფასი. მაგ: <code>150.00</code>",
         parse_mode=_PARSE,
         reply_markup=_kb([_btn("❌ გაუქმება", "po_cancel")]),
     )
@@ -339,7 +378,7 @@ async def po_got_sale_price(message: Message, state: FSMContext) -> None:
     now = datetime.now()
     markup = await cal.start_calendar(year=now.year, month=now.month)
     await message.answer(
-        "<b>8/8</b> — სავარაუდო ჩამოსვლის თარიღი:\n"
+        "<b>9/9</b> — სავარაუდო ჩამოსვლის თარიღი:\n"
         "აირჩიე კალენდრიდან ან შეიყვანე: <code>dd.mm.yyyy</code>\n"
         "თუ არ იცი — /skip",
         parse_mode=_PARSE,
@@ -388,7 +427,12 @@ async def _show_po_confirm(message: Message, state: FSMContext) -> None:
     transport = data.get("transportation_cost", 0)
     vat = data.get("vat_amount", 0)
     sale = data.get("sale_price", 0)
+    sale_min = data.get("sale_price_min")
     profit = float(sale) - float(cost) - float(transport) - float(vat)
+    price_range = (
+        f"₾{float(sale_min):.2f} — ₾{float(sale):.2f}"
+        if sale_min else f"₾{float(sale):.2f}"
+    )
 
     await state.set_state(AddPOStates.confirm)
     await message.answer(
@@ -400,7 +444,7 @@ async def _show_po_confirm(message: Message, state: FSMContext) -> None:
         f"🏷 თვითღირ.: ₾{float(cost):.2f}\n"
         f"🚛 ტრანსპ.: ₾{float(transport):.2f}\n"
         f"🧾 დღგ: ₾{float(vat):.2f}\n"
-        f"💰 გასაყიდი: ₾{float(sale):.2f}\n"
+        f"💰 გასაყიდი: {price_range}\n"
         f"📈 მოგება: ₾{profit:.2f}",
         parse_mode=_PARSE,
         reply_markup=_kb(
@@ -424,6 +468,7 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
             cost_price=float(data["cost_price"]) if data.get("cost_price") is not None else None,
             transportation_cost=float(data["transportation_cost"]) if data.get("transportation_cost") is not None else None,
             vat_amount=float(data["vat_amount"]) if data.get("vat_amount") is not None else None,
+            sale_price_min=float(data["sale_price_min"]) if data.get("sale_price_min") is not None else None,
             estimated_arrival=data.get("estimated_arrival"),
         )
     except Exception:

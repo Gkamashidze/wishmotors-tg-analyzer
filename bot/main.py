@@ -180,6 +180,9 @@ async def main() -> None:
         BotCommand(command="cash",          description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"),
         BotCommand(command="deposit",       description="🏦 ბანკში შეტანა"),
         BotCommand(command="checksales",    description="🏢 შპს — ჩაუბეჭდავი ჩეკები"),
+        # ── 🛒 კერძო შეკვეთები ───────────────────────
+        BotCommand(command="po",            description="🛒 კერძო შეკვეთების სია"),
+        BotCommand(command="addpo",         description="➕ ახალი კერძო შეკვეთა — wizard"),
         # ── 🔧 სისტემა ────────────────────────────────
         BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
         BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
