@@ -62,8 +62,8 @@ def test_bc_consume_missing():
 
 # ─── decode_barcode ───────────────────────────────────────────────────────────
 
-def _make_sys_modules_patch(decode_results=None, decode_side_effect=None):
-    """Build sys.modules patches for pyzbar and PIL needed by decode_barcode."""
+def _make_sys_modules_patch(zxing_results=None, zxing_side_effect=None):
+    """Build sys.modules patches for zxingcpp and PIL needed by decode_barcode."""
     # PIL mock: supports Image.open(), .convert(), .filter(), .resize(), ImageEnhance, ImageFilter
     mock_img = MagicMock()
     mock_img.size = (500, 500)
@@ -90,30 +90,26 @@ def _make_sys_modules_patch(decode_results=None, decode_side_effect=None):
     mock_pil.ImageEnhance = mock_imageenhance
     mock_pil.ImageFilter = mock_imagefilter
 
-    # pyzbar mock: pyzbar.pyzbar.decode()
-    mock_pyzbar_pyzbar = MagicMock()
-    if decode_side_effect:
-        mock_pyzbar_pyzbar.decode.side_effect = decode_side_effect
+    # zxingcpp mock
+    mock_zx = MagicMock()
+    if zxing_side_effect:
+        mock_zx.read_barcodes.side_effect = zxing_side_effect
     else:
-        mock_pyzbar_pyzbar.decode.return_value = decode_results or []
-
-    mock_pyzbar = MagicMock()
-    mock_pyzbar.pyzbar = mock_pyzbar_pyzbar
+        mock_zx.read_barcodes.return_value = zxing_results or []
 
     return {
+        "zxingcpp": mock_zx,
         "PIL": mock_pil,
         "PIL.Image": mock_image_cls,
         "PIL.ImageEnhance": mock_imageenhance,
         "PIL.ImageFilter": mock_imagefilter,
-        "pyzbar": mock_pyzbar,
-        "pyzbar.pyzbar": mock_pyzbar_pyzbar,
     }
 
 
 def test_decode_barcode_success():
     mock_result = MagicMock()
-    mock_result.data = b" 8390132500 "
-    patches = _make_sys_modules_patch(decode_results=[mock_result])
+    mock_result.text = " 8390132500 "
+    patches = _make_sys_modules_patch(zxing_results=[mock_result])
 
     with patch.dict("sys.modules", patches):
         from bot.barcode.decoder import decode_barcode
@@ -124,7 +120,7 @@ def test_decode_barcode_success():
 
 
 def test_decode_barcode_no_results():
-    patches = _make_sys_modules_patch(decode_results=[])
+    patches = _make_sys_modules_patch(zxing_results=[])
 
     with patch.dict("sys.modules", patches):
         from bot.barcode.decoder import decode_barcode
@@ -135,7 +131,7 @@ def test_decode_barcode_no_results():
 
 
 def test_decode_barcode_exception_returns_none():
-    patches = _make_sys_modules_patch(decode_side_effect=RuntimeError("pyzbar error"))
+    patches = _make_sys_modules_patch(zxing_side_effect=RuntimeError("zxing error"))
 
     with patch.dict("sys.modules", patches):
         from bot.barcode.decoder import decode_barcode
