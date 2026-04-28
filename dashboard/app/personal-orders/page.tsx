@@ -7,9 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { PersonalOrderRow, PersonalOrderStatus } from "@/lib/personal-orders-queries";
 
@@ -41,11 +39,10 @@ function fmtDate(v: string | null | undefined) {
 }
 
 function calcProfit(order: PersonalOrderRow) {
-  const sale = Number(order.sale_price);
-  const cost = Number(order.cost_price ?? 0);
-  const transport = Number(order.transportation_cost ?? 0);
-  const vat = Number(order.vat_amount ?? 0);
-  return sale - cost - transport - vat;
+  return Number(order.sale_price)
+    - Number(order.cost_price ?? 0)
+    - Number(order.transportation_cost ?? 0)
+    - Number(order.vat_amount ?? 0);
 }
 
 function copyLink(token: string) {
@@ -55,13 +52,9 @@ function copyLink(token: string) {
 
 // ─── New Order Form ───────────────────────────────────────────────────────────
 
-interface NewOrderFormProps {
-  onCreated: () => void;
-}
-
-function NewOrderForm({ onCreated }: NewOrderFormProps) {
-  const [loading, setLoading] = useState(false);
+function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     customer_name: "", customer_contact: "", part_name: "", oem_code: "",
     cost_price: "", transportation_cost: "", vat_amount: "", sale_price: "",
@@ -96,6 +89,7 @@ function NewOrderForm({ onCreated }: NewOrderFormProps) {
       });
       if (!res.ok) throw new Error("server error");
       setOpen(false);
+      setForm({ customer_name: "", customer_contact: "", part_name: "", oem_code: "", cost_price: "", transportation_cost: "", vat_amount: "", sale_price: "", estimated_arrival: "", notes: "" });
       onCreated();
     } catch {
       alert("შეცდომა შენახვისას. სცადე ხელახლა.");
@@ -105,15 +99,10 @@ function NewOrderForm({ onCreated }: NewOrderFormProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">+ ახალი შეკვეთა</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>ახალი კერძო შეკვეთა</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-3 mt-2">
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>+ ახალი შეკვეთა</Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="ახალი კერძო შეკვეთა">
+        <form onSubmit={submit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">მომხმარებელი *</label>
@@ -172,12 +161,12 @@ function NewOrderForm({ onCreated }: NewOrderFormProps) {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>გაუქმება</Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 
-// ─── Edit / Payment Dialog ────────────────────────────────────────────────────
+// ─── Edit Dialog ──────────────────────────────────────────────────────────────
 
 function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpdated: () => void }) {
   const [open, setOpen] = useState(false);
@@ -208,15 +197,10 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">✏️</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>შეკვეთა #{order.id} — რედაქტირება</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 mt-2">
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>✏️</Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title={`შეკვეთა #${order.id} — რედაქტირება`}>
+        <div className="space-y-3">
           <div>
             <label className="text-xs text-muted-foreground">სტატუსი</label>
             <select
@@ -241,8 +225,8 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
             {loading ? "ინახება..." : "შენახვა"}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
 
@@ -272,37 +256,13 @@ export default function PersonalOrdersPage() {
     <>
       <TopBar title="კერძო შეკვეთები" />
       <main className="p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
-        {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">სულ შეკვეთა</p>
-              <p className="text-2xl font-bold">{orders.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">აქტიური</p>
-              <p className="text-2xl font-bold text-blue-600">{activeCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">სულ შემოსავალი</p>
-              <p className="text-2xl font-bold">{fmtGel(totalRevenue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">სულ მოგება</p>
-              <p className={`text-2xl font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {fmtGel(totalProfit)}
-              </p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">სულ</p><p className="text-2xl font-bold">{orders.length}</p></CardContent></Card>
+          <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">აქტიური</p><p className="text-2xl font-bold text-blue-600">{activeCount}</p></CardContent></Card>
+          <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">შემოსავალი</p><p className="text-2xl font-bold">{fmtGel(totalRevenue)}</p></CardContent></Card>
+          <Card><CardContent className="pt-4"><p className="text-xs text-muted-foreground">მოგება</p><p className={`text-2xl font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(totalProfit)}</p></CardContent></Card>
         </div>
 
-        {/* Orders table */}
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <div>
@@ -343,35 +303,20 @@ export default function PersonalOrdersPage() {
                           <td className="py-2 pr-3 font-medium">{order.customer_name}</td>
                           <td className="py-2 pr-3">
                             <div>{order.part_name}</div>
-                            {order.oem_code && (
-                              <div className="text-xs text-muted-foreground font-mono">{order.oem_code}</div>
-                            )}
+                            {order.oem_code && <div className="text-xs text-muted-foreground font-mono">{order.oem_code}</div>}
                           </td>
                           <td className="py-2 pr-3">
-                            <Badge variant={STATUS_VARIANTS[order.status]}>
-                              {STATUS_LABELS[order.status]}
-                            </Badge>
+                            <Badge variant={STATUS_VARIANTS[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                           </td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.sale_price))}</td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
-                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>
-                            {fmtGel(remaining)}
-                          </td>
-                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                            {fmtGel(profit)}
-                          </td>
+                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtGel(remaining)}</td>
+                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(profit)}</td>
                           <td className="py-2 pr-3 text-sm text-muted-foreground">{fmtDate(order.estimated_arrival)}</td>
                           <td className="py-2">
                             <div className="flex gap-1 justify-end">
                               <EditOrderDialog order={order} onUpdated={load} />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => copyLink(order.tracking_token)}
-                                title="ლინკის კოპირება"
-                              >
-                                🔗
-                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => copyLink(order.tracking_token)} title="ლინკის კოპირება">🔗</Button>
                             </div>
                           </td>
                         </tr>
