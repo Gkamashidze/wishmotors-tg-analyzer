@@ -263,6 +263,31 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// ─── Delete Button ────────────────────────────────────────────────────────────
+
+function DeleteOrderButton({ order, onDeleted }: { order: PersonalOrderRow; onDeleted: () => void }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleDelete() {
+    if (!confirm(`შეკვეთა #${order.id} (${order.customer_name}) წაიშლება. დარწმუნებული ხარ?`)) return;
+    setLoading(true);
+    try {
+      await fetch(`/api/personal-orders/${order.id}`, { method: "DELETE" });
+      onDeleted();
+    } catch {
+      alert("შეცდომა. სცადე ხელახლა.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Button variant="ghost" size="sm" onClick={handleDelete} disabled={loading} className="text-red-500 hover:text-red-700" title="წაშლა">
+      {loading ? "..." : "🗑"}
+    </Button>
+  );
+}
+
 // ─── Edit Dialog ──────────────────────────────────────────────────────────────
 
 function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpdated: () => void }) {
@@ -419,6 +444,7 @@ export default function PersonalOrdersPage() {
                             <div className="flex gap-1 justify-end">
                               <EditOrderDialog order={order} onUpdated={load} />
                               <CopyLinkButton token={order.tracking_token} />
+                              <DeleteOrderButton order={order} onDeleted={load} />
                             </div>
                           </td>
                         </tr>
