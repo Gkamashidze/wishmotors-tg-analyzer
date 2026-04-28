@@ -302,11 +302,9 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
 
     if low:
         logger.warning(
-            "Low stock alert: %s — %d units remaining", product["name"], new_stock
+            "Low stock alert: %s — %d units remaining (min_stock=%d)",
+            product["name"], new_stock, product["min_stock"],
         )
-
-    _LOW_STOCK_THRESHOLD = 2
-    if new_stock <= _LOW_STOCK_THRESHOLD:
         already_ordered = await db.has_active_order_for_product(product["id"])
         if not already_ordered:
             qty_needed = max(5, product.get("min_stock") or 5)
@@ -314,7 +312,7 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
             await db.create_order(
                 product_id=product["id"],
                 quantity_needed=qty_needed,
-                notes=f"ავტო-შეკვეთა: მარაგი ამოიწურება — {product['name']} ({stock_label})",
+                notes=f"ავტო-შეკვეთა: მარაგი მინიმუმს ჩამოვიდა — {product['name']} ({stock_label})",
             )
             await message.bot.send_message(
                 chat_id=message.from_user.id,
