@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|healthz).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|healthz|track).*)"],
 };
 
 const SECURITY_HEADERS: Record<string, string> = {

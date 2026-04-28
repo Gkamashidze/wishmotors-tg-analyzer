@@ -54,6 +54,10 @@ ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
 # Set FZ_ENTITY_ENABLED=false to disable ფ.პ mode entirely once migration is complete.
 FZ_ENTITY_ENABLED: bool = os.getenv("FZ_ENTITY_ENABLED", "true").lower() not in ("false", "0", "no")
 
+# Base URL of the dashboard (used to build personal order tracking links).
+# Example: DASHBOARD_URL=https://dashboard.yoursite.railway.app
+DASHBOARD_URL: str = os.getenv("DASHBOARD_URL", "").rstrip("/")
+
 # Optional: Telegram channel/chat ID for real-time transaction audit forwarding.
 # When set, every write operation (sale, expense, order, inventory) sends a
 # structured JSON message to this channel as a secondary backup.

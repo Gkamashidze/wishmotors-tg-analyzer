@@ -515,6 +515,38 @@ WHERE s.seller_type = 'individual'
       SELECT 1 FROM ledger l2
       WHERE l2.reference_id = 'fz_reversal:' || l.id::text
   );
+
+-- ─── Personal orders (owner-to-customer, outside company accounting) ─────────
+-- tracking_token: 32-char hex string sent to the customer as a public link.
+-- Financial fields (cost_price, transportation_cost, vat_amount) are owner-only.
+-- status: ordered → in_transit → arrived → delivered | cancelled
+CREATE TABLE IF NOT EXISTS personal_orders (
+    id                 SERIAL PRIMARY KEY,
+    tracking_token     TEXT           UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(16), 'hex'),
+    customer_name      TEXT           NOT NULL,
+    customer_contact   TEXT,
+    part_name          TEXT           NOT NULL,
+    oem_code           TEXT,
+    cost_price         NUMERIC(12, 2),
+    transportation_cost NUMERIC(12, 2),
+    vat_amount         NUMERIC(12, 2),
+    sale_price         NUMERIC(12, 2) NOT NULL,
+    amount_paid        NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    status             TEXT           NOT NULL DEFAULT 'ordered',
+    estimated_arrival  DATE,
+    notes              TEXT,
+    created_at         TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT personal_orders_status_check CHECK (
+        status IN ('ordered', 'in_transit', 'arrived', 'delivered', 'cancelled')
+    ),
+    CONSTRAINT personal_orders_sale_price_positive CHECK (sale_price > 0),
+    CONSTRAINT personal_orders_amount_paid_non_negative CHECK (amount_paid >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_orders_token      ON personal_orders(tracking_token);
+CREATE INDEX IF NOT EXISTS idx_personal_orders_created_at ON personal_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_personal_orders_status     ON personal_orders(status);
 """
 
 
@@ -658,6 +690,25 @@ class Product:
     min_stock: int
     unit_price: float
     created_at: str
+
+
+class PersonalOrderRow(TypedDict):
+    id: int
+    tracking_token: str
+    customer_name: str
+    customer_contact: Optional[str]
+    part_name: str
+    oem_code: Optional[str]
+    cost_price: Optional[float]
+    transportation_cost: Optional[float]
+    vat_amount: Optional[float]
+    sale_price: float
+    amount_paid: float
+    status: str
+    estimated_arrival: Optional[object]  # date
+    notes: Optional[str]
+    created_at: object  # datetime
+    updated_at: object  # datetime
 
 
 @dataclass

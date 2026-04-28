@@ -28,6 +28,7 @@ from bot.handlers.addorder import addorder_router
 from bot.handlers.barcode import barcode_router
 from database.audit_log import AuditLogger
 from bot.handlers.commands import commands_router
+from bot.handlers.personal_orders_handler import personal_orders_router
 from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
 from bot.handlers.period_report import period_router
@@ -200,6 +201,7 @@ async def main() -> None:
 
     dp.include_router(wizard_router)
     dp.include_router(addorder_router)
+    dp.include_router(personal_orders_router)
     dp.include_router(barcode_router)
     dp.include_router(sales_router)
     dp.include_router(orders_router)

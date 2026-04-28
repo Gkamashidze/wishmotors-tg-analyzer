@@ -14,6 +14,7 @@ from database.models import (
     ExpenseRow,
     OrderRow,
     ParseFailureRow,
+    PersonalOrderRow,
     ProductRow,
     ReturnRow,
     SaleRow,
@@ -3039,3 +3040,89 @@ class Database:
                 limit,
             )
         return [dict(r) for r in rows]
+
+    # ─── Personal Orders ──────────────────────────────────────────────────────
+
+    async def create_personal_order(
+        self,
+        customer_name: str,
+        part_name: str,
+        sale_price: float,
+        customer_contact: Optional[str] = None,
+        oem_code: Optional[str] = None,
+        cost_price: Optional[float] = None,
+        transportation_cost: Optional[float] = None,
+        vat_amount: Optional[float] = None,
+        estimated_arrival: Optional[Any] = None,
+        notes: Optional[str] = None,
+    ) -> PersonalOrderRow:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO personal_orders
+                       (customer_name, customer_contact, part_name, oem_code,
+                        cost_price, transportation_cost, vat_amount,
+                        sale_price, estimated_arrival, notes)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                   RETURNING *""",
+                customer_name, customer_contact, part_name, oem_code,
+                cost_price, transportation_cost, vat_amount,
+                sale_price, estimated_arrival, notes,
+            )
+        return dict(row)  # type: ignore[return-value]
+
+    async def get_personal_orders(self, limit: int = 100) -> List[PersonalOrderRow]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM personal_orders
+                   ORDER BY created_at DESC
+                   LIMIT $1""",
+                limit,
+            )
+        return [dict(r) for r in rows]  # type: ignore[misc]
+
+    async def get_personal_order_by_id(self, order_id: int) -> Optional[PersonalOrderRow]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM personal_orders WHERE id = $1", order_id
+            )
+        return dict(row) if row else None  # type: ignore[return-value]
+
+    async def get_personal_order_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Public view — omits owner-only financial fields."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT id, tracking_token, customer_name, part_name, oem_code,
+                          sale_price, amount_paid, status, estimated_arrival, created_at
+                   FROM personal_orders
+                   WHERE tracking_token = $1""",
+                token,
+            )
+        return dict(row) if row else None
+
+    async def update_personal_order(self, order_id: int, **fields: Any) -> None:
+        allowed = {
+            "customer_name", "customer_contact", "part_name", "oem_code",
+            "cost_price", "transportation_cost", "vat_amount",
+            "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        set_clauses = ", ".join(
+            f"{col} = ${i + 2}" for i, col in enumerate(updates)
+        )
+        values = list(updates.values())
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE personal_orders SET {set_clauses}, updated_at = NOW() WHERE id = $1",
+                order_id, *values,
+            )
+
+    async def update_personal_order_payment(self, order_id: int, amount_paid: float) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE personal_orders
+                   SET amount_paid = $2, updated_at = NOW()
+                   WHERE id = $1""",
+                order_id, amount_paid,
+            )

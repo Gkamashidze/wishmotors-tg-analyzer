@@ -16,6 +16,7 @@ import {
   FileDown,
   FileText,
   UserX,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ const NAV: NavItem[] = [
   { href: "/accounting", label: "ბუღალტერია", icon: BookOpen },
   { href: "/vat", label: "დღგ-ს დეკლარაცია", icon: FileText },
   { href: "/debtors", label: "ნისია", icon: UserX },
+  { href: "/personal-orders", label: "კერძო შეკვეთები", icon: ShoppingCart },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
