@@ -16,19 +16,54 @@ logger = logging.getLogger(__name__)
 
 
 def decode_barcode(image_bytes: bytes) -> Optional[str]:
-    """Decode the first readable barcode in the image. Returns the raw text or None."""
+    """Decode the first readable barcode/QR in the image using pyzbar.
+
+    Tries multiple image variants (original, grayscale, sharpened) to improve
+    detection rate on low-quality phone photos.
+    Returns the raw text or None.
+    """
     try:
-        import zxingcpp
-        from PIL import Image
+        from PIL import Image, ImageEnhance, ImageFilter
+        from pyzbar.pyzbar import decode as pyzbar_decode
 
         img = Image.open(BytesIO(image_bytes))
-        results = zxingcpp.read_barcodes(img)
-        for r in results:
-            text = r.text.strip()
-            if text:
-                return text
+
+        # Try 1: original
+        result = _pyzbar_first(pyzbar_decode(img))
+        if result:
+            return result
+
+        # Try 2: grayscale
+        gray = img.convert("L")
+        result = _pyzbar_first(pyzbar_decode(gray))
+        if result:
+            return result
+
+        # Try 3: sharpen + increase contrast — helps with blurry/dark photos
+        sharpened = ImageEnhance.Contrast(gray).enhance(2.0).filter(ImageFilter.SHARPEN)
+        result = _pyzbar_first(pyzbar_decode(sharpened))
+        if result:
+            return result
+
+        # Try 4: scale up small images (barcodes on labels often tiny)
+        if max(img.size) < 1000:
+            big = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
+            result = _pyzbar_first(pyzbar_decode(big))
+            if result:
+                return result
+
+    except ImportError:
+        logger.error("pyzbar not installed — run: pip install pyzbar")
     except Exception as exc:
         logger.warning("Barcode decode failed: %s", exc)
+    return None
+
+
+def _pyzbar_first(decoded_list: list) -> Optional[str]:  # type: ignore[type-arg]
+    for obj in decoded_list:
+        text = obj.data.decode("utf-8", errors="replace").strip()
+        if text:
+            return text
     return None
 
 
