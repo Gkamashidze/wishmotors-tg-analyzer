@@ -43,17 +43,27 @@ export default async function TrackingPage({ params }: Props) {
     notFound();
   }
 
-  const order = await getPersonalOrderByToken(token);
+  let order;
+  try {
+    order = await getPersonalOrderByToken(token);
+  } catch {
+    order = null;
+  }
   if (!order) notFound();
 
-  const sale = Number(order.sale_price);
+  const saleMax = Number(order.sale_price);
+  const saleMin = order.sale_price_min != null ? Number(order.sale_price_min) : null;
   const paid = Number(order.amount_paid);
-  const remaining = sale - paid;
-  const paidPct = sale > 0 ? Math.min(100, (paid / sale) * 100) : 0;
+  const remaining = saleMax - paid;
+  const paidPct = saleMax > 0 ? Math.min(100, (paid / saleMax) * 100) : 0;
 
   const isCancelled = order.status === "cancelled";
   const currentStepIdx = isCancelled ? -1 : STATUS_STEPS.indexOf(order.status);
   const arrival = fmtDate(order.estimated_arrival);
+
+  const displayItems = order.items?.length
+    ? order.items
+    : [{ id: 0, part_name: order.part_name, oem_code: order.oem_code }];
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-start justify-center py-10 px-4">
@@ -61,9 +71,22 @@ export default async function TrackingPage({ params }: Props) {
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-5 text-white">
           <p className="text-xs opacity-70 mb-1">შეკვეთა #{order.id}</p>
-          <h1 className="text-xl font-bold leading-tight">{order.part_name}</h1>
-          {order.oem_code && (
-            <p className="text-xs opacity-60 mt-1 font-mono">{order.oem_code}</p>
+          {displayItems.length === 1 ? (
+            <>
+              <h1 className="text-xl font-bold leading-tight">{displayItems[0].part_name}</h1>
+              {displayItems[0].oem_code && (
+                <p className="text-xs opacity-60 mt-1 font-mono">{displayItems[0].oem_code}</p>
+              )}
+            </>
+          ) : (
+            <div className="space-y-1">
+              {displayItems.map((item, idx) => (
+                <div key={idx}>
+                  <p className="text-base font-semibold leading-tight">{item.part_name}</p>
+                  {item.oem_code && <p className="text-xs opacity-60 font-mono">{item.oem_code}</p>}
+                </div>
+              ))}
+            </div>
           )}
           <div className="mt-3 flex items-center gap-2">
             <span className="text-2xl">{STATUS_ICONS[order.status]}</span>
@@ -117,7 +140,11 @@ export default async function TrackingPage({ params }: Props) {
             <h2 className="text-sm font-semibold text-gray-700">გადახდა</h2>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">სრული თანხა</span>
-              <span className="font-bold">{fmtGel(sale)}</span>
+              <span className="font-bold">
+                {saleMin != null && saleMin > 0
+                  ? `${fmtGel(saleMin)} – ${fmtGel(saleMax)}`
+                  : fmtGel(saleMax)}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">გადახდილია</span>

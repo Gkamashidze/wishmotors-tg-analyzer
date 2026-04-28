@@ -461,10 +461,9 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
     try:
         order = await db.create_personal_order(
             customer_name=data["customer_name"],
-            part_name=data["part_name"],
+            items=[(data["part_name"], data.get("oem_code"))],
             sale_price=float(data["sale_price"]),
             customer_contact=data.get("customer_contact"),
-            oem_code=data.get("oem_code"),
             cost_price=float(data["cost_price"]) if data.get("cost_price") is not None else None,
             transportation_cost=float(data["transportation_cost"]) if data.get("transportation_cost") is not None else None,
             vat_amount=float(data["vat_amount"]) if data.get("vat_amount") is not None else None,

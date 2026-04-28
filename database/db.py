@@ -3060,13 +3060,29 @@ class Database:
 
     # ─── Personal Orders ──────────────────────────────────────────────────────
 
+    _ITEMS_SUBQUERY = """
+        COALESCE(
+            (SELECT json_agg(json_build_object(
+                        'id', i.id, 'part_name', i.part_name, 'oem_code', i.oem_code
+                    ) ORDER BY i.id)
+             FROM personal_order_items i WHERE i.order_id = o.id),
+            '[]'::json
+        ) AS items
+    """
+
+    def _row_to_po(self, row: Any) -> PersonalOrderRow:
+        d = dict(row)
+        items = d.get("items")
+        if not isinstance(items, list):
+            d["items"] = []
+        return d  # type: ignore[return-value]
+
     async def create_personal_order(
         self,
         customer_name: str,
-        part_name: str,
+        items: List[Tuple[str, Optional[str]]],  # [(part_name, oem_code)]
         sale_price: float,
         customer_contact: Optional[str] = None,
-        oem_code: Optional[str] = None,
         cost_price: Optional[float] = None,
         transportation_cost: Optional[float] = None,
         vat_amount: Optional[float] = None,
@@ -3074,48 +3090,67 @@ class Database:
         estimated_arrival: Optional[Any] = None,
         notes: Optional[str] = None,
     ) -> PersonalOrderRow:
+        primary_name = items[0][0] if items else ""
+        primary_oem = items[0][1] if items else None
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """INSERT INTO personal_orders
-                       (customer_name, customer_contact, part_name, oem_code,
-                        cost_price, transportation_cost, vat_amount,
-                        sale_price_min, sale_price, estimated_arrival, notes)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                   RETURNING *""",
-                customer_name, customer_contact, part_name, oem_code,
-                cost_price, transportation_cost, vat_amount,
-                sale_price_min, sale_price, estimated_arrival, notes,
-            )
-        return dict(row)  # type: ignore[return-value]
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """INSERT INTO personal_orders
+                           (customer_name, customer_contact, part_name, oem_code,
+                            cost_price, transportation_cost, vat_amount,
+                            sale_price_min, sale_price, estimated_arrival, notes)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                       RETURNING *""",
+                    customer_name, customer_contact, primary_name, primary_oem,
+                    cost_price, transportation_cost, vat_amount,
+                    sale_price_min, sale_price, estimated_arrival, notes,
+                )
+                order_id = row["id"]
+                for part_name, oem_code in items:
+                    await conn.execute(
+                        "INSERT INTO personal_order_items (order_id, part_name, oem_code) VALUES ($1, $2, $3)",
+                        order_id, part_name, oem_code,
+                    )
+        result = await self.get_personal_order_by_id(order_id)
+        return result  # type: ignore[return-value]
 
     async def get_personal_orders(self, limit: int = 100) -> List[PersonalOrderRow]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT * FROM personal_orders
-                   ORDER BY created_at DESC
-                   LIMIT $1""",
+                f"""SELECT o.*, {self._ITEMS_SUBQUERY}
+                    FROM personal_orders o
+                    ORDER BY o.created_at DESC
+                    LIMIT $1""",
                 limit,
             )
-        return [dict(r) for r in rows]  # type: ignore[misc]
+        return [self._row_to_po(r) for r in rows]  # type: ignore[misc]
 
     async def get_personal_order_by_id(self, order_id: int) -> Optional[PersonalOrderRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM personal_orders WHERE id = $1", order_id
+                f"SELECT o.*, {self._ITEMS_SUBQUERY} FROM personal_orders o WHERE o.id = $1",
+                order_id,
             )
-        return dict(row) if row else None  # type: ignore[return-value]
+        return self._row_to_po(row) if row else None
 
     async def get_personal_order_by_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Public view — omits owner-only financial fields."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """SELECT id, tracking_token, customer_name, part_name, oem_code,
-                          sale_price, amount_paid, status, estimated_arrival, created_at
-                   FROM personal_orders
-                   WHERE tracking_token = $1""",
+                f"""SELECT o.id, o.tracking_token, o.customer_name, o.part_name, o.oem_code,
+                           o.sale_price_min, o.sale_price, o.amount_paid,
+                           o.status, o.estimated_arrival, o.created_at,
+                           {self._ITEMS_SUBQUERY}
+                    FROM personal_orders o
+                    WHERE o.tracking_token = $1""",
                 token,
             )
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        if not isinstance(d.get("items"), list):
+            d["items"] = []
+        return d
 
     async def update_personal_order(self, order_id: int, **fields: Any) -> None:
         allowed = {

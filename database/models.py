@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 from typing_extensions import TypedDict
 
 # ─── SQL schema (PostgreSQL) ──────────────────────────────────────────────────
@@ -549,6 +549,25 @@ CREATE INDEX IF NOT EXISTS idx_personal_orders_created_at ON personal_orders(cre
 CREATE INDEX IF NOT EXISTS idx_personal_orders_status     ON personal_orders(status);
 
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_min NUMERIC(12, 2);
+
+CREATE TABLE IF NOT EXISTS personal_order_items (
+    id         SERIAL PRIMARY KEY,
+    order_id   INTEGER NOT NULL REFERENCES personal_orders(id) ON DELETE CASCADE,
+    part_name  TEXT    NOT NULL,
+    oem_code   TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_order_items_order ON personal_order_items(order_id);
+
+-- Migrate existing single-part data into the items table (idempotent)
+INSERT INTO personal_order_items (order_id, part_name, oem_code)
+SELECT o.id, o.part_name, o.oem_code
+FROM personal_orders o
+WHERE o.part_name IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM personal_order_items i WHERE i.order_id = o.id
+  );
 """
 
 
@@ -694,6 +713,12 @@ class Product:
     created_at: str
 
 
+class PersonalOrderItemRow(TypedDict):
+    id: int
+    part_name: str
+    oem_code: Optional[str]
+
+
 class PersonalOrderRow(TypedDict):
     id: int
     tracking_token: str
@@ -712,6 +737,7 @@ class PersonalOrderRow(TypedDict):
     notes: Optional[str]
     created_at: object  # datetime
     updated_at: object  # datetime
+    items: List[PersonalOrderItemRow]
 
 
 @dataclass

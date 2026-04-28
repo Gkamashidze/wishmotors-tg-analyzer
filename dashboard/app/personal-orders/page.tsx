@@ -38,6 +38,13 @@ function fmtDate(v: string | null | undefined) {
   } catch { return v; }
 }
 
+function fmtPriceRange(min: number | null | undefined, max: number) {
+  if (min != null && Number(min) > 0) {
+    return `${fmtGel(Number(min))} – ${fmtGel(Number(max))}`;
+  }
+  return fmtGel(Number(max));
+}
+
 function calcProfit(order: PersonalOrderRow) {
   return Number(order.sale_price)
     - Number(order.cost_price ?? 0)
@@ -45,9 +52,78 @@ function calcProfit(order: PersonalOrderRow) {
     - Number(order.vat_amount ?? 0);
 }
 
-function copyLink(token: string) {
-  const url = `${window.location.origin}/track/${token}`;
-  void navigator.clipboard.writeText(url);
+// ─── Copy tracking link ───────────────────────────────────────────────────────
+
+function CopyLinkButton({ token }: { token: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    const url = `${window.location.origin}/track/${token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      window.prompt("კოპირება:", url);
+    });
+  }
+
+  return (
+    <Button variant="ghost" size="sm" onClick={handleCopy} title="ლინკის კოპირება">
+      {copied ? "✅" : "🔗"}
+    </Button>
+  );
+}
+
+// ─── Items editor ─────────────────────────────────────────────────────────────
+
+interface ItemInput { part_name: string; oem_code: string; }
+
+function ItemsEditor({
+  items,
+  onChange,
+}: {
+  items: ItemInput[];
+  onChange: (items: ItemInput[]) => void;
+}) {
+  function setItem(idx: number, field: keyof ItemInput, val: string) {
+    onChange(items.map((it, i) => i === idx ? { ...it, [field]: val } : it));
+  }
+  function addItem() {
+    onChange([...items, { part_name: "", oem_code: "" }]);
+  }
+  function removeItem(idx: number) {
+    onChange(items.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, idx) => (
+        <div key={idx} className="flex gap-2 items-end">
+          <div className="flex-1">
+            {idx === 0 && <label className="text-xs text-muted-foreground">ნაწილი *</label>}
+            <Input
+              required={idx === 0}
+              value={item.part_name}
+              onChange={e => setItem(idx, "part_name", e.target.value)}
+              placeholder="ნაწილის სახელი"
+            />
+          </div>
+          <div className="w-32">
+            {idx === 0 && <label className="text-xs text-muted-foreground">OEM კოდი</label>}
+            <Input
+              value={item.oem_code}
+              onChange={e => setItem(idx, "oem_code", e.target.value)}
+              placeholder="ABC123"
+            />
+          </div>
+          {items.length > 1 && (
+            <Button type="button" variant="ghost" size="sm" className="mb-0.5 text-red-500" onClick={() => removeItem(idx)}>✕</Button>
+          )}
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={addItem}>+ ნაწილის დამატება</Button>
+    </div>
+  );
 }
 
 // ─── New Order Form ───────────────────────────────────────────────────────────
@@ -55,8 +131,9 @@ function copyLink(token: string) {
 function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<ItemInput[]>([{ part_name: "", oem_code: "" }]);
   const [form, setForm] = useState({
-    customer_name: "", customer_contact: "", part_name: "", oem_code: "",
+    customer_name: "", customer_contact: "",
     cost_price: "", transportation_cost: "", vat_amount: "",
     sale_price_min: "", sale_price: "",
     estimated_arrival: "", notes: "",
@@ -66,17 +143,34 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
     setForm(f => ({ ...f, [field]: value }));
   }
 
+  function resetForm() {
+    setItems([{ part_name: "", oem_code: "" }]);
+    setForm({
+      customer_name: "", customer_contact: "",
+      cost_price: "", transportation_cost: "", vat_amount: "",
+      sale_price_min: "", sale_price: "",
+      estimated_arrival: "", notes: "",
+    });
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const validItems = items.filter(i => i.part_name.trim());
+    if (!validItems.length) {
+      alert("სულ მცირე ერთი ნაწილი შეიყვანე.");
+      return;
+    }
     setLoading(true);
     try {
       const body: Record<string, unknown> = {
         customer_name: form.customer_name.trim(),
-        part_name: form.part_name.trim(),
         sale_price: parseFloat(form.sale_price),
+        items: validItems.map(i => ({
+          part_name: i.part_name.trim(),
+          oem_code: i.oem_code.trim().toUpperCase() || null,
+        })),
       };
       if (form.customer_contact.trim()) body.customer_contact = form.customer_contact.trim();
-      if (form.oem_code.trim()) body.oem_code = form.oem_code.trim().toUpperCase();
       if (form.cost_price) body.cost_price = parseFloat(form.cost_price);
       if (form.transportation_cost) body.transportation_cost = parseFloat(form.transportation_cost);
       if (form.vat_amount) body.vat_amount = parseFloat(form.vat_amount);
@@ -91,7 +185,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
       });
       if (!res.ok) throw new Error("server error");
       setOpen(false);
-      setForm({ customer_name: "", customer_contact: "", part_name: "", oem_code: "", cost_price: "", transportation_cost: "", vat_amount: "", sale_price_min: "", sale_price: "", estimated_arrival: "", notes: "" });
+      resetForm();
       onCreated();
     } catch {
       alert("შეცდომა შენახვისას. სცადე ხელახლა.");
@@ -103,7 +197,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   return (
     <>
       <Button size="sm" onClick={() => setOpen(true)}>+ ახალი შეკვეთა</Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="ახალი კერძო შეკვეთა">
+      <Dialog open={open} onClose={() => { setOpen(false); resetForm(); }} title="ახალი კერძო შეკვეთა">
         <form onSubmit={submit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -115,16 +209,12 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
               <Input value={form.customer_contact} onChange={e => set("customer_contact", e.target.value)} placeholder="+995 / @username" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">ნაწილი *</label>
-              <Input required value={form.part_name} onChange={e => set("part_name", e.target.value)} placeholder="ნაწილის სახელი" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">OEM კოდი</label>
-              <Input value={form.oem_code} onChange={e => set("oem_code", e.target.value)} placeholder="ABC123" />
-            </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-medium text-muted-foreground mb-2">ნაწილები</p>
+            <ItemsEditor items={items} onChange={setItems} />
           </div>
+
           <div className="border-t pt-3">
             <p className="text-xs font-medium text-muted-foreground mb-2">ფინანსური (მხოლოდ შენ ხედავ)</p>
             <div className="grid grid-cols-3 gap-2">
@@ -152,6 +242,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
               </div>
             </div>
           </div>
+
           <div>
             <label className="text-xs text-muted-foreground">ჩამოსვლის თარიღი</label>
             <Input type="date" value={form.estimated_arrival} onChange={e => set("estimated_arrival", e.target.value)} />
@@ -164,7 +255,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
             <Button type="submit" disabled={loading} className="flex-1">
               {loading ? "ინახება..." : "✅ შენახვა"}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>გაუქმება</Button>
+            <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm(); }}>გაუქმება</Button>
           </div>
         </form>
       </Dialog>
@@ -289,7 +380,7 @@ export default function PersonalOrdersPage() {
                     <tr className="border-b text-xs text-muted-foreground">
                       <th className="text-left py-2 pr-3">#</th>
                       <th className="text-left py-2 pr-3">მომხმ.</th>
-                      <th className="text-left py-2 pr-3">ნაწილი</th>
+                      <th className="text-left py-2 pr-3">ნაწილები</th>
                       <th className="text-left py-2 pr-3">სტატუსი</th>
                       <th className="text-right py-2 pr-3">ფასი</th>
                       <th className="text-right py-2 pr-3">გადახდ.</th>
@@ -303,22 +394,23 @@ export default function PersonalOrdersPage() {
                     {orders.map(order => {
                       const remaining = Number(order.sale_price) - Number(order.amount_paid);
                       const profit = calcProfit(order);
+                      const displayItems = order.items?.length ? order.items : [{ id: 0, part_name: order.part_name, oem_code: order.oem_code }];
                       return (
                         <tr key={order.id} className="border-b hover:bg-muted/30 transition-colors">
                           <td className="py-2 pr-3 font-mono text-muted-foreground">#{order.id}</td>
                           <td className="py-2 pr-3 font-medium">{order.customer_name}</td>
                           <td className="py-2 pr-3">
-                            <div>{order.part_name}</div>
-                            {order.oem_code && <div className="text-xs text-muted-foreground font-mono">{order.oem_code}</div>}
+                            {displayItems.map((item, idx) => (
+                              <div key={idx}>
+                                <div>{item.part_name}</div>
+                                {item.oem_code && <div className="text-xs text-muted-foreground font-mono">{item.oem_code}</div>}
+                              </div>
+                            ))}
                           </td>
                           <td className="py-2 pr-3">
                             <Badge variant={STATUS_VARIANTS[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                           </td>
-                          <td className="py-2 pr-3 text-right font-mono">
-                            {order.sale_price_min != null
-                              ? `${fmtGel(Number(order.sale_price_min))} – ${fmtGel(Number(order.sale_price))}`
-                              : fmtGel(Number(order.sale_price))}
-                          </td>
+                          <td className="py-2 pr-3 text-right font-mono">{fmtPriceRange(order.sale_price_min, Number(order.sale_price))}</td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtGel(remaining)}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(profit)}</td>
@@ -326,18 +418,7 @@ export default function PersonalOrdersPage() {
                           <td className="py-2">
                             <div className="flex gap-1 justify-end">
                               <EditOrderDialog order={order} onUpdated={load} />
-                              <Button variant="ghost" size="sm" onClick={() => copyLink(order.tracking_token)} title="ლინკის კოპირება">🔗</Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="წაშლა"
-                                onClick={async () => {
-                                  if (!confirm(`შეკვეთა #${order.id} წაიშლება. დარწმუნებული ხარ?`)) return;
-                                  await fetch(`/api/personal-orders/${order.id}`, { method: "DELETE" });
-                                  void load();
-                                }}
-                                className="text-red-500 hover:text-red-700"
-                              >🗑️</Button>
+                              <CopyLinkButton token={order.tracking_token} />
                             </div>
                           </td>
                         </tr>

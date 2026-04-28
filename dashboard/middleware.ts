@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|healthz|track).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|healthz).*)"],
 };
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -20,6 +20,11 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
+  // Public tracking page — no auth required
+  if (req.nextUrl.pathname.startsWith("/track/")) {
+    return applySecurityHeaders(NextResponse.next());
+  }
+
   const expected = process.env.DASHBOARD_BASIC_AUTH;
   const isProd = process.env.NODE_ENV === "production";
 
