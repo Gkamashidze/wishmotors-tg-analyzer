@@ -31,6 +31,11 @@ function fmtGel(v: number | null | undefined) {
   return v != null ? `₾${Number(v).toFixed(2)}` : "—";
 }
 
+function fmtPrice(v: number | null | undefined, currency: string) {
+  if (v == null) return "—";
+  return currency === "USD" ? `$${Number(v).toFixed(2)}` : `₾${Number(v).toFixed(2)}`;
+}
+
 function fmtDate(v: string | null | undefined) {
   if (!v) return "—";
   try {
@@ -38,11 +43,11 @@ function fmtDate(v: string | null | undefined) {
   } catch { return v; }
 }
 
-function fmtPriceRange(min: number | null | undefined, max: number) {
+function fmtPriceRange(min: number | null | undefined, max: number, currency: string) {
   if (min != null && Number(min) > 0) {
-    return `${fmtGel(Number(min))} – ${fmtGel(Number(max))}`;
+    return `${fmtPrice(Number(min), currency)} – ${fmtPrice(Number(max), currency)}`;
   }
-  return fmtGel(Number(max));
+  return fmtPrice(Number(max), currency);
 }
 
 function calcProfit(order: PersonalOrderRow) {
@@ -132,6 +137,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<ItemInput[]>([{ part_name: "", oem_code: "" }]);
+  const [saleCurrency, setSaleCurrency] = useState<"GEL" | "USD">("GEL");
   const [form, setForm] = useState({
     customer_name: "", customer_contact: "",
     cost_price: "", transportation_cost: "", vat_amount: "",
@@ -145,6 +151,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
 
   function resetForm() {
     setItems([{ part_name: "", oem_code: "" }]);
+    setSaleCurrency("GEL");
     setForm({
       customer_name: "", customer_contact: "",
       cost_price: "", transportation_cost: "", vat_amount: "",
@@ -175,6 +182,7 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
       if (form.transportation_cost) body.transportation_cost = parseFloat(form.transportation_cost);
       if (form.vat_amount) body.vat_amount = parseFloat(form.vat_amount);
       if (form.sale_price_min) body.sale_price_min = parseFloat(form.sale_price_min);
+      body.sale_price_currency = saleCurrency;
       if (form.estimated_arrival) body.estimated_arrival = form.estimated_arrival;
       if (form.notes.trim()) body.notes = form.notes.trim();
 
@@ -231,14 +239,31 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
                 <Input type="number" step="0.01" min="0" value={form.vat_amount} onChange={e => set("vat_amount", e.target.value)} placeholder="0.00" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div>
-                <label className="text-xs text-muted-foreground">გასაყიდი დან (₾)</label>
-                <Input type="number" step="0.01" min="0" value={form.sale_price_min} onChange={e => set("sale_price_min", e.target.value)} placeholder="0.00" />
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-muted-foreground">გასაყიდი ფასი</label>
+                <div className="flex rounded-md border overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSaleCurrency("GEL")}
+                    className={`px-2 py-0.5 transition-colors ${saleCurrency === "GEL" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  >₾ ლარი</button>
+                  <button
+                    type="button"
+                    onClick={() => setSaleCurrency("USD")}
+                    className={`px-2 py-0.5 transition-colors ${saleCurrency === "USD" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  >$ დოლარი</button>
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground">გასაყიდი მდე (₾) *</label>
-                <Input required type="number" step="0.01" min="0.01" value={form.sale_price} onChange={e => set("sale_price", e.target.value)} placeholder="0.00" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">დან ({saleCurrency === "USD" ? "$" : "₾"})</label>
+                  <Input type="number" step="0.01" min="0" value={form.sale_price_min} onChange={e => set("sale_price_min", e.target.value)} placeholder="0.00" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">მდე ({saleCurrency === "USD" ? "$" : "₾"}) *</label>
+                  <Input required type="number" step="0.01" min="0.01" value={form.sale_price} onChange={e => set("sale_price", e.target.value)} placeholder="0.00" />
+                </div>
               </div>
             </div>
           </div>
@@ -435,7 +460,7 @@ export default function PersonalOrdersPage() {
                           <td className="py-2 pr-3">
                             <Badge variant={STATUS_VARIANTS[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                           </td>
-                          <td className="py-2 pr-3 text-right font-mono">{fmtPriceRange(order.sale_price_min, Number(order.sale_price))}</td>
+                          <td className="py-2 pr-3 text-right font-mono">{fmtPriceRange(order.sale_price_min, Number(order.sale_price), order.sale_price_currency ?? "GEL")}</td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtGel(remaining)}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(profit)}</td>

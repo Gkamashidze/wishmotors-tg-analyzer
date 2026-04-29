@@ -551,6 +551,7 @@ CREATE INDEX IF NOT EXISTS idx_personal_orders_status     ON personal_orders(sta
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_min NUMERIC(12, 2);
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_chat_id    BIGINT;
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
+ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_currency VARCHAR(3) NOT NULL DEFAULT 'GEL';
 
 CREATE TABLE IF NOT EXISTS personal_order_items (
     id         SERIAL PRIMARY KEY,
@@ -749,6 +750,7 @@ class PersonalOrderRow(TypedDict):
     vat_amount: Optional[float]
     sale_price_min: Optional[float]
     sale_price: float
+    sale_price_currency: str
     amount_paid: float
     status: str
     estimated_arrival: Optional[object]  # date

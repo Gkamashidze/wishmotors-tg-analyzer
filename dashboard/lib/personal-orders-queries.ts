@@ -26,6 +26,7 @@ export interface PersonalOrderRow {
   vat_amount: number | null;
   sale_price_min: number | null;
   sale_price: number;
+  sale_price_currency: string;
   amount_paid: number;
   status: PersonalOrderStatus;
   estimated_arrival: string | null;
@@ -45,6 +46,7 @@ export interface PublicPersonalOrderRow {
   oem_code: string | null;
   sale_price_min: number | null;
   sale_price: number;
+  sale_price_currency: string;
   amount_paid: number;
   status: PersonalOrderStatus;
   estimated_arrival: string | null;
@@ -66,7 +68,7 @@ export async function getPersonalOrders(limit = 100): Promise<PersonalOrderRow[]
   return query<PersonalOrderRow>(
     `SELECT o.id, o.tracking_token, o.customer_name, o.customer_contact,
             o.part_name, o.oem_code, o.cost_price, o.transportation_cost, o.vat_amount,
-            o.sale_price_min, o.sale_price, o.amount_paid, o.status,
+            o.sale_price_min, o.sale_price, o.sale_price_currency, o.amount_paid, o.status,
             o.estimated_arrival, o.notes, o.created_at, o.updated_at,
             o.telegram_chat_id, o.telegram_message_id,
             ${ITEMS_SUBQUERY}
@@ -105,6 +107,7 @@ export async function createPersonalOrder(data: {
   vat_amount?: number | null;
   sale_price_min?: number | null;
   sale_price: number;
+  sale_price_currency?: string;
   estimated_arrival?: string | null;
   notes?: string | null;
 }): Promise<PersonalOrderRow> {
@@ -114,8 +117,8 @@ export async function createPersonalOrder(data: {
       `INSERT INTO personal_orders
          (customer_name, customer_contact, part_name, oem_code,
           cost_price, transportation_cost, vat_amount,
-          sale_price_min, sale_price, estimated_arrival, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          sale_price_min, sale_price, sale_price_currency, estimated_arrival, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING id`,
       [
         data.customer_name,
@@ -127,6 +130,7 @@ export async function createPersonalOrder(data: {
         data.vat_amount ?? null,
         data.sale_price_min ?? null,
         data.sale_price,
+        data.sale_price_currency ?? "GEL",
         data.estimated_arrival ?? null,
         data.notes ?? null,
       ],
@@ -153,7 +157,7 @@ export async function updatePersonalOrder(
   const allowed = [
     "customer_name", "customer_contact", "part_name", "oem_code",
     "cost_price", "transportation_cost", "vat_amount",
-    "sale_price_min", "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
+    "sale_price_min", "sale_price", "sale_price_currency", "amount_paid", "status", "estimated_arrival", "notes",
   ] as const;
   const entries = Object.entries(data).filter(([k]) => allowed.includes(k as typeof allowed[number]));
   if (!entries.length) return;

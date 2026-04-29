@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       vat_amount: typeof body.vat_amount === "number" ? body.vat_amount : null,
       sale_price_min: typeof body.sale_price_min === "number" ? body.sale_price_min : null,
       sale_price,
+      sale_price_currency: body.sale_price_currency === "USD" ? "USD" : "GEL",
       estimated_arrival: typeof body.estimated_arrival === "string" ? body.estimated_arrival || null : null,
       notes: typeof body.notes === "string" ? body.notes.trim() || null : null,
     });
