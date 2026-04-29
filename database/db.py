@@ -116,7 +116,7 @@ class Database:
     async def get_product_by_oem(self, oem_code: str) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM products WHERE oem_code = $1", oem_code.strip()
+                "SELECT * FROM products WHERE UPPER(oem_code) = $1", oem_code.strip().upper()
             )
             return self._row(row)  # type: ignore[return-value]
 
@@ -124,7 +124,7 @@ class Database:
         """Find a product whose OEM code ends with the given digits (e.g. '8500')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM products WHERE oem_code LIKE $1",
+                "SELECT * FROM products WHERE oem_code ILIKE $1",
                 f"%{partial.strip()}",
             )
             return self._row(row)  # type: ignore[return-value]
@@ -237,6 +237,7 @@ class Database:
         """Atomic upsert: update stock+price if OEM matches, otherwise insert."""
         async with self.pool.acquire() as conn:
             if oem_code:
+                oem_code = oem_code.strip().upper()
                 row = await conn.fetchrow(
                     """INSERT INTO products (name, oem_code, current_stock, min_stock, unit_price)
                        VALUES ($1, $2, $3, $4, $5)
@@ -279,6 +280,7 @@ class Database:
             for row in rows:
                 oem = row.get("oem_code") or None
                 if oem:
+                    oem = oem.strip().upper()
                     result = await conn.fetchval(
                         """WITH upsert AS (
                              INSERT INTO products (name, oem_code, current_stock, unit)
@@ -787,7 +789,7 @@ class Database:
             raise ValueError("unit_cost must be >= 0")
 
         total_cost = round(float(quantity) * float(unit_cost), 2)
-        clean_oem = oem_code.strip() if oem_code else None
+        clean_oem = oem_code.strip().upper() if oem_code else None
 
         if not clean_oem:
             raise ValueError("oem_code სავალდებულოა — იდენტიფიკაცია მხოლოდ OEM-ით ხდება")
@@ -938,6 +940,10 @@ class Database:
 
         Returns (sale_id, new_stock_level).
         """
+        # Credit (ნისია) sales are always unpaid — force 'debt' regardless of caller default
+        if payment_method == "credit":
+            payment_status = "debt"
+
         revenue = round(float(unit_price) * int(quantity), 2)
         output_vat = round(revenue - revenue / 1.18, 2) if seller_type == "llc" else 0.0
         business_account: Optional[str] = None
@@ -2261,15 +2267,16 @@ class Database:
     ) -> int:
         """Insert a historical sale with an explicit date. Does NOT touch current stock.
         Returns the new sale id."""
+        payment_status = "debt" if payment_method == "credit" else "paid"
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO sales
                        (product_id, quantity, unit_price, payment_method,
-                        seller_type, customer_name, sold_at, notes)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        seller_type, customer_name, sold_at, notes, payment_status)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                    RETURNING id""",
                 product_id, quantity, unit_price, payment_method,
-                seller_type, customer_name or None, sold_at, notes,
+                seller_type, customer_name or None, sold_at, notes, payment_status,
             )
             return row["id"]
 
@@ -3169,6 +3176,15 @@ class Database:
             await conn.execute(
                 f"UPDATE personal_orders SET {set_clauses}, updated_at = NOW() WHERE id = $1",
                 order_id, *values,
+            )
+
+    async def save_personal_order_tg_message(
+        self, order_id: int, chat_id: int, message_id: int
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE personal_orders SET telegram_chat_id = $2, telegram_message_id = $3 WHERE id = $1",
+                order_id, chat_id, message_id,
             )
 
     async def update_personal_order_payment(self, order_id: int, amount_paid: float) -> None:
