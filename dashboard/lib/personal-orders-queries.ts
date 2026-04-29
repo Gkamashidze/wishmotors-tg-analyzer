@@ -91,7 +91,8 @@ export async function getPersonalOrderById(id: number): Promise<PersonalOrderRow
 export async function getPersonalOrderByToken(token: string): Promise<PublicPersonalOrderRow | null> {
   return queryOne<PublicPersonalOrderRow>(
     `SELECT o.id, o.tracking_token, o.customer_name, o.part_name, o.oem_code,
-            o.sale_price_min, o.sale_price, o.amount_paid,
+            o.sale_price_min, o.sale_price, o.sale_price_currency,
+            o.amount_paid, o.amount_paid_currency,
             o.status, o.estimated_arrival, o.created_at,
             ${ITEMS_SUBQUERY}
      FROM personal_orders o

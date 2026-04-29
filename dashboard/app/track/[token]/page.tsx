@@ -23,8 +23,8 @@ const STATUS_ICONS: Record<PersonalOrderStatus, string> = {
   cancelled:  "❌",
 };
 
-function fmtGel(v: number) {
-  return `₾${Number(v).toFixed(2)}`;
+function fmtMoney(v: number, currency: string) {
+  return currency === "USD" ? `$${Number(v).toFixed(2)}` : `₾${Number(v).toFixed(2)}`;
 }
 
 function fmtDate(v: string | null | undefined) {
@@ -53,7 +53,9 @@ export default async function TrackingPage({ params }: Props) {
 
   const saleMax = Number(order.sale_price);
   const saleMin = order.sale_price_min != null ? Number(order.sale_price_min) : null;
+  const saleCurrency = order.sale_price_currency ?? "GEL";
   const paid = Number(order.amount_paid);
+  const paidCurrency = order.amount_paid_currency ?? "GEL";
   const remaining = saleMax - paid;
   const paidPct = saleMax > 0 ? Math.min(100, (paid / saleMax) * 100) : 0;
 
@@ -142,13 +144,13 @@ export default async function TrackingPage({ params }: Props) {
               <span className="text-gray-500">სრული თანხა</span>
               <span className="font-bold">
                 {saleMin != null && saleMin > 0
-                  ? `${fmtGel(saleMin)} – ${fmtGel(saleMax)}`
-                  : fmtGel(saleMax)}
+                  ? `${fmtMoney(saleMin, saleCurrency)} – ${fmtMoney(saleMax, saleCurrency)}`
+                  : fmtMoney(saleMax, saleCurrency)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">გადახდილია</span>
-              <span className="font-semibold text-green-600">{fmtGel(paid)}</span>
+              <span className="font-semibold text-green-600">{fmtMoney(paid, paidCurrency)}</span>
             </div>
 
             {/* Progress bar */}
@@ -162,7 +164,7 @@ export default async function TrackingPage({ params }: Props) {
             {remaining > 0 ? (
               <div className="flex justify-between text-sm font-semibold">
                 <span className="text-gray-700">დარჩენილია</span>
-                <span className="text-amber-600">{fmtGel(remaining)}</span>
+                <span className="text-amber-600">{fmtMoney(remaining, saleCurrency)}</span>
               </div>
             ) : (
               <div className="text-center text-green-600 font-semibold text-sm">
