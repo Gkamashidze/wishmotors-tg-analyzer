@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { PersonalOrderRow, PersonalOrderStatus } from "@/lib/personal-orders-queries";
+import { fmtGel, fmtPrice, fmtPriceRange, fmtDate, calcProfit } from "@/lib/personal-orders-utils";
 
 const STATUS_LABELS: Record<PersonalOrderStatus, string> = {
   ordered:    "📦 შეკვეთილია",
@@ -27,35 +28,6 @@ const STATUS_VARIANTS: Record<PersonalOrderStatus, "default" | "secondary" | "de
   cancelled:  "destructive",
 };
 
-function fmtGel(v: number | null | undefined) {
-  return v != null ? `₾${Number(v).toFixed(2)}` : "—";
-}
-
-function fmtPrice(v: number | null | undefined, currency: string) {
-  if (v == null) return "—";
-  return currency === "USD" ? `$${Number(v).toFixed(2)}` : `₾${Number(v).toFixed(2)}`;
-}
-
-function fmtDate(v: string | null | undefined) {
-  if (!v) return "—";
-  try {
-    return new Date(v).toLocaleDateString("ka-GE", { day: "2-digit", month: "2-digit", year: "numeric" });
-  } catch { return v; }
-}
-
-function fmtPriceRange(min: number | null | undefined, max: number, currency: string) {
-  if (min != null && Number(min) > 0) {
-    return `${fmtPrice(Number(min), currency)} – ${fmtPrice(Number(max), currency)}`;
-  }
-  return fmtPrice(Number(max), currency);
-}
-
-function calcProfit(order: PersonalOrderRow) {
-  return Number(order.sale_price)
-    - Number(order.cost_price ?? 0)
-    - Number(order.transportation_cost ?? 0)
-    - Number(order.vat_amount ?? 0);
-}
 
 // ─── Copy tracking link ───────────────────────────────────────────────────────
 
@@ -495,8 +467,8 @@ export default function PersonalOrdersPage() {
                           </td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtPriceRange(order.sale_price_min, Number(order.sale_price), order.sale_price_currency ?? "GEL")}</td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
-                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtGel(remaining)}</td>
-                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtGel(profit)}</td>
+                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtPrice(remaining, order.sale_price_currency ?? "GEL")}</td>
+                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtPrice(profit, order.sale_price_currency ?? "GEL")}</td>
                           <td className="py-2 pr-3 text-sm text-muted-foreground">{fmtDate(order.estimated_arrival)}</td>
                           <td className="py-2">
                             <div className="flex gap-1 justify-end">
