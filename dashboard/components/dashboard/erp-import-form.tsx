@@ -29,6 +29,7 @@ import type { ProductRow }    from "@/lib/queries";
 import type { ItemType, InventorySubType } from "@/lib/erp-imports";
 import { calcRecommendedPrice } from "@/lib/utils";
 import { calcLanded, type CalcLine } from "@/lib/import-calc";
+import { ProductPriceHistory } from "@/components/dashboard/product-price-history";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -725,6 +726,11 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                         <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{fmt(calc?.landedCostPerUnit ?? 0)}</p>
                       </div>
                     </div>
+
+                    {/* ── Row 5: price history ──────────────────────────────── */}
+                    {item.productId && !item.isNew && (
+                      <ProductPriceHistory productId={item.productId} />
+                    )}
                   </div>
                 </div>
               );
