@@ -7,6 +7,7 @@ import {
   useRef,
   useMemo,
   useId,
+  type ChangeEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -82,6 +83,8 @@ interface Props {
     totalTerminalCost: string;
     totalAgencyCost: string;
     totalVatCost: string;
+    invoiceDate?: string;
+    invoiceExchangeRate?: string;
     documentName: string;
     items: Array<{
       productId: number;
@@ -95,6 +98,31 @@ interface Props {
     }>;
   };
   products: ProductRow[];
+}
+
+type RelatedImport = { id: number; supplier: string; invoiceNumber: string | null; status: string };
+
+function useRelatedImports(declarationNumber: string, currentId: number | undefined) {
+  const [related, setRelated] = useState<RelatedImport[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!declarationNumber.trim()) { setRelated([]); return; }
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/erp-imports?search=${encodeURIComponent(declarationNumber.trim())}`);
+        if (!res.ok) return;
+        const data = await res.json() as Array<{ id: number; supplier: string; invoiceNumber: string | null; declarationNumber: string | null; status: string }>;
+        setRelated(
+          data.filter((r) => r.declarationNumber?.trim() === declarationNumber.trim() && r.id !== currentId),
+        );
+      } catch { /* ignore */ }
+    }, 600);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [declarationNumber, currentId]);
+
+  return related;
 }
 
 function fmt(n: number, digits = 2): string {
@@ -131,8 +159,10 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const [totalTerminalCost,  setTotalTerminalCost]  = useState(initialData?.totalTerminalCost  ?? "");
   const [totalAgencyCost,    setTotalAgencyCost]    = useState(initialData?.totalAgencyCost    ?? "");
   const [totalVatCost,       setTotalVatCost]       = useState(initialData?.totalVatCost       ?? "");
-  const [documentUrl,        setDocumentUrl]        = useState("");
-  const [documentName,       setDocumentName]       = useState(initialData?.documentName       ?? "");
+  const [invoiceDate,         setInvoiceDate]         = useState(initialData?.invoiceDate         ?? "");
+  const [invoiceExchangeRate, setInvoiceExchangeRate] = useState(initialData?.invoiceExchangeRate ?? "");
+  const [documentUrl,         setDocumentUrl]         = useState("");
+  const [documentName,        setDocumentName]        = useState(initialData?.documentName        ?? "");
 
   // ── Line items ───────────────────────────────────────────────────────────────
   const [items, setItems] = useState<LineItem[]>(() => {
@@ -170,12 +200,16 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
   const fileRef = useRef<HTMLInputElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Related imports (same declaration number) ────────────────────────────
+  const relatedImports = useRelatedImports(declarationNumber, importId);
+
   // ── Derived calculations ──────────────────────────────────────────────────
   const rate      = parseFloat(exchangeRate)       || 0;
   const transport = parseFloat(totalTransportCost) || 0;
   const terminal  = parseFloat(totalTerminalCost)  || 0;
   const agency    = parseFloat(totalAgencyCost)    || 0;
   const vatCost   = parseFloat(totalVatCost)       || 0;
+  const invRate   = parseFloat(invoiceExchangeRate) || 0;
 
   const calcLines = useMemo(
     () => calcLanded(items, rate, transport, terminal, agency, vatCost),
@@ -231,20 +265,23 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
     return {
       date,
       supplier,
-      invoiceNumber:      invoiceNumber      || undefined,
-      declarationNumber:  declarationNumber  || undefined,
-      exchangeRate:       rate,
-      totalTransportCost: transport,
-      totalTerminalCost:  terminal,
-      totalAgencyCost:    agency,
-      totalVatCost:       vatCost,
-      documentUrl:        documentUrl   || undefined,
-      documentName:       documentName  || undefined,
-      items:              validItems,
+      invoiceNumber:       invoiceNumber       || undefined,
+      declarationNumber:   declarationNumber   || undefined,
+      exchangeRate:        rate,
+      totalTransportCost:  transport,
+      totalTerminalCost:   terminal,
+      totalAgencyCost:     agency,
+      totalVatCost:        vatCost,
+      invoiceDate:         invoiceDate         || undefined,
+      invoiceExchangeRate: invRate > 0 ? invRate : undefined,
+      documentUrl:         documentUrl         || undefined,
+      documentName:        documentName        || undefined,
+      items:               validItems,
     };
   }, [
     items, calcLines, date, supplier, invoiceNumber, declarationNumber,
     rate, transport, terminal, agency, vatCost,
+    invoiceDate, invRate,
     documentUrl, documentName,
   ]);
 
@@ -434,10 +471,10 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
             />
             <Input
               id={`${formIdBase}-rate`}
-              label="კურსი (USD→GEL) *"
+              label="კურსი — დეკლ. (USD→GEL) *"
               type="text"
               inputMode="decimal"
-              placeholder="2.70"
+              placeholder="2.75"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(e.target.value)}
             />
@@ -514,7 +551,62 @@ export function ErpImportForm({ importId: initialId, initialData, products: init
                 }}
               />
             </div>
+
+            {/* Invoice date */}
+            <Input
+              id={`${formIdBase}-invoice-date`}
+              label="ინვოისის თარიღი"
+              type="date"
+              value={invoiceDate}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setInvoiceDate(e.target.value)}
+            />
+
+            {/* Invoice exchange rate */}
+            <div className="space-y-1.5">
+              <Input
+                id={`${formIdBase}-invoice-rate`}
+                label="კურსი — ინვოისის (USD→GEL)"
+                type="text"
+                inputMode="decimal"
+                placeholder="2.70"
+                value={invoiceExchangeRate}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setInvoiceExchangeRate(e.target.value)}
+              />
+              {/* Live rate diff badge */}
+              {rate > 0 && invRate > 0 && grandTotalUsd > 0 && (
+                (() => {
+                  const diff = (rate - invRate) * grandTotalUsd;
+                  const positive = diff >= 0;
+                  return (
+                    <p className={`text-xs font-medium px-2 py-1 rounded-md ${positive ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"}`}>
+                      კურსთა სხვ.: {positive ? "+" : ""}{diff.toFixed(2)}₾
+                      &nbsp;({invRate.toFixed(4)} → {rate.toFixed(4)})
+                      &nbsp;{positive ? "დეკლ. ძვირია" : "დეკლ. იაფია"}
+                    </p>
+                  );
+                })()
+              )}
+            </div>
           </div>
+
+          {/* Related imports under same declaration */}
+          {relatedImports.length > 0 && (
+            <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-4 py-3 text-sm">
+              <p className="font-medium text-blue-800 dark:text-blue-300 mb-1">
+                შეფასების # &ldquo;{declarationNumber}&rdquo; ქვეშ სხვა იმპორტები:
+              </p>
+              <ul className="space-y-0.5 text-blue-700 dark:text-blue-400">
+                {relatedImports.map((r) => (
+                  <li key={r.id}>
+                    <a href={`/imports/${r.id}`} className="underline hover:no-underline">
+                      #{r.id} — {r.supplier}{r.invoiceNumber ? ` (${r.invoiceNumber})` : ""}&nbsp;
+                      <span className="text-xs opacity-70">[{r.status}]</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 

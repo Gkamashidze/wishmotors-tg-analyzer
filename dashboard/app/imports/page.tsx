@@ -12,22 +12,24 @@ export const dynamic  = "force-dynamic";
 export const revalidate = 0;
 
 type ImportRow = {
-  id:                 number;
-  date:               string;
-  supplier:           string;
-  invoiceNumber:      string | null;
-  declarationNumber:  string | null;
-  exchangeRate:       number;
-  totalTransportCost: number;
-  totalTerminalCost:  number;
-  totalAgencyCost:    number;
-  totalVatCost:       number;
-  documentName:       string | null;
-  status:             string;
-  createdAt:          string;
-  updatedAt:          string;
-  itemsCount:         number;
-  totalValueGel:      number;
+  id:                  number;
+  date:                string;
+  supplier:            string;
+  invoiceNumber:       string | null;
+  declarationNumber:   string | null;
+  exchangeRate:        number;
+  totalTransportCost:  number;
+  totalTerminalCost:   number;
+  totalAgencyCost:     number;
+  totalVatCost:        number;
+  invoiceDate:         string | null;
+  invoiceExchangeRate: number | null;
+  documentName:        string | null;
+  status:              string;
+  createdAt:           string;
+  updatedAt:           string;
+  itemsCount:          number;
+  totalValueGel:       number;
 };
 
 async function getImports(): Promise<ImportRow[]> {
@@ -44,6 +46,8 @@ async function getImports(): Promise<ImportRow[]> {
       total_terminal_cost: string;
       total_agency_cost: string;
       total_vat_cost: string;
+      invoice_date: Date | null;
+      invoice_exchange_rate: string | null;
       document_name: string | null;
       status: string;
       created_at: Date;
@@ -55,6 +59,7 @@ async function getImports(): Promise<ImportRow[]> {
          i.id, i.date, i.supplier, i.invoice_number, i.declaration_number, i.exchange_rate,
          i.total_transport_cost, i.total_terminal_cost,
          i.total_agency_cost, i.total_vat_cost,
+         i.invoice_date, i.invoice_exchange_rate,
          i.document_name, i.status, i.created_at, i.updated_at,
          COUNT(ii.id) AS items_count,
          COALESCE(SUM(ii.total_price_gel), 0) AS total_value_gel
@@ -65,22 +70,24 @@ async function getImports(): Promise<ImportRow[]> {
        LIMIT 300`,
     );
     return rows.map((r) => ({
-      id:                 r.id,
-      date:               (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(0, 10),
-      supplier:           r.supplier,
-      invoiceNumber:      r.invoice_number,
-      declarationNumber:  r.declaration_number,
-      exchangeRate:       Number(r.exchange_rate),
-      totalTransportCost: Number(r.total_transport_cost),
-      totalTerminalCost:  Number(r.total_terminal_cost),
-      totalAgencyCost:    Number(r.total_agency_cost),
-      totalVatCost:       Number(r.total_vat_cost),
-      documentName:       r.document_name,
-      status:             r.status,
-      createdAt:          r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-      updatedAt:          r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
-      itemsCount:         Number(r.items_count),
-      totalValueGel:      Number(r.total_value_gel),
+      id:                  r.id,
+      date:                (r.date instanceof Date ? r.date.toISOString() : String(r.date)).slice(0, 10),
+      supplier:            r.supplier,
+      invoiceNumber:       r.invoice_number,
+      declarationNumber:   r.declaration_number,
+      exchangeRate:        Number(r.exchange_rate),
+      totalTransportCost:  Number(r.total_transport_cost),
+      totalTerminalCost:   Number(r.total_terminal_cost),
+      totalAgencyCost:     Number(r.total_agency_cost),
+      totalVatCost:        Number(r.total_vat_cost),
+      invoiceDate:         r.invoice_date ? (r.invoice_date instanceof Date ? r.invoice_date.toISOString() : String(r.invoice_date)).slice(0, 10) : null,
+      invoiceExchangeRate: r.invoice_exchange_rate !== null ? Number(r.invoice_exchange_rate) : null,
+      documentName:        r.document_name,
+      status:              r.status,
+      createdAt:           r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+      updatedAt:           r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+      itemsCount:          Number(r.items_count),
+      totalValueGel:       Number(r.total_value_gel),
     }));
   } catch {
     return [];

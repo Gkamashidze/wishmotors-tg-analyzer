@@ -59,16 +59,18 @@ export default async function ImportDetailPage({ params }: Params) {
               importId={importId}
               products={products}
               initialData={{
-                date:               imp.date,
-                supplier:           imp.supplier,
-                invoiceNumber:      imp.invoiceNumber ?? "",
-                declarationNumber:  imp.declarationNumber ?? "",
-                exchangeRate:       String(imp.exchangeRate),
-                totalTransportCost: String(imp.totalTransportCost),
-                totalTerminalCost:  String(imp.totalTerminalCost),
-                totalAgencyCost:    String(imp.totalAgencyCost),
-                totalVatCost:       String(imp.totalVatCost),
-                documentName:       imp.documentName ?? "",
+                date:                imp.date,
+                supplier:            imp.supplier,
+                invoiceNumber:       imp.invoiceNumber ?? "",
+                declarationNumber:   imp.declarationNumber ?? "",
+                exchangeRate:        String(imp.exchangeRate),
+                totalTransportCost:  String(imp.totalTransportCost),
+                totalTerminalCost:   String(imp.totalTerminalCost),
+                totalAgencyCost:     String(imp.totalAgencyCost),
+                totalVatCost:        String(imp.totalVatCost),
+                invoiceDate:         imp.invoiceDate ?? "",
+                invoiceExchangeRate: imp.invoiceExchangeRate != null ? String(imp.invoiceExchangeRate) : "",
+                documentName:        imp.documentName ?? "",
                 items: imp.items.map((it) => ({
                   productId:          it.productId,
                   quantity:           it.quantity,
@@ -101,6 +103,8 @@ type DbImport = {
   totalTerminalCost: number;
   totalAgencyCost: number;
   totalVatCost: number;
+  invoiceDate: string | null;
+  invoiceExchangeRate: number | null;
   documentUrl: string | null;
   documentName: string | null;
   status: string;
@@ -134,12 +138,15 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
       total_terminal_cost: string;
       total_agency_cost: string;
       total_vat_cost: string;
+      invoice_date: Date | null;
+      invoice_exchange_rate: string | null;
       document_url: string | null;
       document_name: string | null;
       status: string;
     }>(
       `SELECT id, date, supplier, invoice_number, declaration_number, exchange_rate,
               total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
+              invoice_date, invoice_exchange_rate,
               document_url, document_name, status
        FROM imports WHERE id = $1`,
       [importId],
@@ -165,19 +172,21 @@ async function fetchImport(importId: number): Promise<DbImport | null> {
     );
 
     return {
-      id:                 imp.id,
-      date:               (imp.date instanceof Date ? imp.date.toISOString() : String(imp.date)).slice(0, 10),
-      supplier:           imp.supplier,
-      invoiceNumber:      imp.invoice_number,
-      declarationNumber:  imp.declaration_number,
-      exchangeRate:       Number(imp.exchange_rate),
-      totalTransportCost: Number(imp.total_transport_cost),
-      totalTerminalCost:  Number(imp.total_terminal_cost),
-      totalAgencyCost:    Number(imp.total_agency_cost),
-      totalVatCost:       Number(imp.total_vat_cost),
-      documentUrl:        imp.document_url,
-      documentName:       imp.document_name,
-      status:             imp.status,
+      id:                  imp.id,
+      date:                (imp.date instanceof Date ? imp.date.toISOString() : String(imp.date)).slice(0, 10),
+      supplier:            imp.supplier,
+      invoiceNumber:       imp.invoice_number,
+      declarationNumber:   imp.declaration_number,
+      exchangeRate:        Number(imp.exchange_rate),
+      totalTransportCost:  Number(imp.total_transport_cost),
+      totalTerminalCost:   Number(imp.total_terminal_cost),
+      totalAgencyCost:     Number(imp.total_agency_cost),
+      totalVatCost:        Number(imp.total_vat_cost),
+      invoiceDate:         imp.invoice_date ? (imp.invoice_date instanceof Date ? imp.invoice_date.toISOString() : String(imp.invoice_date)).slice(0, 10) : null,
+      invoiceExchangeRate: imp.invoice_exchange_rate !== null ? Number(imp.invoice_exchange_rate) : null,
+      documentUrl:         imp.document_url,
+      documentName:        imp.document_name,
+      status:              imp.status,
       items: items.map((it) => ({
         productId:          it.product_id,
         quantity:           Number(it.quantity),

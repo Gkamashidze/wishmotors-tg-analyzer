@@ -52,6 +52,8 @@ export async function GET(req: NextRequest) {
       total_terminal_cost: string;
       total_agency_cost: string;
       total_vat_cost: string;
+      invoice_date: Date | null;
+      invoice_exchange_rate: string | null;
       document_name: string | null;
       status: string;
       created_at: Date;
@@ -63,6 +65,7 @@ export async function GET(req: NextRequest) {
          i.id, i.date, i.supplier, i.invoice_number, i.declaration_number, i.exchange_rate,
          i.total_transport_cost, i.total_terminal_cost,
          i.total_agency_cost, i.total_vat_cost,
+         i.invoice_date, i.invoice_exchange_rate,
          i.document_name, i.status, i.created_at, i.updated_at,
          COUNT(ii.id)                        AS items_count,
          COALESCE(SUM(ii.total_price_gel),0) AS total_value_gel
@@ -77,22 +80,24 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       rows.map((r) => ({
-        id:                 r.id,
-        date:               toDateStr(r.date),
-        supplier:           r.supplier,
-        invoiceNumber:      r.invoice_number,
-        declarationNumber:  r.declaration_number,
-        exchangeRate:       Number(r.exchange_rate),
-        totalTransportCost: Number(r.total_transport_cost),
-        totalTerminalCost:  Number(r.total_terminal_cost),
-        totalAgencyCost:    Number(r.total_agency_cost),
-        totalVatCost:       Number(r.total_vat_cost),
-        documentName:       r.document_name,
-        status:             r.status,
-        createdAt:          toIso(r.created_at),
-        updatedAt:          toIso(r.updated_at),
-        itemsCount:         Number(r.items_count),
-        totalValueGel:      Number(r.total_value_gel),
+        id:                  r.id,
+        date:                toDateStr(r.date),
+        supplier:            r.supplier,
+        invoiceNumber:       r.invoice_number,
+        declarationNumber:   r.declaration_number,
+        exchangeRate:        Number(r.exchange_rate),
+        totalTransportCost:  Number(r.total_transport_cost),
+        totalTerminalCost:   Number(r.total_terminal_cost),
+        totalAgencyCost:     Number(r.total_agency_cost),
+        totalVatCost:        Number(r.total_vat_cost),
+        invoiceDate:         r.invoice_date ? toDateStr(r.invoice_date) : null,
+        invoiceExchangeRate: r.invoice_exchange_rate !== null ? Number(r.invoice_exchange_rate) : null,
+        documentName:        r.document_name,
+        status:              r.status,
+        createdAt:           toIso(r.created_at),
+        updatedAt:           toIso(r.updated_at),
+        itemsCount:          Number(r.items_count),
+        totalValueGel:       Number(r.total_value_gel),
       })),
     );
   } catch (err) {
@@ -132,6 +137,8 @@ export async function POST(req: NextRequest) {
       totalTerminalCost: number;
       totalAgencyCost: number;
       totalVatCost: number;
+      invoiceDate?: string;
+      invoiceExchangeRate?: number;
       documentUrl?: string;
       documentName?: string;
       items: ImportItemPayload[];
@@ -145,21 +152,24 @@ export async function POST(req: NextRequest) {
       `INSERT INTO imports
          (date, supplier, invoice_number, declaration_number, exchange_rate,
           total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
+          invoice_date, invoice_exchange_rate,
           document_url, document_name, status)
-       VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft')
+       VALUES ($1::date,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft')
        RETURNING id`,
       [
         body.date,
         body.supplier,
-        body.invoiceNumber    || null,
-        body.declarationNumber || null,
+        body.invoiceNumber       || null,
+        body.declarationNumber   || null,
         body.exchangeRate,
         body.totalTransportCost,
         body.totalTerminalCost,
         body.totalAgencyCost,
         body.totalVatCost,
-        body.documentUrl  || null,
-        body.documentName || null,
+        body.invoiceDate         || null,
+        body.invoiceExchangeRate || null,
+        body.documentUrl         || null,
+        body.documentName        || null,
       ],
     );
 

@@ -108,6 +108,14 @@ export async function POST() {
         ON expenses(is_paid) WHERE is_paid = FALSE
     `);
 
+    // v6: invoice date and exchange rate at invoice date (optional, for rate-diff reporting)
+    await query(`
+      ALTER TABLE imports
+        ADD COLUMN IF NOT EXISTS invoice_date          DATE,
+        ADD COLUMN IF NOT EXISTS invoice_exchange_rate NUMERIC(10, 4)
+          CHECK (invoice_exchange_rate IS NULL OR invoice_exchange_rate > 0)
+    `);
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[migrate-erp]", err);

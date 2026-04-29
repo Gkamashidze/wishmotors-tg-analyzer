@@ -25,6 +25,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
       total_terminal_cost: string;
       total_agency_cost: string;
       total_vat_cost: string;
+      invoice_date: Date | null;
+      invoice_exchange_rate: string | null;
       document_url: string | null;
       document_name: string | null;
       status: string;
@@ -33,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     }>(
       `SELECT id, date, supplier, invoice_number, declaration_number, exchange_rate,
               total_transport_cost, total_terminal_cost, total_agency_cost, total_vat_cost,
+              invoice_date, invoice_exchange_rate,
               document_url, document_name, status, created_at, updated_at
        FROM imports WHERE id = $1`,
       [importId],
@@ -75,21 +78,23 @@ export async function GET(_req: NextRequest, { params }: Params) {
     );
 
     return NextResponse.json({
-      id:                 imp.id,
-      date:               toDateStr(imp.date),
-      supplier:           imp.supplier,
-      invoiceNumber:      imp.invoice_number,
-      declarationNumber:  imp.declaration_number,
-      exchangeRate:       Number(imp.exchange_rate),
-      totalTransportCost: Number(imp.total_transport_cost),
-      totalTerminalCost:  Number(imp.total_terminal_cost),
-      totalAgencyCost:    Number(imp.total_agency_cost),
-      totalVatCost:       Number(imp.total_vat_cost),
-      documentUrl:        imp.document_url,
-      documentName:       imp.document_name,
-      status:             imp.status,
-      createdAt:          toIso(imp.created_at),
-      updatedAt:          toIso(imp.updated_at),
+      id:                  imp.id,
+      date:                toDateStr(imp.date),
+      supplier:            imp.supplier,
+      invoiceNumber:       imp.invoice_number,
+      declarationNumber:   imp.declaration_number,
+      exchangeRate:        Number(imp.exchange_rate),
+      totalTransportCost:  Number(imp.total_transport_cost),
+      totalTerminalCost:   Number(imp.total_terminal_cost),
+      totalAgencyCost:     Number(imp.total_agency_cost),
+      totalVatCost:        Number(imp.total_vat_cost),
+      invoiceDate:         imp.invoice_date ? toDateStr(imp.invoice_date) : null,
+      invoiceExchangeRate: imp.invoice_exchange_rate !== null ? Number(imp.invoice_exchange_rate) : null,
+      documentUrl:         imp.document_url,
+      documentName:        imp.document_name,
+      status:              imp.status,
+      createdAt:           toIso(imp.created_at),
+      updatedAt:           toIso(imp.updated_at),
       items: items.map((it) => ({
         id:                     it.id,
         productId:              it.product_id,
@@ -151,6 +156,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       totalTerminalCost?: number;
       totalAgencyCost?: number;
       totalVatCost?: number;
+      invoiceDate?: string | null;
+      invoiceExchangeRate?: number | null;
       documentUrl?: string | null;
       documentName?: string | null;
       items?: ImportItemPayload[];
@@ -171,22 +178,26 @@ export async function PATCH(req: NextRequest, { params }: Params) {
          total_terminal_cost  = COALESCE($7,        total_terminal_cost),
          total_agency_cost    = COALESCE($8,        total_agency_cost),
          total_vat_cost       = COALESCE($9,        total_vat_cost),
-         document_url         = COALESCE($10,       document_url),
-         document_name        = COALESCE($11,       document_name),
+         invoice_date         = $10,
+         invoice_exchange_rate = $11,
+         document_url         = COALESCE($12,       document_url),
+         document_name        = COALESCE($13,       document_name),
          updated_at           = NOW()
-       WHERE id = $12 AND status = 'draft'`,
+       WHERE id = $14 AND status = 'draft'`,
       [
-        body.date               ?? null,
-        body.supplier           ?? null,
-        body.invoiceNumber      ?? null,
-        body.declarationNumber  ?? null,
-        body.exchangeRate       ?? null,
-        body.totalTransportCost ?? null,
-        body.totalTerminalCost  ?? null,
-        body.totalAgencyCost    ?? null,
-        body.totalVatCost       ?? null,
-        body.documentUrl        ?? null,
-        body.documentName       ?? null,
+        body.date                ?? null,
+        body.supplier            ?? null,
+        body.invoiceNumber       ?? null,
+        body.declarationNumber   ?? null,
+        body.exchangeRate        ?? null,
+        body.totalTransportCost  ?? null,
+        body.totalTerminalCost   ?? null,
+        body.totalAgencyCost     ?? null,
+        body.totalVatCost        ?? null,
+        body.invoiceDate         ?? null,
+        body.invoiceExchangeRate ?? null,
+        body.documentUrl         ?? null,
+        body.documentName        ?? null,
         importId,
       ],
     );
