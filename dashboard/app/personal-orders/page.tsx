@@ -291,6 +291,7 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState(order.status);
   const [amountPaid, setAmountPaid] = useState(String(order.amount_paid));
+  const [amountPaidCurrency, setAmountPaidCurrency] = useState<"GEL" | "USD">((order.amount_paid_currency ?? "GEL") as "GEL" | "USD");
   const [arrival, setArrival] = useState(order.estimated_arrival ?? "");
   const [salePriceMin, setSalePriceMin] = useState(order.sale_price_min != null ? String(order.sale_price_min) : "");
   const [salePrice, setSalePrice] = useState(String(order.sale_price));
@@ -306,6 +307,7 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
         body: JSON.stringify({
           status,
           amount_paid: parseFloat(amountPaid) || 0,
+          amount_paid_currency: amountPaidCurrency,
           estimated_arrival: arrival || null,
           sale_price_min: salePriceMin ? parseFloat(salePriceMin) : null,
           sale_price: parseFloat(salePrice) || order.sale_price,
@@ -339,8 +341,22 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
             </select>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">გადახდილი (₾)</label>
-            <Input type="number" step="0.01" min="0" value={amountPaid} onChange={e => setAmountPaid(e.target.value)} />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-muted-foreground">გადახდილი</label>
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setAmountPaidCurrency("GEL"); setAmountPaid(""); }}
+                  className={`px-2 py-0.5 transition-colors ${amountPaidCurrency === "GEL" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                >₾ ლარი</button>
+                <button
+                  type="button"
+                  onClick={() => { setAmountPaidCurrency("USD"); setAmountPaid(""); }}
+                  className={`px-2 py-0.5 transition-colors ${amountPaidCurrency === "USD" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                >$ დოლარი</button>
+              </div>
+            </div>
+            <Input type="number" step="0.01" min="0" value={amountPaid} onChange={e => setAmountPaid(e.target.value)} placeholder="0.00" />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -466,7 +482,7 @@ export default function PersonalOrdersPage() {
                             <Badge variant={STATUS_VARIANTS[order.status]}>{STATUS_LABELS[order.status]}</Badge>
                           </td>
                           <td className="py-2 pr-3 text-right font-mono">{fmtPriceRange(order.sale_price_min, Number(order.sale_price), order.sale_price_currency ?? "GEL")}</td>
-                          <td className="py-2 pr-3 text-right font-mono">{fmtGel(Number(order.amount_paid))}</td>
+                          <td className="py-2 pr-3 text-right font-mono">{fmtPrice(Number(order.amount_paid), order.amount_paid_currency ?? "GEL")}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${remaining > 0 ? "text-amber-600" : "text-green-600"}`}>{fmtPrice(remaining, order.sale_price_currency ?? "GEL")}</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtPrice(profit, order.sale_price_currency ?? "GEL")}</td>
                           <td className="py-2 pr-3 text-sm text-muted-foreground">{fmtDate(order.estimated_arrival)}</td>

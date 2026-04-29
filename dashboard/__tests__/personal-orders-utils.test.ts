@@ -68,6 +68,7 @@ describe("calcProfit", () => {
     sale_price: 200,
     sale_price_currency: "GEL",
     amount_paid: 0,
+    amount_paid_currency: "GEL",
     status: "ordered",
     estimated_arrival: null,
     notes: null,
@@ -90,6 +91,18 @@ describe("calcProfit", () => {
     expect(
       calcProfit({ ...base, sale_price: 200, cost_price: 50, transportation_cost: 20, vat_amount: 10 }),
     ).toBe(120);
+  });
+});
+
+describe("amount_paid display currency", () => {
+  it("USD amount_paid shows $ symbol", () => {
+    expect(fmtPrice(50, "USD")).toBe("$50.00");
+    expect(fmtPrice(50, "USD")).not.toContain("₾");
+  });
+
+  it("GEL amount_paid shows ₾ symbol", () => {
+    expect(fmtPrice(50, "GEL")).toBe("₾50.00");
+    expect(fmtPrice(50, "GEL")).not.toContain("$");
   });
 });
 

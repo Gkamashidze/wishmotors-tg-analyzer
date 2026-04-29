@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
     const allowed = [
       "customer_name", "customer_contact", "part_name", "oem_code",
       "cost_price", "transportation_cost", "vat_amount",
-      "sale_price_min", "sale_price", "sale_price_currency", "amount_paid", "status", "estimated_arrival", "notes",
+      "sale_price_min", "sale_price", "sale_price_currency", "amount_paid", "amount_paid_currency", "status", "estimated_arrival", "notes",
     ];
     const data = Object.fromEntries(
       Object.entries(body).filter(([k]) => allowed.includes(k)),

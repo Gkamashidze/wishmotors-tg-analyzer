@@ -28,6 +28,7 @@ export interface PersonalOrderRow {
   sale_price: number;
   sale_price_currency: string;
   amount_paid: number;
+  amount_paid_currency: string;
   status: PersonalOrderStatus;
   estimated_arrival: string | null;
   notes: string | null;
@@ -48,6 +49,7 @@ export interface PublicPersonalOrderRow {
   sale_price: number;
   sale_price_currency: string;
   amount_paid: number;
+  amount_paid_currency: string;
   status: PersonalOrderStatus;
   estimated_arrival: string | null;
   created_at: string;
@@ -68,7 +70,7 @@ export async function getPersonalOrders(limit = 100): Promise<PersonalOrderRow[]
   return query<PersonalOrderRow>(
     `SELECT o.id, o.tracking_token, o.customer_name, o.customer_contact,
             o.part_name, o.oem_code, o.cost_price, o.transportation_cost, o.vat_amount,
-            o.sale_price_min, o.sale_price, o.sale_price_currency, o.amount_paid, o.status,
+            o.sale_price_min, o.sale_price, o.sale_price_currency, o.amount_paid, o.amount_paid_currency, o.status,
             o.estimated_arrival, o.notes, o.created_at, o.updated_at,
             o.telegram_chat_id, o.telegram_message_id,
             ${ITEMS_SUBQUERY}
@@ -157,7 +159,7 @@ export async function updatePersonalOrder(
   const allowed = [
     "customer_name", "customer_contact", "part_name", "oem_code",
     "cost_price", "transportation_cost", "vat_amount",
-    "sale_price_min", "sale_price", "sale_price_currency", "amount_paid", "status", "estimated_arrival", "notes",
+    "sale_price_min", "sale_price", "sale_price_currency", "amount_paid", "amount_paid_currency", "status", "estimated_arrival", "notes",
   ] as const;
   const entries = Object.entries(data).filter(([k]) => allowed.includes(k as typeof allowed[number]));
   if (!entries.length) return;

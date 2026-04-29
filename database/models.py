@@ -552,6 +552,7 @@ ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_min NUMERIC(12, 
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_chat_id    BIGINT;
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_currency VARCHAR(3) NOT NULL DEFAULT 'GEL';
+ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS amount_paid_currency VARCHAR(3) NOT NULL DEFAULT 'GEL';
 
 CREATE TABLE IF NOT EXISTS personal_order_items (
     id         SERIAL PRIMARY KEY,
@@ -752,6 +753,7 @@ class PersonalOrderRow(TypedDict):
     sale_price: float
     sale_price_currency: str
     amount_paid: float
+    amount_paid_currency: str
     status: str
     estimated_arrival: Optional[object]  # date
     notes: Optional[str]
