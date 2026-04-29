@@ -549,6 +549,8 @@ CREATE INDEX IF NOT EXISTS idx_personal_orders_created_at ON personal_orders(cre
 CREATE INDEX IF NOT EXISTS idx_personal_orders_status     ON personal_orders(status);
 
 ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS sale_price_min NUMERIC(12, 2);
+ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_chat_id    BIGINT;
+ALTER TABLE personal_orders ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
 
 CREATE TABLE IF NOT EXISTS personal_order_items (
     id         SERIAL PRIMARY KEY,
@@ -738,6 +740,8 @@ class PersonalOrderRow(TypedDict):
     created_at: object  # datetime
     updated_at: object  # datetime
     items: List[PersonalOrderItemRow]
+    telegram_chat_id: Optional[int]
+    telegram_message_id: Optional[int]
 
 
 @dataclass

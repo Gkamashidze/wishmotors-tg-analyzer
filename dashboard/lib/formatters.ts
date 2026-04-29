@@ -97,6 +97,41 @@ export interface TopicOrderOpts {
   notes?: string | null;
 }
 
+const PERSONAL_STATUS_LABELS: Record<string, string> = {
+  ordered:    "📦 შეკვეთილია",
+  in_transit: "🚚 გზაშია",
+  arrived:    "✅ ჩამოვიდა",
+  delivered:  "🎉 გადაეცა",
+  cancelled:  "❌ გაუქმდა",
+};
+
+export interface PersonalOrderNotifyOpts {
+  orderId: number;
+  customerName: string;
+  partName: string;
+  oemCode?: string | null;
+  status: string;
+  salePrice: number;
+  amountPaid: number;
+  estimatedArrival?: string | null;
+}
+
+export function formatPersonalOrder(opts: PersonalOrderNotifyOpts): string {
+  const st = PERSONAL_STATUS_LABELS[opts.status] ?? opts.status;
+  const oem = opts.oemCode ? ` | OEM: <code>${esc(opts.oemCode)}</code>` : "";
+  const arrival = opts.estimatedArrival
+    ? `\n📅 ჩამოსვლა: <b>${esc(opts.estimatedArrival)}</b>`
+    : "";
+  const remaining = opts.salePrice - opts.amountPaid;
+  return (
+    `<b>${esc(opts.partName)}</b>${oem}\n` +
+    `👤 ${esc(opts.customerName)}\n` +
+    `${st}${arrival}\n` +
+    `💳 გადახდილი: <b>₾${opts.amountPaid.toFixed(2)}</b> / ₾${opts.salePrice.toFixed(2)}` +
+    ` (დარჩა: <b>₾${remaining.toFixed(2)}</b>) | <code>#${opts.orderId}</code>`
+  );
+}
+
 export function formatTopicOrder(opts: TopicOrderOpts): string {
   const st = STATUS_LABELS[opts.status] ?? opts.status;
   const pr = PRIORITY_LABELS[opts.priority] ?? opts.priority;

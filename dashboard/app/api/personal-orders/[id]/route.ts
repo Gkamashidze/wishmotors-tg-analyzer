@@ -4,6 +4,10 @@ import {
   updatePersonalOrder,
   deletePersonalOrder,
 } from "@/lib/personal-orders-queries";
+import { telegramMarkUpdated } from "@/lib/telegram";
+import { formatPersonalOrder } from "@/lib/formatters";
+
+const GROUP_ID = Number(process.env.GROUP_ID ?? "0");
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +41,25 @@ export async function PUT(req: NextRequest, { params }: { params: Params }) {
       Object.entries(body).filter(([k]) => allowed.includes(k)),
     );
     await updatePersonalOrder(rowId, data as Parameters<typeof updatePersonalOrder>[1]);
+
+    if (typeof data.status === "string") {
+      const order = await getPersonalOrderById(rowId);
+      const chatId = order?.telegram_chat_id ?? (GROUP_ID || null);
+      if (order && chatId && order.telegram_message_id) {
+        const text = formatPersonalOrder({
+          orderId: order.id,
+          customerName: order.customer_name,
+          partName: order.part_name,
+          oemCode: order.oem_code,
+          status: order.status,
+          salePrice: Number(order.sale_price),
+          amountPaid: Number(order.amount_paid),
+          estimatedArrival: order.estimated_arrival,
+        });
+        void telegramMarkUpdated(chatId, order.telegram_message_id, text);
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[personal-orders PUT]", err);

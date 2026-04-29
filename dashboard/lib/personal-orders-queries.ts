@@ -33,6 +33,8 @@ export interface PersonalOrderRow {
   created_at: string;
   updated_at: string;
   items: PersonalOrderItem[];
+  telegram_chat_id: number | null;
+  telegram_message_id: number | null;
 }
 
 export interface PublicPersonalOrderRow {
@@ -66,6 +68,7 @@ export async function getPersonalOrders(limit = 100): Promise<PersonalOrderRow[]
             o.part_name, o.oem_code, o.cost_price, o.transportation_cost, o.vat_amount,
             o.sale_price_min, o.sale_price, o.amount_paid, o.status,
             o.estimated_arrival, o.notes, o.created_at, o.updated_at,
+            o.telegram_chat_id, o.telegram_message_id,
             ${ITEMS_SUBQUERY}
      FROM personal_orders o
      ORDER BY o.created_at DESC

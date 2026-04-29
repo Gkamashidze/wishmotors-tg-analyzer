@@ -28,6 +28,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    InaccessibleMessage,
 )
 
 import config
@@ -476,7 +477,7 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
         return
 
     link = _tracking_link(order["tracking_token"])
-    await cb.message.edit_text(  # type: ignore[union-attr]
+    sent = await cb.message.edit_text(  # type: ignore[union-attr]
         f"✅ შეკვეთა <b>#{order['id']}</b> შეინახა!\n\n"
         f"📦 {html.escape(order['part_name'])}\n"
         f"👤 {html.escape(order['customer_name'])}\n\n"
@@ -484,6 +485,8 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
         parse_mode=_PARSE,
         reply_markup=_order_actions_kb(order["id"]),
     )
+    if isinstance(sent, Message) and not isinstance(sent, InaccessibleMessage):
+        await db.save_personal_order_tg_message(order["id"], sent.chat.id, sent.message_id)
 
 
 # ─── po_cancel ────────────────────────────────────────────────────────────────
