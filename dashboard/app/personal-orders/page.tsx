@@ -320,6 +320,9 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
   const [status, setStatus] = useState(order.status);
   const [amountPaid, setAmountPaid] = useState(String(order.amount_paid));
   const [arrival, setArrival] = useState(order.estimated_arrival ?? "");
+  const [salePriceMin, setSalePriceMin] = useState(order.sale_price_min != null ? String(order.sale_price_min) : "");
+  const [salePrice, setSalePrice] = useState(String(order.sale_price));
+  const [saleCurrency, setSaleCurrency] = useState<"GEL" | "USD">((order.sale_price_currency ?? "GEL") as "GEL" | "USD");
   const [loading, setLoading] = useState(false);
 
   async function save() {
@@ -332,6 +335,9 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
           status,
           amount_paid: parseFloat(amountPaid) || 0,
           estimated_arrival: arrival || null,
+          sale_price_min: salePriceMin ? parseFloat(salePriceMin) : null,
+          sale_price: parseFloat(salePrice) || order.sale_price,
+          sale_price_currency: saleCurrency,
         }),
       });
       setOpen(false);
@@ -363,6 +369,33 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
           <div>
             <label className="text-xs text-muted-foreground">გადახდილი (₾)</label>
             <Input type="number" step="0.01" min="0" value={amountPaid} onChange={e => setAmountPaid(e.target.value)} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-muted-foreground">გასაყიდი ფასი</label>
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSaleCurrency("GEL")}
+                  className={`px-2 py-0.5 transition-colors ${saleCurrency === "GEL" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                >₾ ლარი</button>
+                <button
+                  type="button"
+                  onClick={() => setSaleCurrency("USD")}
+                  className={`px-2 py-0.5 transition-colors ${saleCurrency === "USD" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                >$ დოლარი</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground">დან ({saleCurrency === "USD" ? "$" : "₾"})</label>
+                <Input type="number" step="0.01" min="0" value={salePriceMin} onChange={e => setSalePriceMin(e.target.value)} placeholder="0.00" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">მდე ({saleCurrency === "USD" ? "$" : "₾"}) *</label>
+                <Input required type="number" step="0.01" min="0.01" value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="0.00" />
+              </div>
+            </div>
           </div>
           <div>
             <label className="text-xs text-muted-foreground">ჩამოსვლის თარიღი</label>
