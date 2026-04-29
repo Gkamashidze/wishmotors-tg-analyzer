@@ -781,4 +781,4 @@ def sanitize_oem(raw: object) -> Optional[str]:
         integer_part = s[:-2]
         if integer_part.lstrip("-").isdigit():
             return integer_part
-    return s
+    return s.upper()
