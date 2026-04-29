@@ -1,19 +1,29 @@
-"""Import Excel parser — 9-column cost-tracking format.
+"""Import Excel parser — 9–13-column cost-tracking format.
 
-Expected columns (row 2 onward, row 1 is header):
-  1. თარიღი          — import date (date, datetime, or YYYY-MM-DD string)
+Required columns (row 2 onward, row 1 is header):
+  1. თარიღი          — import date (declaration date; date, datetime, or YYYY-MM-DD string)
   2. OEM კოდი        — OEM code (string)
   3. დასახელება      — product name (string)
   4. რაოდენობა       — quantity (numeric, > 0)
   5. ზომის ერთეული   — unit (string, default "ც")
   6. ერთეულის ფასი $ — unit price in USD (numeric, >= 0)
-  7. კურსი           — USD→GEL exchange rate (numeric, > 0)
+  7. კურსი           — USD→GEL exchange rate at declaration date (numeric, > 0)
   8. ტრანსპორტირება ₾ — transport cost per unit in GEL (numeric, default 0)
   9. სხვა ₾          — other cost per unit in GEL (numeric, default 0)
+
+Optional columns (can be blank or omitted entirely):
+  10. მომწოდებელი    — supplier name (string)
+  11. ინვოისი №      — invoice number/identifier (string)
+  12. ინვ. თარიღი    — invoice issue date (date, datetime, or YYYY-MM-DD string)
+  13. ინვ. კურსი     — USD→GEL exchange rate at invoice date (numeric, > 0)
 
 Computed per row:
   total_unit_cost_gel        = (unit_price_usd * exchange_rate) + transport_cost_gel + other_cost_gel
   suggested_retail_price_gel = total_unit_cost_gel * 1.4  (40% margin)
+
+The optional columns enable two features:
+  - Grouping products by supplier/invoice in the import summary
+  - Comparing declaration-date rate vs invoice-date rate (exchange-rate delta)
 """
 
 from __future__ import annotations
@@ -52,6 +62,11 @@ class ImportRow:
     other_cost_gel: float
     total_unit_cost_gel: float
     suggested_retail_price_gel: float
+    # Optional columns 10–13
+    supplier: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    invoice_exchange_rate: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +81,10 @@ class ImportRow:
             "other_cost_gel": self.other_cost_gel,
             "total_unit_cost_gel": self.total_unit_cost_gel,
             "suggested_retail_price_gel": self.suggested_retail_price_gel,
+            "supplier": self.supplier,
+            "invoice_number": self.invoice_number,
+            "invoice_date": self.invoice_date,
+            "invoice_exchange_rate": self.invoice_exchange_rate,
         }
 
 
@@ -116,10 +135,11 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         if not any(c is not None and str(c).strip() != "" for c in row):
             continue
 
-        # Pad to at least 9 cells
-        cells = list(row) + [None] * max(0, 9 - len(row))
+        # Pad to at least 13 cells (cols 10–13 are optional)
+        cells = list(row) + [None] * max(0, 13 - len(row))
 
         raw_date, raw_oem, raw_name, raw_qty, raw_unit, raw_price_usd, raw_rate, raw_transport, raw_other = cells[:9]
+        raw_supplier, raw_invoice_num, raw_invoice_date, raw_invoice_rate = cells[9], cells[10], cells[11], cells[12]
 
         # ── Date — carry forward last valid date if missing ──────────────────
         parsed_date = _parse_date(raw_date)
@@ -171,6 +191,20 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         if other is None or other < 0:
             other = 0.0
 
+        # ── Optional: supplier & invoice number (cols 10–11) ─────────────────
+        supplier = str(raw_supplier).strip() if raw_supplier and str(raw_supplier).strip() else None
+        invoice_number = str(raw_invoice_num).strip() if raw_invoice_num and str(raw_invoice_num).strip() else None
+
+        # ── Optional: invoice date (col 12) ──────────────────────────────────
+        invoice_date = _parse_date(raw_invoice_date) if raw_invoice_date else None
+
+        # ── Optional: invoice exchange rate (col 13) ─────────────────────────
+        invoice_exchange_rate: Optional[float] = None
+        if raw_invoice_rate is not None:
+            parsed_inv_rate = _parse_float(raw_invoice_rate)
+            if parsed_inv_rate is not None and parsed_inv_rate > 0:
+                invoice_exchange_rate = parsed_inv_rate
+
         # ── Computed fields ───────────────────────────────────────────────────
         total_cost = round((unit_price_usd * exchange_rate) + transport + other, 4)
         suggested = round(total_cost * RETAIL_MARKUP, 4)
@@ -187,6 +221,10 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
             other_cost_gel=other,
             total_unit_cost_gel=total_cost,
             suggested_retail_price_gel=suggested,
+            supplier=supplier,
+            invoice_number=invoice_number,
+            invoice_date=invoice_date,
+            invoice_exchange_rate=invoice_exchange_rate,
         ))
 
     wb.close()

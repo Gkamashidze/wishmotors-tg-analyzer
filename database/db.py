@@ -3023,13 +3023,16 @@ class Database:
                                (import_date, oem, name, quantity, unit,
                                 unit_price_usd, exchange_rate,
                                 transport_cost_gel, other_cost_gel,
-                                total_unit_cost_gel, suggested_retail_price_gel)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+                                total_unit_cost_gel, suggested_retail_price_gel,
+                                supplier, invoice_number, invoice_date, invoice_exchange_rate)
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
                         r["import_date"], r["oem"].strip().upper() if r.get("oem") else r["oem"], r["name"],
                         r["quantity"], r["unit"],
                         r["unit_price_usd"], r["exchange_rate"],
                         r["transport_cost_gel"], r["other_cost_gel"],
                         r["total_unit_cost_gel"], r["suggested_retail_price_gel"],
+                        r.get("supplier"), r.get("invoice_number"),
+                        r.get("invoice_date"), r.get("invoice_exchange_rate"),
                     )
         return len(rows)
 
@@ -3041,6 +3044,7 @@ class Database:
                           unit_price_usd, exchange_rate,
                           transport_cost_gel, other_cost_gel,
                           total_unit_cost_gel, suggested_retail_price_gel,
+                          supplier, invoice_number, invoice_date, invoice_exchange_rate,
                           created_at
                    FROM imports_history
                    ORDER BY import_date DESC, created_at DESC

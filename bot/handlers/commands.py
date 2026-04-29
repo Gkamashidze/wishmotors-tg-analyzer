@@ -19,7 +19,7 @@ from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKe
 import config
 from bot.financial_ai import generate_weekly_advice
 from bot.handlers import IsAdmin, is_rate_limited
-from bot.parsers.import_excel_parser import parse_import_excel
+from bot.parsers.import_excel_parser import ImportRow, parse_import_excel
 from bot.handlers.topic_messages import mark_cancelled, restore_original
 from bot.reports.formatter import (
     format_cash_on_hand,
@@ -1724,6 +1724,52 @@ async def addproduct_price(message: Message, state: FSMContext, db: Database) ->
 
 
 
+def _build_supplier_section(ok_rows: list[ImportRow]) -> list[str]:
+    """Group successful rows by supplier/invoice and return summary lines."""
+    if not any(r.supplier or r.invoice_number for r in ok_rows):
+        return []
+
+    groups: dict[tuple, dict] = {}
+    for r in ok_rows:
+        key = (r.supplier or "—", r.invoice_number or "—")
+        if key not in groups:
+            groups[key] = {"count": 0, "total_usd": 0.0}
+        groups[key]["count"] += 1
+        groups[key]["total_usd"] += r.unit_price_usd * r.quantity
+
+    lines: list[str] = ["\n📋 <b>მომწოდებლები და ინვოისები:</b>"]
+    for (supplier, inv_num), info in groups.items():
+        s = html.escape(supplier)
+        inv = f" | ინვ.#{html.escape(inv_num)}" if inv_num != "—" else ""
+        lines.append(f"  👤 {s}{inv} — {info['count']} პროდ., ${info['total_usd']:.2f}")
+    return lines
+
+
+def _build_rate_diff_section(ok_rows: list[ImportRow]) -> list[str]:
+    """Show GEL impact of invoice-rate vs declaration-rate per supplier/invoice group."""
+    relevant = [r for r in ok_rows if r.invoice_exchange_rate is not None]
+    if not relevant:
+        return []
+
+    # Key: (supplier, invoice_number, decl_rate, inv_rate)
+    groups: dict[tuple, float] = {}
+    for r in relevant:
+        key = (r.supplier or "—", r.invoice_number or "—", r.exchange_rate, r.invoice_exchange_rate)
+        diff = (r.exchange_rate - (r.invoice_exchange_rate or 0.0)) * r.unit_price_usd * r.quantity
+        groups[key] = groups.get(key, 0.0) + diff
+
+    lines: list[str] = ["\n💱 <b>კურსთა სხვაობა (ინვ.კ. → დეკლ.კ.):</b>"]
+    for (supplier, inv_num, decl_rate, inv_rate), total_diff in groups.items():
+        s = html.escape(supplier)
+        sign = "+" if total_diff >= 0 else ""
+        label = "ძვირია" if total_diff > 0 else ("იაფია" if total_diff < 0 else "სხვ.=0")
+        lines.append(
+            f"  {s}: {inv_rate:.4f} → {decl_rate:.4f} | "
+            f"სულ: <b>{sign}{total_diff:.2f}₾</b> ({label})"
+        )
+    return lines
+
+
 def _build_price_change_lines(
     price_changes: list[tuple[str, str, Decimal, Optional[Decimal]]],
 ) -> list[str]:
@@ -1771,15 +1817,20 @@ class ImportState(StatesGroup):
 
 @commands_router.message(Command("import"), IsAdmin())
 async def cmd_import(message: Message, state: FSMContext) -> None:
-    """Start Excel import wizard (9-column cost-tracking format)."""
+    """Start Excel import wizard (9–13-column cost-tracking format)."""
     await state.set_state(ImportState.waiting_file)
     await message.bot.send_message(
         chat_id=message.from_user.id,
         text=(
             "📂 <b>Excel-ის იმპორტი</b>\n\n"
-            "გამოაგზავნე <b>.xlsx</b> ფაილი <b>9 სვეტით</b>:\n"
+            "<b>სავალდებულო სვეტები (1–9):</b>\n"
             "<code>თარიღი | OEM | დასახელება | რაოდ. | ერთ. | ფასი$ | კურსი | ტრანსპ.₾ | სხვა₾</code>\n\n"
-            "• სვეტები 8–9 (ტრანსპ./სხვა) შეიძლება ცარიელი იყოს → 0 ჩაითვლება\n"
+            "<b>ოფციური სვეტები (10–13):</b>\n"
+            "<code>მომწოდებელი | ინვოისი № | ინვ.თარიღი | ინვ.კურსი</code>\n\n"
+            "• სვეტები 8–9: ცარიელი → 0\n"
+            "• სვეტები 10–13: ცარიელი → გამოტოვდება\n"
+            "• კურსი (სვ.7) — დეკლარაციის თარიღის კურსი\n"
+            "• ინვ.კურსი (სვ.13) — ინვოისის გამოწერის თარიღის კურსი\n"
             "• პირველი სტრიქონი — სათაური (გამოტოვდება)\n"
             "• თვითღირებულება = (ფასი$ × კურსი) + ტრანსპ. + სხვა\n"
             "• სარეკომენდაციო = თვითღირებ. × 1.4"
@@ -1836,6 +1887,7 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
 
     # Persist to inventory (receive_inventory_batch) + imports_history atomically
     added = updated = failed = 0
+    ok_rows: list[ImportRow] = []
     price_changes: list[tuple] = []
     for r in import_rows:
         try:
@@ -1852,6 +1904,7 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
                 added += 1
             else:
                 updated += 1
+            ok_rows.append(r)
             price_changes.append((r.oem, r.name, r.unit_price_usd, prev_prices.get(r.oem)))
         except Exception:
             failed += 1
@@ -1875,6 +1928,8 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
         if len(parse_errors) > 3:
             lines.append(f"  … და კიდევ {len(parse_errors) - 3}")
 
+    lines.extend(_build_supplier_section(ok_rows))
+    lines.extend(_build_rate_diff_section(ok_rows))
     lines.extend(_build_price_change_lines(price_changes))
 
     text = "\n".join(lines)

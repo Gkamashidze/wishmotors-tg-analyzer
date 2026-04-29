@@ -570,6 +570,18 @@ WHERE o.part_name IS NOT NULL
   AND NOT EXISTS (
       SELECT 1 FROM personal_order_items i WHERE i.order_id = o.id
   );
+
+-- ─── imports_history: supplier / invoice / invoice-rate columns ───────────────
+-- Optional Excel columns 10–13 that allow grouping by supplier+invoice and
+-- comparing the invoice-date exchange rate against the declaration-date rate.
+ALTER TABLE imports_history ADD COLUMN IF NOT EXISTS supplier              TEXT;
+ALTER TABLE imports_history ADD COLUMN IF NOT EXISTS invoice_number        TEXT;
+ALTER TABLE imports_history ADD COLUMN IF NOT EXISTS invoice_date          DATE;
+ALTER TABLE imports_history ADD COLUMN IF NOT EXISTS invoice_exchange_rate NUMERIC(10, 4)
+    CHECK (invoice_exchange_rate IS NULL OR invoice_exchange_rate > 0);
+
+CREATE INDEX IF NOT EXISTS idx_imports_history_supplier ON imports_history(supplier)
+    WHERE supplier IS NOT NULL;
 """
 
 
@@ -699,6 +711,10 @@ class ImportHistoryRow(TypedDict):
     other_cost_gel: float
     total_unit_cost_gel: float
     suggested_retail_price_gel: float
+    supplier: Optional[str]
+    invoice_number: Optional[str]
+    invoice_date: Optional[object]  # date
+    invoice_exchange_rate: Optional[float]
     created_at: object  # datetime
 
 
