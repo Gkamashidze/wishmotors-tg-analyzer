@@ -22,6 +22,7 @@ import {
   type DashboardSummary,
 } from "@/lib/queries";
 import { TopProductsSection } from "@/components/dashboard/top-products-section";
+import { FinancialAllocationGuide } from "@/components/dashboard/financial-allocation-guide";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -131,6 +132,8 @@ export default async function DashboardPage() {
           topSelling={topSelling}
           topProfitable={topProfitable}
         />
+
+        <FinancialAllocationGuide initialSummary={summary} />
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-1">
