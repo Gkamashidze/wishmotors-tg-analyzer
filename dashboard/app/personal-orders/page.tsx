@@ -245,12 +245,12 @@ function NewOrderForm({ onCreated }: { onCreated: () => void }) {
                 <div className="flex rounded-md border overflow-hidden text-xs">
                   <button
                     type="button"
-                    onClick={() => setSaleCurrency("GEL")}
+                    onClick={() => { setSaleCurrency("GEL"); set("sale_price_min", ""); set("sale_price", ""); }}
                     className={`px-2 py-0.5 transition-colors ${saleCurrency === "GEL" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
                   >₾ ლარი</button>
                   <button
                     type="button"
-                    onClick={() => setSaleCurrency("USD")}
+                    onClick={() => { setSaleCurrency("USD"); set("sale_price_min", ""); set("sale_price", ""); }}
                     className={`px-2 py-0.5 transition-colors ${saleCurrency === "USD" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
                   >$ დოლარი</button>
                 </div>
@@ -376,12 +376,12 @@ function EditOrderDialog({ order, onUpdated }: { order: PersonalOrderRow; onUpda
               <div className="flex rounded-md border overflow-hidden text-xs">
                 <button
                   type="button"
-                  onClick={() => setSaleCurrency("GEL")}
+                  onClick={() => { setSaleCurrency("GEL"); setSalePriceMin(""); setSalePrice(""); }}
                   className={`px-2 py-0.5 transition-colors ${saleCurrency === "GEL" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
                 >₾ ლარი</button>
                 <button
                   type="button"
-                  onClick={() => setSaleCurrency("USD")}
+                  onClick={() => { setSaleCurrency("USD"); setSalePriceMin(""); setSalePrice(""); }}
                   className={`px-2 py-0.5 transition-colors ${saleCurrency === "USD" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
                 >$ დოლარი</button>
               </div>
