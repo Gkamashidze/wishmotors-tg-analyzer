@@ -541,6 +541,20 @@ async def on_done(callback: CallbackQuery, state: FSMContext, db: Database) -> N
     await _finalize(callback, state, db)
 
 
+@addorder_router.callback_query(F.data.in_({"ao:done", "ao:more"}), IsAdmin())
+async def on_stale_wizard_button(callback: CallbackQuery, state: FSMContext) -> None:
+    """Catch ao:done / ao:more when FSM state is missing (e.g. after bot restart)."""
+    assert isinstance(callback.message, Message)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer(
+        "⏳ სესია გაუქმდა (bot გადაიტვირთა). გამოიყენე /addorder ხელახლა.",
+        show_alert=True,
+    )
+
+
 # ─── Finalization: bulk INSERT + post topic summary ──────────────────────────
 
 async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
