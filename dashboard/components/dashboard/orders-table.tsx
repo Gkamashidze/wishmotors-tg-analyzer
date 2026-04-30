@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Eye, Pencil, Trash2, Undo2 } from "lucide-react";
+import { Download, Eye, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -90,6 +90,24 @@ interface EditState {
   notes: string;
 }
 
+interface AddState {
+  product_id: string;
+  part_name: string;
+  oem_code: string;
+  quantity_needed: string;
+  priority: string;
+  notes: string;
+}
+
+const DEFAULT_ADD: AddState = {
+  product_id: "",
+  part_name: "",
+  oem_code: "",
+  quantity_needed: "1",
+  priority: "low",
+  notes: "",
+};
+
 function rowToEdit(r: OrderRow): EditState {
   return {
     product_id: String(r.productId ?? ""),
@@ -117,6 +135,9 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
   const [editRow, setEditRow] = useState<OrderRow | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<OrderRow | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addState, setAddState] = useState<AddState>(DEFAULT_ADD);
+  const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [undoingId, setUndoingId] = useState<number | null>(null);
@@ -190,6 +211,37 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
       setSaving(false);
     }
   }, [editRow, editState, localProducts, closeEdit, router]);
+
+  const openAdd = useCallback(() => { setAddState(DEFAULT_ADD); setAddOpen(true); }, []);
+  const closeAdd = useCallback(() => setAddOpen(false), []);
+
+  const setAdd = (key: keyof AddState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setAddState((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleAdd = useCallback(async () => {
+    setAdding(true);
+    try {
+      const productId = addState.product_id ? Number(addState.product_id) : null;
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: productId,
+          part_name: addState.part_name.trim() || null,
+          oem_code: addState.oem_code.trim() || null,
+          quantity_needed: Number(addState.quantity_needed),
+          priority: addState.priority,
+          notes: addState.notes.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error("server error");
+      closeAdd();
+      router.refresh();
+    } finally {
+      setAdding(false);
+    }
+  }, [addState, closeAdd, router]);
 
   const handleUndo = useCallback(async (r: OrderRow) => {
     setUndoingId(r.id);
@@ -289,6 +341,10 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
             {STATUS_TABS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
           <input value={queryText} onChange={(e) => setQueryText(e.target.value)} placeholder="ძიება..." aria-label="ძიება შეკვეთებში" className="h-9 w-full sm:w-56 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+          <Button size="sm" variant="default" className="gap-1.5 cursor-pointer w-full sm:w-auto" onClick={openAdd}>
+            <Plus className="h-4 w-4" />
+            შეკვეთის დამატება
+          </Button>
           <a
             href={`/api/orders/export?priority=${priority}&status=${status}&q=${encodeURIComponent(queryText)}`}
             download
@@ -473,6 +529,56 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
         description={`გსურთ შეკვეთა #${deleteRow?.id} (${deleteRow?.productName || "—"}) წაშლა? ეს მოქმედება შეუქცევადია.`}
         loading={deleting}
       />
+
+      <Dialog open={addOpen} onClose={closeAdd} title="ახალი შეკვეთა">
+        <div className="space-y-3">
+          <ProductCombobox
+            id="add-ord-product"
+            label="პროდუქტი (სურვილისამებრ)"
+            products={localProducts}
+            value={addState.product_id}
+            onChange={(val) => {
+              const product = localProducts.find((p) => String(p.id) === val);
+              setAddState((prev) => ({
+                ...prev,
+                product_id: val,
+                oem_code: product?.oemCode ?? prev.oem_code,
+                part_name: product ? "" : prev.part_name,
+              }));
+            }}
+            onProductAdded={(p) => {
+              setLocalProducts((prev) => [...prev, p].sort((a, b) => a.name.localeCompare(b.name)));
+              setAddState((prev) => ({ ...prev, product_id: String(p.id), oem_code: p.oemCode ?? "", part_name: "" }));
+            }}
+          />
+          {!addState.product_id && (
+            <Input
+              id="add-ord-part-name"
+              label="სახელი (პროდუქტის გარეშე)"
+              type="text"
+              value={addState.part_name}
+              onChange={setAdd("part_name")}
+              placeholder="მაგ: სარქვლის გასაღები 22mm"
+            />
+          )}
+          <Input id="add-ord-oem" label="OEM კოდი" type="text" value={addState.oem_code} onChange={setAdd("oem_code")} placeholder="სურვილისამებრ" />
+          <div className="grid grid-cols-2 gap-3">
+            <Input id="add-ord-qty" label="საჭირო რაოდენობა" type="number" min="1" value={addState.quantity_needed} onChange={setAdd("quantity_needed")} />
+            <Select id="add-ord-priority" label="პრიორიტეტი" options={PRIORITY_OPTIONS} value={addState.priority} onChange={setAdd("priority")} />
+          </div>
+          <Textarea id="add-ord-notes" label="შენიშვნა" value={addState.notes} onChange={setAdd("notes")} rows={2} placeholder="სურვილისამებრ..." />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={closeAdd} disabled={adding} className="cursor-pointer">გაუქმება</Button>
+            <Button
+              onClick={handleAdd}
+              disabled={adding || (Number(addState.quantity_needed) < 1) || (!addState.product_id && !addState.part_name.trim())}
+              className="cursor-pointer"
+            >
+              {adding ? "ინახება..." : "დამატება"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
