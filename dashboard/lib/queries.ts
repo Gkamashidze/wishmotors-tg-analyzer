@@ -185,6 +185,7 @@ export type OrderRow = {
   productName: string;       // always set — fallback: 'ძველი ჩანაწერი'
   oemCode: string | null;
   quantityNeeded: number;    // always set — fallback: 0
+  quantityOrdered: number;   // how many placed with supplier (0 = not yet ordered)
   status: string;
   priority: "urgent" | "low" | string;
   createdAt: string;         // always set — fallback: NOW()
@@ -199,6 +200,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     product_name: string | null;
     oem_code: string | null;
     quantity_needed: number;
+    quantity_ordered: number;
     status: string;
     priority: string;
     created_at: Date;
@@ -214,6 +216,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
         COALESCE(p.name, o.part_name) AS product_name,
         o.oem_code,
         o.quantity_needed,
+        o.quantity_ordered,
         o.status,
         CASE WHEN o.priority = 'urgent' THEN 'urgent' ELSE 'low' END AS priority,
         o.created_at,
@@ -241,6 +244,7 @@ export async function getOrders(limit: number = 2000): Promise<OrderRow[]> {
     productName: r.product_name ?? "ძველი ჩანაწერი",
     oemCode: r.oem_code !== "-" ? r.oem_code : null,
     quantityNeeded: Number(r.quantity_needed),
+    quantityOrdered: Number(r.quantity_ordered ?? 0),
     status: r.status,
     priority: (r.priority === "urgent" ? "urgent" : "low") as OrderRow["priority"],
     createdAt: r.created_at instanceof Date

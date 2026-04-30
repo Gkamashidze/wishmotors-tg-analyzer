@@ -584,6 +584,10 @@ ALTER TABLE imports_history ADD COLUMN IF NOT EXISTS invoice_exchange_rate NUMER
 
 CREATE INDEX IF NOT EXISTS idx_imports_history_supplier ON imports_history(supplier)
     WHERE supplier IS NOT NULL;
+
+-- How many units were actually placed with the supplier (may be less than quantity_needed).
+-- quantity_needed - quantity_ordered = remaining units still to be ordered.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_ordered INTEGER NOT NULL DEFAULT 0;
 """
 
 

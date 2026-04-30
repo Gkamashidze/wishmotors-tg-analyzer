@@ -12,6 +12,7 @@ interface OrderRecord {
   topic_message_id: number | null;
   product_name: string | null;
   quantity_needed: number;
+  quantity_ordered: number;
   status: string;
   priority: string;
   notes: string | null;
@@ -23,7 +24,7 @@ async function fetchOrder(rowId: number): Promise<OrderRecord | null> {
   return queryOne<OrderRecord>(
     `SELECT o.topic_id, o.topic_message_id,
             p.name AS product_name,
-            o.quantity_needed, o.status, o.priority, o.notes
+            o.quantity_needed, o.quantity_ordered, o.status, o.priority, o.notes
      FROM orders o
      LEFT JOIN products p ON p.id = o.product_id
      WHERE o.id = $1`,
@@ -39,21 +40,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = await req.json() as Record<string, unknown>;
-  const { product_id, quantity_needed, status, priority, notes, oem_code, part_name } = body;
+  const { product_id, quantity_needed, status, priority, notes, oem_code, part_name, quantity_ordered } = body;
 
   const current = await fetchOrder(rowId);
 
   await query(
     `UPDATE orders SET
-      product_id      = $2,
-      quantity_needed = $3,
-      status          = $4,
-      priority        = $5,
-      notes           = $6,
-      oem_code        = $7,
-      part_name       = COALESCE($8, part_name)
+      product_id       = $2,
+      quantity_needed  = $3,
+      status           = $4,
+      priority         = $5,
+      notes            = $6,
+      oem_code         = $7,
+      part_name        = COALESCE($8, part_name),
+      quantity_ordered = COALESCE($9, quantity_ordered)
     WHERE id = $1`,
-    [rowId, product_id ?? null, quantity_needed, status, priority, notes ?? null, oem_code ?? null, (part_name as string | null) ?? null],
+    [rowId, product_id ?? null, quantity_needed, status, priority, notes ?? null, oem_code ?? null,
+     (part_name as string | null) ?? null,
+     quantity_ordered !== undefined ? Math.max(0, Number(quantity_ordered)) : null],
   );
 
   if (current?.topic_id && current.topic_message_id && GROUP_ID) {

@@ -119,6 +119,23 @@ function rowToEdit(r: OrderRow): EditState {
   };
 }
 
+function quantityRemainingLabel(r: { quantityNeeded: number; quantityOrdered: number }): React.ReactNode {
+  const ordered = r.quantityOrdered ?? 0;
+  if (ordered <= 0) return <span className="tabular-nums">{formatNumber(r.quantityNeeded)}</span>;
+  const remaining = Math.max(r.quantityNeeded - ordered, 0);
+  return (
+    <span className="tabular-nums text-xs leading-tight">
+      <span className="text-muted-foreground">{r.quantityNeeded}</span>
+      {" / "}
+      <span className="text-blue-600 dark:text-blue-400">{ordered}</span>
+      {remaining > 0
+        ? <span className="ml-1 text-orange-500 font-medium">({remaining}↓)</span>
+        : <span className="ml-1 text-green-600">✓</span>
+      }
+    </span>
+  );
+}
+
 export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]; products?: ProductRow[] }) {
   const rows = rawRows ?? [];
   const router = useRouter();
@@ -366,7 +383,7 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
               <TableHead className="w-16">#</TableHead>
               <TableHead>პროდუქტი</TableHead>
               <TableHead>OEM</TableHead>
-              <TableHead className="text-right">საჭ. რ-ბა</TableHead>
+              <TableHead className="text-right">საჭ./შეკვ./დარჩ.</TableHead>
               <TableHead>პრიორიტეტი</TableHead>
               <TableHead>სტატუსი</TableHead>
               <TableHead>წყარო</TableHead>
@@ -406,7 +423,7 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
                       : r.productName}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{r.oemCode ?? "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatNumber(r.quantityNeeded)}</TableCell>
+                  <TableCell className="text-right">{quantityRemainingLabel(r)}</TableCell>
                   <TableCell>{priorityBadge(r.priority)}</TableCell>
                   <TableCell>
                     <select
@@ -476,7 +493,11 @@ export function OrdersTable({ rows: rawRows, products = [] }: { rows: OrderRow[]
             <ViewFieldGrid>
               <ViewField label="პროდუქტი" value={viewRow.productName || "—"} />
               <ViewField label="OEM კოდი" value={viewRow.oemCode} />
-              <ViewField label="საჭირო რ-ბა" value={formatNumber(viewRow.quantityNeeded)} />
+              <ViewField label="საჭ. / შეკვ. / დარჩ." value={
+                viewRow.quantityOrdered > 0
+                  ? `${viewRow.quantityNeeded} / ${viewRow.quantityOrdered} / ${Math.max(viewRow.quantityNeeded - viewRow.quantityOrdered, 0)}`
+                  : String(viewRow.quantityNeeded)
+              } />
               <ViewField label="თარიღი" value={formatDate(viewRow.createdAt)} />
               <ViewField label="პრიორიტეტი" value={priorityBadge(viewRow.priority)} />
               <ViewField label="სტატუსი" value={statusBadge(viewRow.status)} />

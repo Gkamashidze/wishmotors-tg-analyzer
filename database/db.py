@@ -1527,20 +1527,24 @@ class Database:
         oem_code: Optional[str] = None,
         part_name: str = "",
         client_id: Optional[int] = None,
+        quantity_ordered: int = 0,
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO orders
-                       (product_id, quantity_needed, priority, notes, oem_code, part_name, client_id)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7)
+                       (product_id, quantity_needed, priority, notes, oem_code, part_name,
+                        client_id, quantity_ordered)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    RETURNING id""",
-                product_id, quantity_needed, priority, notes, oem_code, part_name, client_id,
+                product_id, quantity_needed, priority, notes, oem_code, part_name,
+                client_id, quantity_ordered,
             )
             order_id: int = row["id"]
         self._audit("order_created", {
             "order_id": order_id,
             "product_id": product_id,
             "quantity_needed": quantity_needed,
+            "quantity_ordered": quantity_ordered,
             "priority": priority,
             "notes": notes,
             "oem_code": oem_code,
@@ -1548,6 +1552,70 @@ class Database:
             "client_id": client_id,
         }, reference_id=f"order:{order_id}")
         return order_id
+
+    async def update_order_quantity_ordered(
+        self,
+        order_id: int,
+        quantity_ordered: int,
+    ) -> bool:
+        """Set how many units were actually placed with the supplier. Returns True if updated."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE orders SET quantity_ordered = $1 WHERE id = $2",
+                quantity_ordered, order_id,
+            )
+        updated = result == "UPDATE 1"
+        if updated:
+            self._audit("order_quantity_ordered_updated", {
+                "order_id": order_id,
+                "quantity_ordered": quantity_ordered,
+            }, reference_id=f"order:{order_id}")
+        return updated
+
+    async def match_orders_on_receipt(
+        self,
+        product_id: int,
+        received_qty: int,
+    ) -> List[Dict[str, Any]]:
+        """Auto-fulfill pending orders for a product when inventory arrives.
+
+        Matches received_qty against active orders (FIFO by created_at).
+        Orders whose quantity_needed is fully covered get status → 'ready'.
+        Returns list of fulfilled order dicts for the caller to sync back to Telegram.
+        """
+        fulfilled: List[Dict[str, Any]] = []
+        remaining = received_qty
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, part_name, quantity_needed, topic_id, topic_message_id,
+                          priority, notes, oem_code, quantity_ordered
+                   FROM orders
+                   WHERE product_id = $1
+                     AND status IN ('new', 'pending', 'processing', 'ordered')
+                   ORDER BY created_at ASC""",
+                product_id,
+            )
+            for row in rows:
+                if remaining <= 0:
+                    break
+                needed = int(row["quantity_needed"])
+                if needed <= remaining:
+                    await conn.execute(
+                        "UPDATE orders SET status = 'ready' WHERE id = $1",
+                        row["id"],
+                    )
+                    remaining -= needed
+                    fulfilled.append(dict(row))
+
+        for o in fulfilled:
+            self._audit("order_auto_fulfilled_on_receipt", {
+                "order_id": o["id"],
+                "product_id": product_id,
+                "received_qty": received_qty,
+            }, reference_id=f"order:{o['id']}")
+
+        return fulfilled
 
     async def delete_orders_by_ids(self, order_ids: List[int]) -> int:
         """Delete orders by a list of IDs. Returns number of deleted rows."""

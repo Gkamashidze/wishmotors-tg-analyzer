@@ -1,8 +1,9 @@
 import html
 import logging
+from typing import Dict
 
 from aiogram import F, Router
-from aiogram.enums import ParseMode
+from aiogram.enums import ChatType, ParseMode
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -56,6 +57,9 @@ _STATUS_ANSWER_LABELS = {
     "delivered":  "🚚 მიტანილი",
     "cancelled":  "❌ გაუქმდა",
 }
+
+# user_id → order_id: tracks who is currently being asked for ordered quantity.
+_pending_ordered_qty: Dict[int, int] = {}
 
 
 def _order_status_kb(order_id: int) -> InlineKeyboardMarkup:
@@ -179,6 +183,8 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
 
     # Refresh the topic message text with the new status.
     order = await db.get_order_by_id(order_id)
+    qty_ordered = int(order.get("quantity_ordered") or 0) if order else 0
+
     if order and callback.message and not isinstance(callback.message, InaccessibleMessage):
         product_name = order.get("product_name") or order.get("part_name") or f"#{order_id}"
         new_text = format_topic_order(
@@ -188,6 +194,7 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
             priority=str(order.get("priority") or "low"),
             order_id=order_id,
             notes=order.get("notes"),
+            qty_ordered=qty_ordered,
         )
         try:
             await callback.message.edit_text(
@@ -200,6 +207,94 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
 
     label = _STATUS_ANSWER_LABELS.get(new_status, new_status)
     await callback.answer(f"✅ სტატუსი: {label}")
+
+    # When "📦 შეკვეთილია" is set, ask how many were actually ordered.
+    if new_status == "ordered" and callback.from_user:
+        user_id = callback.from_user.id
+        _pending_ordered_qty[user_id] = order_id
+        part_name = order.get("part_name") or order.get("product_name") or f"#{order_id}" if order else f"#{order_id}"
+        qty_needed = int(order["quantity_needed"]) if order else "?"
+        try:
+            await callback.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"📦 <b>შეკვეთა #{order_id}</b> — {html.escape(str(part_name))}\n"
+                    f"საჭიროა: <b>{qty_needed}ც</b>\n\n"
+                    f"რამდენი ცალი შეიკვეთა მომწოდებელთან?\n"
+                    f"გამოაგზავნე მხოლოდ <b>რიცხვი</b>:"
+                ),
+                parse_mode=_PARSE,
+            )
+        except Exception as _de:
+            logger.warning("Could not send DM for ordered qty: %s", _de)
+            _pending_ordered_qty.pop(user_id, None)
+
+
+# ─── DM handler: capture ordered quantity reply ───────────────────────────────
+
+@orders_router.message(
+    F.chat.type == ChatType.PRIVATE,
+    IsAdmin(),
+    F.text,
+)
+async def handle_ordered_qty_reply(message: Message, db: Database) -> None:
+    user_id = message.from_user.id if message.from_user else None
+    if user_id is None or user_id not in _pending_ordered_qty:
+        return
+
+    text = (message.text or "").strip()
+    try:
+        qty_ordered = int(text)
+    except ValueError:
+        await message.answer(
+            "⚠️ გამოაგზავნე მხოლოდ რიცხვი (მაგ. <code>15</code>)",
+            parse_mode=_PARSE,
+        )
+        return
+
+    if qty_ordered < 0:
+        await message.answer("⚠️ რაოდენობა უნდა იყოს 0 ან მეტი.", parse_mode=_PARSE)
+        return
+
+    order_id = _pending_ordered_qty.pop(user_id)
+    await db.update_order_quantity_ordered(order_id, qty_ordered)
+
+    # Re-fetch and edit the topic message.
+    order = await db.get_order_by_id(order_id)
+    if order:
+        product_name = order.get("product_name") or order.get("part_name") or f"#{order_id}"
+        qty_needed = int(order["quantity_needed"])
+        remaining = max(qty_needed - qty_ordered, 0)
+        new_text = format_topic_order(
+            product_name=str(product_name),
+            qty=qty_needed,
+            status=str(order.get("status") or "ordered"),
+            priority=str(order.get("priority") or "low"),
+            order_id=order_id,
+            notes=order.get("notes"),
+            qty_ordered=qty_ordered,
+        )
+        topic_id = order.get("topic_id")
+        topic_msg_id = order.get("topic_message_id")
+        if topic_id and topic_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=config.GROUP_ID,
+                    message_id=topic_msg_id,
+                    text=new_text,
+                    parse_mode=_PARSE,
+                    reply_markup=_order_status_kb(order_id),
+                )
+            except Exception as _te:
+                logger.info("Could not edit order topic message: %s", _te)
+
+        await message.answer(
+            f"✅ <b>შეკვეთა #{order_id}</b> განახლდა\n"
+            f"შეკვეთილია: <b>{qty_ordered}ც</b> | დარჩა: <b>{remaining}ც</b>",
+            parse_mode=_PARSE,
+        )
+    else:
+        await message.answer(f"✅ შეკვეთა #{order_id} — შეკვეთილი: {qty_ordered}ც", parse_mode=_PARSE)
 
 
 # ─── Expenses topic ───────────────────────────────────────────────────────────

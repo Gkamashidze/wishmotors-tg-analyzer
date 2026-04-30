@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
 
-  const { product_id, part_name, oem_code, quantity_needed, priority, notes } = body;
+  const { product_id, part_name, oem_code, quantity_needed, priority, notes, quantity_ordered } = body;
 
   const qty = Number(quantity_needed);
   if (!Number.isFinite(qty) || qty < 1) {
@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
   }
 
   const row = await queryOne<{ id: number }>(
-    `INSERT INTO orders (product_id, part_name, oem_code, quantity_needed, priority, status, notes)
-     VALUES ($1, $2, $3, $4, $5, 'new', $6)
+    `INSERT INTO orders (product_id, part_name, oem_code, quantity_needed, priority, status, notes, quantity_ordered)
+     VALUES ($1, $2, $3, $4, $5, 'new', $6, $7)
      RETURNING id`,
     [
       productIdNum,
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       qty,
       priority === "urgent" ? "urgent" : "low",
       notes ? String(notes).trim() : null,
+      Math.max(0, Number(quantity_ordered ?? 0)),
     ],
   );
 

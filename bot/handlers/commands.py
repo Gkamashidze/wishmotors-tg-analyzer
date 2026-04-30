@@ -1889,6 +1889,7 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
     added = updated = failed = 0
     ok_rows: list[ImportRow] = []
     price_changes: list[tuple] = []
+    all_fulfilled: list[dict] = []
     for r in import_rows:
         try:
             result = await db.receive_inventory_batch(
@@ -1906,6 +1907,12 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
                 updated += 1
             ok_rows.append(r)
             price_changes.append((r.oem, r.name, r.unit_price_usd, prev_prices.get(r.oem)))
+            # Auto-fulfill pending orders for this product.
+            fulfilled = await db.match_orders_on_receipt(
+                product_id=int(result["product_id"]),
+                received_qty=int(r.quantity),
+            )
+            all_fulfilled.extend(fulfilled)
         except Exception:
             failed += 1
 
@@ -1931,6 +1938,15 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
     lines.extend(_build_supplier_section(ok_rows))
     lines.extend(_build_rate_diff_section(ok_rows))
     lines.extend(_build_price_change_lines(price_changes))
+
+    if all_fulfilled:
+        lines.append("\n✅ <b>შეკვეთები განახლდა:</b>")
+        for o in all_fulfilled[:10]:
+            name = html.escape(str(o.get("part_name") or f"#{o['id']}"))
+            qty = o.get("quantity_needed", "?")
+            lines.append(f"  • {name} — {qty}ც → <b>მზადაა</b>")
+        if len(all_fulfilled) > 10:
+            lines.append(f"  … და კიდევ {len(all_fulfilled) - 10}")
 
     text = "\n".join(lines)
     if len(text) > 4096:

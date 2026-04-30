@@ -91,12 +91,18 @@ def format_topic_order(
     priority: str,
     order_id: int,
     notes: Optional[str] = None,
+    qty_ordered: int = 0,
 ) -> str:
     st = _STATUS_LABELS.get(status, status)
     pr = _ORDER_PRIORITY_LABELS.get(priority, priority)
     notes_line = f"\n📝 {_e(notes)}" if notes else ""
+    if qty_ordered > 0:
+        remaining = max(qty - qty_ordered, 0)
+        qty_line = f"{qty}ც | შეკვ: {qty_ordered}ც | დარჩა: {remaining}ც"
+    else:
+        qty_line = f"{qty}ც"
     return (
-        f"📋 <b>{_e(product_name)}</b> — {qty}ც | {st} | {pr}"
+        f"📋 <b>{_e(product_name)}</b> — {qty_line} | {st} | {pr}"
         f"{notes_line} | <code>#{order_id}</code>"
     )
 
