@@ -1526,14 +1526,15 @@ class Database:
         notes: Optional[str] = None,
         oem_code: Optional[str] = None,
         part_name: str = "",
+        client_id: Optional[int] = None,
     ) -> int:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO orders
-                       (product_id, quantity_needed, priority, notes, oem_code, part_name)
-                   VALUES ($1, $2, $3, $4, $5, $6)
+                       (product_id, quantity_needed, priority, notes, oem_code, part_name, client_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)
                    RETURNING id""",
-                product_id, quantity_needed, priority, notes, oem_code, part_name,
+                product_id, quantity_needed, priority, notes, oem_code, part_name, client_id,
             )
             order_id: int = row["id"]
         self._audit("order_created", {
@@ -1544,8 +1545,25 @@ class Database:
             "notes": notes,
             "oem_code": oem_code,
             "part_name": part_name,
+            "client_id": client_id,
         }, reference_id=f"order:{order_id}")
         return order_id
+
+    async def delete_orders_by_ids(self, order_ids: List[int]) -> int:
+        """Delete orders by a list of IDs. Returns number of deleted rows."""
+        if not order_ids:
+            return 0
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM orders WHERE id = ANY($1::int[])",
+                order_ids,
+            )
+        count = int(result.split()[-1]) if result else 0
+        self._audit("orders_deleted_by_wizard", {
+            "order_ids": order_ids,
+            "count": count,
+        })
+        return count
 
     async def has_active_order_for_product(self, product_id: int) -> bool:
         """Return True if an open (non-completed) order already exists for this product.

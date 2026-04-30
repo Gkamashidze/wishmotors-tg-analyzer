@@ -255,12 +255,13 @@ def _summary_lines(items: List[Dict[str, Any]]) -> List[str]:
 
 
 async def _ask_continue(msg: Message, state: FSMContext, send: bool) -> None:
-    items = await _items(state)
+    data = await state.get_data()
+    saved_items: List[Dict[str, Any]] = list(data.get("saved_items") or [])
     await state.set_state(AddOrderWizard.next_step)
 
-    body = "\n".join(_summary_lines(items))
+    body = "\n".join(_summary_lines(saved_items))
     text = (
-        f"📦 <b>დამატებულია {len(items)} ნივთი:</b>\n\n"
+        f"📦 <b>შენახულია {len(saved_items)} ნივთი:</b>\n\n"
         f"{body}\n\n"
         "გსურთ სხვა პროდუქტის დამატება?"
     )
@@ -322,18 +323,31 @@ def _format_topic_summary(
 @addorder_router.message(Command("addorder"), IsAdmin(), _PRIVATE)
 async def cmd_addorder(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_data({"items": []})
+    await state.set_data({
+        "saved_items": [],   # lightweight display list: {id, product_name, oem_code, quantity, priority}
+        "order_ids": [],     # DB IDs already inserted
+        "requester_id": message.from_user.id if message.from_user else None,
+        "requester_name": message.from_user.full_name if message.from_user else None,
+        "requester_username": message.from_user.username if message.from_user else None,
+    })
     await _ask_for_oem(message, state, edit=False)
 
 
 # ─── Cancel ──────────────────────────────────────────────────────────────────
 
 @addorder_router.callback_query(F.data == "ao:cancel", IsAdmin())
-async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_cancel(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
-    items = await _items(state)
+    data = await state.get_data()
+    order_ids: List[int] = list(data.get("order_ids") or [])
     await state.clear()
-    suffix = f" ({len(items)} ნივთი არ შეინახა)" if items else ""
+    deleted = 0
+    if order_ids:
+        try:
+            deleted = await db.delete_orders_by_ids(order_ids)
+        except Exception:
+            logger.exception("cb_cancel: failed to delete orders %r", order_ids)
+    suffix = f" ({deleted} ნივთი წაიშალა ბაზიდან)" if deleted else ""
     await callback.message.edit_text(
         f"❌ <b>შეკვეთა გაუქმდა.</b>{suffix}",
         parse_mode=_PARSE,
@@ -489,26 +503,63 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
         return
 
     data = await state.get_data()
-    item: Dict[str, Any] = {
-        "product_id": data.get("current_product_id"),
-        "product_name": data.get("current_product_name") or "უცნობი",
-        "oem_code": data.get("current_oem_code"),
-        "quantity": int(data.get("current_quantity") or 0),
-        "priority": chosen,
-        "is_freeform": bool(data.get("current_is_freeform")),
-    }
-    if item["quantity"] <= 0:
-        # Defensive: quantity slot was unexpectedly empty — restart this row.
+    product_id: Optional[int] = data.get("current_product_id")
+    product_name: str = data.get("current_product_name") or "უცნობი"
+    oem_code: Optional[str] = data.get("current_oem_code")
+    quantity: int = int(data.get("current_quantity") or 0)
+    is_freeform: bool = bool(data.get("current_is_freeform"))
+    requester_id: Optional[int] = data.get("requester_id")
+    requester_name: Optional[str] = data.get("requester_name")
+
+    if quantity <= 0:
         await callback.answer("⚠️ რაოდენობა დაიკარგა, თავიდან", show_alert=True)
         await _ask_for_oem(callback.message, state, edit=True)
         return
 
-    items = await _items(state)
-    items.append(item)
+    # Ensure client row exists before the FK insert.
+    if requester_id is not None:
+        try:
+            await db.upsert_client(telegram_id=requester_id)
+        except Exception:
+            logger.exception("on_priority: upsert_client failed for %s", requester_id)
+            requester_id = None
 
-    # Clear per-item scratchpad before storing.
+    notes = (
+        f"manual /addorder by {requester_name or 'admin'}"
+        + (f" — not in catalog: {product_name}" if is_freeform and not product_id else "")
+    )
+
+    # Save to DB immediately — no data loss on restart.
+    try:
+        order_id = await db.create_order(
+            product_id=product_id,
+            quantity_needed=quantity,
+            priority=chosen,
+            notes=notes,
+            oem_code=oem_code,
+            part_name=product_name,
+            client_id=requester_id,
+        )
+    except Exception:
+        logger.exception("on_priority: create_order failed")
+        await callback.answer("❌ შეცდომა შენახვისას — სცადე თავიდან", show_alert=True)
+        return
+
+    saved_item: Dict[str, Any] = {
+        "id": order_id,
+        "product_name": product_name,
+        "oem_code": oem_code,
+        "quantity": quantity,
+        "priority": chosen,
+    }
+    saved_items: List[Dict[str, Any]] = list(data.get("saved_items") or [])
+    order_ids: List[int] = list(data.get("order_ids") or [])
+    saved_items.append(saved_item)
+    order_ids.append(order_id)
+
     await state.update_data(
-        items=items,
+        saved_items=saved_items,
+        order_ids=order_ids,
         current_product_id=None,
         current_product_name=None,
         current_oem_code=None,
@@ -517,13 +568,13 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
         current_freeform_query=None,
     )
 
-    if len(items) >= _MAX_ITEMS_PER_SESSION:
+    if len(saved_items) >= _MAX_ITEMS_PER_SESSION:
         await callback.answer(f"მიღწეულია მაქსიმუმი ({_MAX_ITEMS_PER_SESSION})", show_alert=True)
         await _finalize(callback, state, db)
         return
 
     await _ask_continue(callback.message, state, send=False)
-    await callback.answer("✅ დამატებულია")
+    await callback.answer("✅ შენახულია")
 
 
 # ─── Step 4: loop — add another / finish ─────────────────────────────────────
@@ -559,9 +610,14 @@ async def on_stale_wizard_button(callback: CallbackQuery, state: FSMContext) -> 
 
 async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
-    items = await _items(state)
+    data = await state.get_data()
+    saved_items: List[Dict[str, Any]] = list(data.get("saved_items") or [])
+    order_ids: List[int] = list(data.get("order_ids") or [])
+    requester_name: Optional[str] = data.get("requester_name") or (
+        callback.from_user.full_name if callback.from_user else None
+    )
 
-    if not items:
+    if not saved_items:
         await state.clear()
         await callback.message.edit_text(
             "ℹ️ ვერც ერთი ნივთი არ დაემატა. შეკვეთა გაუქმდა.",
@@ -570,104 +626,10 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         await callback.answer()
         return
 
-    requester_name: Optional[str] = None
-    requester_id: Optional[int] = None
-    requester_username: Optional[str] = None
-    if callback.from_user:
-        requester_id = callback.from_user.id
-        requester_name = (
-            callback.from_user.full_name
-            or callback.from_user.username
-            or str(callback.from_user.id)
-        )
-        requester_username = callback.from_user.username
-
-    # Ensure the requester exists in the clients table before the bulk INSERT
-    # so the FK constraint (orders.client_id → clients.id) is never violated.
-    if requester_id is not None:
-        try:
-            await db.upsert_client(
-                telegram_id=requester_id,
-                full_name=callback.from_user.full_name if callback.from_user else None,
-                username=requester_username,
-            )
-        except Exception:
-            logger.exception("upsert_client failed for telegram_id=%s", requester_id)
-            # Non-fatal: set client_id to None so the order can still be saved.
-            requester_id = None
-
-    # DB insert is wrapped in a single transaction — partial failure rolls
-    # back the whole batch so we never end up with half-saved orders.
-    rows_to_insert: list = []
-    try:
-        rows_to_insert = [
-            {
-                "product_id": item.get("product_id"),
-                "oem_code": item.get("oem_code") or None,
-                "quantity_needed": int(item["quantity"]),
-                "client_id": requester_id,
-                # Enforce only valid priorities; unknown values fall back to low.
-                "priority": item["priority"] if item["priority"] in VALID_PRIORITIES else _PRIORITY_LOW,
-                # part_name: always stored so the row is self-describing even when
-                # product_id IS NULL (freeform / not-in-catalog orders).
-                "part_name": item.get("product_name") or "",
-                "notes": (
-                    f"manual /addorder by {requester_name or 'admin'}"
-                    + (
-                        f" — auto-created product: {item['product_name']}"
-                        if item.get("is_freeform") and item.get("product_id")
-                        else (
-                            f" — not in catalog: {item['product_name']}"
-                            if item.get("is_freeform")
-                            else ""
-                        )
-                    )
-                ),
-            }
-            for item in items
-        ]
-        logger.info(
-            "_finalize: built %d rows_to_insert — keys=%s qty_values=%s",
-            len(rows_to_insert),
-            list(rows_to_insert[0].keys()) if rows_to_insert else [],
-            [r["quantity_needed"] for r in rows_to_insert],
-        )
-        order_ids = await db.create_orders_bulk(rows_to_insert)
-    except Exception as exc:
-        logger.error(
-            "_finalize: save failed | error_type=%s | error=%s | "
-            "rows_to_insert=%r | original_items=%r",
-            type(exc).__name__,
-            exc,
-            rows_to_insert,
-            items,
-            exc_info=True,
-        )
-        # Critical: reset FSM so the user is never stuck mid-wizard after
-        # a DB error. The transaction was rolled back — nothing was saved.
-        await state.clear()
-        await callback.message.edit_text(
-            "❌ <b>შეცდომა შენახვისას.</b>\n"
-            "მონაცემები არ შეინახა — სცადე თავიდან <code>/addorder</code>.",
-            parse_mode=_PARSE,
-        )
-        await callback.answer("❌ შეცდომა", show_alert=True)
-        return
-
-    items_with_ids: List[Dict[str, Any]] = [
-        {**item, "id": order_id}
-        for item, order_id in zip(items, order_ids)
-    ]
-
-    # Always reset state immediately after the successful DB write — even
-    # if the topic post fails, the orders are saved and the wizard is done.
+    # All items are already in DB — just clear state and post to topic.
     await state.clear()
 
-    # Build + post the grouped summary into the ORDERS topic, with a
-    # single "✅ შესრულდა" button. The posted message_id is stored on
-    # every order in the batch so the callback can resolve "which orders
-    # does this button complete?" purely from chat/message identifiers.
-    summary_text = _format_topic_summary(items_with_ids, requester_name)
+    summary_text = _format_topic_summary(saved_items, requester_name)
     bot = callback.bot
     assert bot is not None
     try:
@@ -685,8 +647,6 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
                 topic_message_id=posted.message_id,
             )
         except Exception as link_exc:
-            # Orders are saved — just log if the back-reference write fails.
-            # The /completeorder command still works as a fallback.
             logger.warning(
                 "Failed to store topic_message_id for orders %r: %s",
                 order_ids, link_exc,
@@ -694,12 +654,11 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
     except Exception as exc:
         logger.warning("Failed to post addorder summary to ORDERS topic: %s", exc)
 
-    # Confirm to the admin in DM, replacing the loop keyboard.
-    urgent_count = sum(1 for it in items_with_ids if it["priority"] == _PRIORITY_URGENT)
-    low_count = sum(1 for it in items_with_ids if it["priority"] == _PRIORITY_LOW)
+    urgent_count = sum(1 for it in saved_items if it["priority"] == _PRIORITY_URGENT)
+    low_count = sum(1 for it in saved_items if it["priority"] == _PRIORITY_LOW)
     await callback.message.edit_text(
         f"✅ <b>შეკვეთა შეინახა</b>\n\n"
-        f"📦 ნივთები: <b>{len(items_with_ids)}</b> "
+        f"📦 ნივთები: <b>{len(saved_items)}</b> "
         f"(🚨 {urgent_count} · 🟢 {low_count})\n"
         f"📨 გაიგზავნა <i>ORDERS</i> ტოპიკში.",
         parse_mode=_PARSE,
