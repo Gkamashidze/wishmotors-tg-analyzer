@@ -548,6 +548,7 @@ def format_cash_on_hand(data: Dict[str, float]) -> str:
     now = _now()
     balance = data["balance"]
     sign = "✅" if balance >= 0 else "⚠️"
+    initial_balance = data.get("initial_balance", 0.0)
     transfers_out = data.get("transfers_out", 0.0)
     transfers_in = data.get("transfers_in", 0.0)
     cash_returns = data.get("cash_returns", 0.0)
@@ -556,6 +557,10 @@ def format_cash_on_hand(data: Dict[str, float]) -> str:
         f"<i>{now.strftime('%d.%m.%Y %H:%M')}</i>",
         "",
         "━━━━━━━━━━━━━━━━━━━━━",
+    ]
+    if initial_balance != 0.0:
+        lines.append(f"💰 საწყისი ნაშთი:       <b>+{initial_balance:.2f}₾</b>")
+    lines += [
         f"📈 ნაღდი გაყიდვები:    <b>+{data['cash_sales']:.2f}₾</b>",
         f"📉 ნაღდი ხარჯები:      <b>−{data['cash_expenses']:.2f}₾</b>",
         f"🏦 ბანკში შეტანილი:    <b>−{data['deposits']:.2f}₾</b>",

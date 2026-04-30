@@ -2163,14 +2163,22 @@ class Database:
     async def get_cash_on_hand(self) -> Dict[str, float]:
         """Return cash balance breakdown — SSOT formula used by both bot and dashboard.
 
-        balance = cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns
+        balance = initial_balance + cash_sales - cash_expenses - deposits
+                  - transfers_out + transfers_in - cash_returns
 
+        initial_balance comes from account_balances.cash_gel (same as dashboard).
         Only active (non-returned) sales count. NULL refund_method defaults to 'cash'.
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 WITH
+                  init AS (
+                    SELECT COALESCE(
+                      (SELECT initial_balance FROM account_balances WHERE account_key = 'cash_gel'),
+                      0
+                    ) AS total
+                  ),
                   cash_s AS (
                     SELECT COALESCE(SUM(unit_price * quantity), 0) AS total
                     FROM sales
@@ -2196,15 +2204,17 @@ class Database:
                     FROM returns WHERE COALESCE(refund_method, 'cash') = 'cash'
                   )
                 SELECT
+                  init.total     AS initial_balance,
                   cash_s.total  AS cash_sales,
                   cash_e.total  AS cash_expenses,
                   deps.total    AS deposits,
                   tr_out.total  AS transfers_out,
                   tr_in.total   AS transfers_in,
                   cash_ret.total AS cash_returns
-                FROM cash_s, cash_e, deps, tr_out, tr_in, cash_ret
+                FROM init, cash_s, cash_e, deps, tr_out, tr_in, cash_ret
                 """
             )
+        initial_balance = float(row["initial_balance"])
         cash_sales    = float(row["cash_sales"])
         cash_expenses = float(row["cash_expenses"])
         deposits      = float(row["deposits"])
@@ -2212,13 +2222,14 @@ class Database:
         transfers_in  = float(row["transfers_in"])
         cash_returns  = float(row["cash_returns"])
         return {
+            "initial_balance": initial_balance,
             "cash_sales":    cash_sales,
             "cash_expenses": cash_expenses,
             "deposits":      deposits,
             "transfers_out": transfers_out,
             "transfers_in":  transfers_in,
             "cash_returns":  cash_returns,
-            "balance": cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns,
+            "balance": initial_balance + cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns,
         }
 
     # ─── Internal transfers ───────────────────────────────────────────────────
