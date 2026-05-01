@@ -35,38 +35,51 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
     if message.from_user is None:
         return
 
-    product_id = _parse_product_id(message.text or "")
+    user = message.from_user
+    raw_text = message.text or ""
+    logger.info("catalog deeplink: user=%d text=%r", user.id, raw_text)
+
+    product_id = _parse_product_id(raw_text)
 
     if product_id is None:
-        await message.answer(
-            "ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.",
-        )
+        logger.warning("catalog deeplink: invalid payload from user=%d text=%r", user.id, raw_text)
+        await message.answer("ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.")
         return
 
-    product = await db.get_product_by_id(product_id)
+    try:
+        product = await db.get_product_by_id(product_id)
+    except Exception as exc:
+        logger.exception("catalog deeplink: get_product_by_id(%d) failed: %s", product_id, exc)
+        await message.answer("⚠️ სისტემური შეცდომა. გთხოვთ სცადოთ მოგვიანებით.")
+        return
+
     if product is None:
-        await message.answer(
-            "ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.",
-        )
+        logger.info("catalog deeplink: product_id=%d not found", product_id)
+        await message.answer("ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.")
         return
 
-    user = message.from_user
-
-    await db.upsert_client(
-        telegram_id=user.id,
-        full_name=user.full_name,
-        username=user.username,
-    )
-
-    order_id = await db.create_order(
-        product_id=product["id"],
-        quantity_needed=1,
-        priority="urgent",
-        oem_code=product["oem_code"],
-        part_name=product["name"],
-        client_id=user.id,
-        notes="კატალოგიდან",
-    )
+    try:
+        await db.upsert_client(
+            telegram_id=user.id,
+            full_name=user.full_name,
+            username=user.username,
+        )
+        order_id = await db.create_order(
+            product_id=product["id"],
+            quantity_needed=1,
+            priority="urgent",
+            oem_code=product["oem_code"],
+            part_name=product["name"],
+            client_id=user.id,
+            notes="კატალოგიდან",
+        )
+    except Exception as exc:
+        logger.exception(
+            "catalog deeplink: order creation failed for product_id=%d user=%d: %s",
+            product_id, user.id, exc,
+        )
+        await message.answer("⚠️ შეკვეთა ვერ შეიქმნა. გთხოვთ სცადოთ მოგვიანებით.")
+        return
 
     price_str = f"₾{float(product['unit_price']):.2f}"
     oem_line = (
@@ -83,6 +96,8 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
         f"ჩვენ მალე დაგიკავშირდებით",
         parse_mode="HTML",
     )
+
+    logger.info("catalog deeplink: order #%d created product_id=%d user=%d", order_id, product_id, user.id)
 
     if message.bot is None:
         return
