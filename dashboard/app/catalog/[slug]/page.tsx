@@ -16,6 +16,8 @@ type Params = Promise<{ slug: string }>;
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
+const baseUrl = process.env.NEXT_PUBLIC_CATALOG_BASE_URL ?? "";
+
 export async function generateMetadata({
   params,
 }: {
@@ -36,6 +38,7 @@ export async function generateMetadata({
   return {
     title,
     description,
+    alternates: { canonical: `${baseUrl}/catalog/${slug}` },
     openGraph: {
       title,
       description,

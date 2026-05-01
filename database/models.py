@@ -687,6 +687,10 @@ CREATE TABLE IF NOT EXISTS catalog_orders (
 CREATE INDEX IF NOT EXISTS idx_catalog_orders_created_at ON catalog_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_catalog_orders_status     ON catalog_orders(status);
 CREATE INDEX IF NOT EXISTS idx_catalog_orders_client_id  ON catalog_orders(client_id);
+
+-- updated_at for products (used by sitemap for lastModified)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at DESC);
 """
 
 
@@ -717,6 +721,7 @@ class ProductRow(TypedDict):
     description: Optional[str]
     image_url: Optional[str]
     created_at: object  # datetime in practice
+    updated_at: object  # datetime in practice
 
 
 class SaleRow(TypedDict):

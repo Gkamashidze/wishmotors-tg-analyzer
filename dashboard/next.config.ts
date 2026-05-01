@@ -19,10 +19,15 @@ const nextConfig: NextConfig = {
     serverActions: { allowedOrigins },
   },
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "lh3.googleusercontent.com" },
-      { protocol: "https", hostname: "drive.google.com" },
-    ],
+    remotePatterns: [{ protocol: "https", hostname: "**" }],
+  },
+  async headers() {
+    return [
+      {
+        source: "/catalog/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "index, follow" }],
+      },
+    ];
   },
 };
 

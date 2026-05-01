@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 
+const baseUrl = process.env.NEXT_PUBLIC_CATALOG_BASE_URL ?? "";
+
 export const metadata: Metadata = {
   title: "WishMotors — SsangYong სათადარიგო ნაწილები",
   description:
     "ორიგინალი და ანალოგი ნაწილები SsangYong-ისთვის. დააკავშირდით პირდაპირ Telegram-ში ან WhatsApp-ზე.",
+  alternates: { canonical: `${baseUrl}/catalog` },
 };
 
 export default function CatalogLayout({
