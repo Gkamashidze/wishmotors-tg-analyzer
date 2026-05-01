@@ -25,7 +25,10 @@ export function middleware(req: NextRequest) {
   if (
     path.startsWith("/track/") ||
     path.startsWith("/api/public/") ||
-    path.startsWith("/catalog/")
+    path === "/catalog" ||
+    path.startsWith("/catalog/") ||
+    path === "/sitemap.xml" ||
+    path === "/robots.txt"
   ) {
     return applySecurityHeaders(NextResponse.next());
   }
