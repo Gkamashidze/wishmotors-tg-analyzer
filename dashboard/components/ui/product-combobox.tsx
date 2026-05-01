@@ -60,6 +60,7 @@ export function ProductCombobox({
         slug: null,
         isPublished: false,
         description: null,
+        itemType: "inventory",
       };
       onProductAdded?.(row);
       onChange(String(newProduct.id));

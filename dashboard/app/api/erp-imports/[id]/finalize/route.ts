@@ -78,6 +78,12 @@ export async function POST(_req: NextRequest, { params }: Params) {
         const itemRef     = `${refBase}:${it.product_id}`;
         const desc        = `${it.product_name}${it.oem_code ? ` (${it.oem_code})` : ""}`;
 
+        // Stamp item_type on the product so products page filter works
+        await client.query(
+          "UPDATE products SET item_type = $1 WHERE id = $2",
+          [itemType, it.product_id],
+        );
+
         if (itemType === "inventory") {
           // ── Add stock ────────────────────────────────────────────────────────
           await client.query(

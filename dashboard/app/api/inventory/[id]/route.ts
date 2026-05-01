@@ -15,7 +15,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = (await req.json()) as Record<string, unknown>;
-  const { name, oem_code, current_stock, min_stock, unit_price, unit, category, compatibility_notes, image_url } = body;
+  const { name, oem_code, current_stock, min_stock, unit_price, unit, category, compatibility_notes, image_url, item_type } = body;
+
+  const VALID_ITEM_TYPES = new Set(["inventory", "fixed_asset", "consumable"]);
+  const safeItemType = typeof item_type === "string" && VALID_ITEM_TYPES.has(item_type) ? item_type : null;
 
   const prev = await queryOne<{ name: string; oem_code: string | null }>(
     "SELECT name, oem_code FROM products WHERE id = $1",
@@ -33,10 +36,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
         unit                = $7,
         category            = $8,
         compatibility_notes = $9,
-        image_url           = $10
+        image_url           = $10,
+        item_type           = COALESCE($11, item_type)
       WHERE id = $1`,
       [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit,
-       category ?? null, compatibility_notes ?? null, image_url ?? null],
+       category ?? null, compatibility_notes ?? null, image_url ?? null, safeItemType],
     );
   } catch (err: unknown) {
     if (

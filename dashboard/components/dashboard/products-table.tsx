@@ -172,6 +172,7 @@ interface EditState {
   category: string;
   compatibility_notes: string;
   image_url: string;
+  item_type: string;
 }
 
 interface AddState {
@@ -209,6 +210,7 @@ function rowToEdit(r: ProductRow): EditState {
     category: r.category ?? "",
     compatibility_notes: r.compatibilityNotes ?? "",
     image_url: r.imageUrl ?? "",
+    item_type: r.itemType ?? "inventory",
   };
 }
 
@@ -236,19 +238,29 @@ function orderToEdit(o: ProductOrder): OrderEditState {
 
 type TxTab = "info" | "sales" | "orders";
 
+const ITEM_TYPE_FILTERS = [
+  { value: "",             label: "ყველა" },
+  { value: "inventory",   label: "საქონელი" },
+  { value: "fixed_asset", label: "ძირ. საშ." },
+  { value: "consumable",  label: "სახარჯი" },
+] as const;
+
 export function ProductsTable({
   rows,
   total,
   page,
   search: initialSearch = "",
+  itemType: initialItemType = "",
 }: {
   rows: ProductRow[];
   total: number;
   page: number;
   search?: string;
+  itemType?: string;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(initialSearch);
+  const [itemType, setItemType] = useState(initialItemType);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
 
@@ -321,12 +333,20 @@ export function ProductsTable({
 
   const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE));
 
-  const goToPage = useCallback((p: number) => {
+  const buildParams = useCallback((overrides: { page?: number; search?: string; itemType?: string }) => {
     const params = new URLSearchParams();
+    const p = overrides.page ?? page;
+    const s = overrides.search ?? search;
+    const t = overrides.itemType !== undefined ? overrides.itemType : itemType;
     params.set("page", String(p));
-    if (search.trim()) params.set("search", search.trim());
-    router.push(`?${params.toString()}`);
-  }, [router, search]);
+    if (s.trim()) params.set("search", s.trim());
+    if (t) params.set("item_type", t);
+    return params.toString();
+  }, [page, search, itemType]);
+
+  const goToPage = useCallback((p: number) => {
+    router.push(`?${buildParams({ page: p })}`);
+  }, [router, buildParams]);
 
   // ── Load transactions when viewRow changes ──────────────────────────────────
 
@@ -368,12 +388,14 @@ export function ProductsTable({
     setSearch(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      if (value.trim()) params.set("search", value.trim());
-      router.push(`?${params.toString()}`);
+      router.push(`?${buildParams({ page: 1, search: value })}`);
     }, 350);
-  }, [router]);
+  }, [router, buildParams]);
+
+  const handleItemTypeFilter = useCallback((value: string) => {
+    setItemType(value);
+    router.push(`?${buildParams({ page: 1, itemType: value })}`);
+  }, [router, buildParams]);
 
   // rows are already filtered server-side; no client-side filtering needed
   const filtered = useMemo(() => rows, [rows]);
@@ -526,6 +548,7 @@ export function ProductsTable({
           category: editState.category.trim() || null,
           compatibility_notes: editState.compatibility_notes.trim() || null,
           image_url: editState.image_url.trim() || null,
+          item_type: editState.item_type || "inventory",
         }),
       });
       if (!res.ok) {
@@ -798,22 +821,42 @@ export function ProductsTable({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <input
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="ძიება (დასახელება, OEM, კატეგორია...)"
-          aria-label="ძიება პროდუქციაში"
-          className="h-9 w-80 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground">
-            {formatNumber(filtered.length)} / {formatNumber(total)} პროდუქტი
-          </p>
-          <Button size="sm" onClick={openAdd} className="h-9 cursor-pointer gap-1.5">
-            <Plus className="h-4 w-4" />
-            პროდუქტის დამატება
-          </Button>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <input
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="ძიება (დასახელება, OEM, კატეგორია...)"
+            aria-label="ძიება პროდუქციაში"
+            className="h-9 w-80 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-muted-foreground">
+              {formatNumber(filtered.length)} / {formatNumber(total)} პროდუქტი
+            </p>
+            <Button size="sm" onClick={openAdd} className="h-9 cursor-pointer gap-1.5">
+              <Plus className="h-4 w-4" />
+              პროდუქტის დამატება
+            </Button>
+          </div>
+        </div>
+        {/* Item type filter */}
+        <div className="flex gap-1.5 flex-wrap">
+          {ITEM_TYPE_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => handleItemTypeFilter(f.value)}
+              className={cn(
+                "h-7 px-3 rounded-full text-xs font-medium border transition-colors cursor-pointer",
+                itemType === f.value
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:text-foreground hover:border-foreground/30",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -1445,11 +1488,22 @@ export function ProductsTable({
           <div className="space-y-3">
             <Input id="prod-name" label="დასახელება *" type="text" value={editState.name} onChange={set("name")} />
             <Input id="prod-oem" label="OEM კოდი" type="text" value={editState.oem_code} onChange={set("oem_code")} placeholder="სურვილისამებრ" />
+            <Select
+              id="prod-item-type"
+              label="ჩანაწერის ტიპი"
+              value={editState.item_type}
+              onChange={(e) => setEditState((prev) => prev ? { ...prev, item_type: e.target.value } : prev)}
+              options={[
+                { value: "inventory",   label: "საქონელი" },
+                { value: "fixed_asset", label: "ძირ. საშ." },
+                { value: "consumable",  label: "სახარჯი" },
+              ]}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Input id="prod-price" label="გასაყიდი ფასი (₾)" type="number" min="0" step="0.01" value={editState.unit_price} onChange={set("unit_price")} />
               <Select
                 id="prod-category"
-                label="ტიპი / კატეგორია"
+                label="კატეგორია"
                 value={editState.category}
                 onChange={(e) => setEditState((prev) => prev ? { ...prev, category: e.target.value } : prev)}
                 options={[

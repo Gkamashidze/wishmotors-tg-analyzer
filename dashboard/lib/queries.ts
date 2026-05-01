@@ -801,6 +801,7 @@ export async function getProducts(): Promise<ProductRow[]> {
     compat_count: string;
     created_at: Date;
     image_url: string | null;
+    item_type: string;
   }>(
     `
     WITH cc AS (
@@ -809,7 +810,8 @@ export async function getProducts(): Promise<ProductRow[]> {
     SELECT p.id, p.name, p.oem_code, p.current_stock, p.min_stock, p.unit_price, p.unit,
            p.category, p.compatibility_notes, p.created_at,
            COALESCE(cc.cnt, 0) AS compat_count,
-           p.image_url
+           p.image_url,
+           COALESCE(p.item_type, 'inventory') AS item_type
     FROM products p
     LEFT JOIN cc ON cc.product_id = p.id
     ORDER BY p.name ASC, p.created_at DESC
@@ -835,6 +837,7 @@ export async function getProducts(): Promise<ProductRow[]> {
     slug: null,
     isPublished: false,
     description: null,
+    itemType: r.item_type,
   }));
 }
 
