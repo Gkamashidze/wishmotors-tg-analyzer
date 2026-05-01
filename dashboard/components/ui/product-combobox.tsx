@@ -56,6 +56,7 @@ export function ProductCombobox({
         compatibilityNotes: null,
         createdAt: newProduct.createdAt,
         compatCount: 0,
+        imageUrl: null,
       };
       onProductAdded?.(row);
       onChange(String(newProduct.id));

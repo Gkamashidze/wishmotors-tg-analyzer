@@ -444,6 +444,7 @@ export type ProductRow = {
   compatibilityNotes: string | null;
   compatCount: number;
   createdAt: string;
+  imageUrl: string | null;
 };
 
 export type CompatibilityRow = {
@@ -795,6 +796,7 @@ export async function getProducts(): Promise<ProductRow[]> {
     compatibility_notes: string | null;
     compat_count: string;
     created_at: Date;
+    image_url: string | null;
   }>(
     `
     WITH cc AS (
@@ -802,7 +804,8 @@ export async function getProducts(): Promise<ProductRow[]> {
     )
     SELECT p.id, p.name, p.oem_code, p.current_stock, p.min_stock, p.unit_price, p.unit,
            p.category, p.compatibility_notes, p.created_at,
-           COALESCE(cc.cnt, 0) AS compat_count
+           COALESCE(cc.cnt, 0) AS compat_count,
+           p.image_url
     FROM products p
     LEFT JOIN cc ON cc.product_id = p.id
     ORDER BY p.name ASC, p.created_at DESC
@@ -824,6 +827,7 @@ export async function getProducts(): Promise<ProductRow[]> {
       r.created_at instanceof Date
         ? r.created_at.toISOString()
         : String(r.created_at),
+    imageUrl: r.image_url,
   }));
 }
 
@@ -1068,6 +1072,7 @@ export async function getProductsPaged(
     compat_count: string;
     created_at: Date;
     total_count: string;
+    image_url: string | null;
   }>(
     `WITH cc AS (
        SELECT product_id, COUNT(*) AS cnt FROM product_compatibility GROUP BY product_id
@@ -1075,7 +1080,8 @@ export async function getProductsPaged(
      SELECT p.id, p.name, p.oem_code, p.current_stock, p.min_stock, p.unit_price, p.unit,
             p.category, p.compatibility_notes, p.created_at,
             COALESCE(cc.cnt, 0) AS compat_count,
-            COUNT(*) OVER() AS total_count
+            COUNT(*) OVER() AS total_count,
+            p.image_url
      FROM products p
      LEFT JOIN cc ON cc.product_id = p.id
      ${whereClause}
@@ -1101,6 +1107,7 @@ export async function getProductsPaged(
         r.created_at instanceof Date
           ? r.created_at.toISOString()
           : String(r.created_at),
+      imageUrl: r.image_url,
     })),
     total,
   };

@@ -15,7 +15,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
   }
 
   const body = (await req.json()) as Record<string, unknown>;
-  const { name, oem_code, current_stock, min_stock, unit_price, unit, category, compatibility_notes } = body;
+  const { name, oem_code, current_stock, min_stock, unit_price, unit, category, compatibility_notes, image_url } = body;
 
   const prev = await queryOne<{ name: string; oem_code: string | null }>(
     "SELECT name, oem_code FROM products WHERE id = $1",
@@ -32,10 +32,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
         unit_price          = $6,
         unit                = $7,
         category            = $8,
-        compatibility_notes = $9
+        compatibility_notes = $9,
+        image_url           = $10
       WHERE id = $1`,
       [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit,
-       category ?? null, compatibility_notes ?? null],
+       category ?? null, compatibility_notes ?? null, image_url ?? null],
     );
   } catch (err: unknown) {
     if (

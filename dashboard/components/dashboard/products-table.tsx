@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -140,6 +140,7 @@ interface EditState {
   unit_price: string;
   category: string;
   compatibility_notes: string;
+  image_url: string;
 }
 
 interface AddState {
@@ -176,6 +177,7 @@ function rowToEdit(r: ProductRow): EditState {
     unit_price: String(r.unitPrice),
     category: r.category ?? "",
     compatibility_notes: r.compatibilityNotes ?? "",
+    image_url: r.imageUrl ?? "",
   };
 }
 
@@ -232,6 +234,8 @@ export function ProductsTable({
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteRow, setDeleteRow] = useState<ProductRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -482,6 +486,7 @@ export function ProductsTable({
           unit: editRow.unit,
           category: editState.category.trim() || null,
           compatibility_notes: editState.compatibility_notes.trim() || null,
+          image_url: editState.image_url.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -495,6 +500,25 @@ export function ProductsTable({
       setSaving(false);
     }
   }, [editRow, editState, closeEdit, router]);
+
+  const handleImageUpload = useCallback(async (file: File) => {
+    setUploadingImage(true);
+    setSaveError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/products/upload", { method: "POST", body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setSaveError(body.error ?? "ფოტოს ატვირთვა ვერ მოხერხდა");
+        return;
+      }
+      const { url } = await res.json() as { url: string };
+      setEditState((prev) => prev ? { ...prev, image_url: url } : prev);
+    } finally {
+      setUploadingImage(false);
+    }
+  }, []);
 
   const handleDelete = useCallback(async () => {
     if (!deleteRow) return;
@@ -1181,6 +1205,55 @@ export function ProductsTable({
                 ]}
               />
             </div>
+            {/* Image upload */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">ფოტო</p>
+              {editState.image_url ? (
+                <div className="relative w-full rounded-lg overflow-hidden border border-border bg-muted/30">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={editState.image_url}
+                    alt="პროდუქტის ფოტო"
+                    className="w-full max-h-48 object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditState((prev) => prev ? { ...prev, image_url: "" } : prev)}
+                    className="absolute top-2 right-2 bg-destructive text-white rounded-full p-1 hover:bg-destructive/80 transition-colors"
+                    aria-label="ფოტოს წაშლა"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full h-28 rounded-lg border-2 border-dashed border-border bg-muted/20 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                  <Camera className="w-6 h-6" />
+                  <span className="text-xs">ფოტო არ არის</span>
+                </div>
+              )}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImageUpload(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={uploadingImage}
+                className="cursor-pointer w-full"
+              >
+                <Camera className="w-3.5 h-3.5 mr-1.5" />
+                {uploadingImage ? "იტვირთება..." : "ფოტოს ატვირთვა"}
+              </Button>
+            </div>
+
             {/* Structured compatibility */}
             <div className="space-y-2 rounded-xl border border-border p-3">
               <p className="text-sm font-medium">თავსებადი მოდელები</p>
