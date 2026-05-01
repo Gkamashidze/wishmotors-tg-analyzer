@@ -28,6 +28,7 @@ from bot.handlers.addorder import addorder_router
 from bot.handlers.barcode import barcode_router
 from database.audit_log import AuditLogger
 from bot.handlers.commands import commands_router
+from bot.handlers.deeplink import deeplink_router
 from bot.handlers.personal_orders_handler import personal_orders_router
 from bot.handlers.wizard import wizard_router
 from bot.handlers.orders import orders_router
@@ -202,6 +203,7 @@ async def main() -> None:
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
 
+    dp.include_router(deeplink_router)   # before commands_router — wins /start order_N
     dp.include_router(wizard_router)
     dp.include_router(addorder_router)
     dp.include_router(personal_orders_router)

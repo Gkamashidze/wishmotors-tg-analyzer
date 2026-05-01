@@ -7,6 +7,7 @@ Database to avoid any real network or DB connections.
 """
 
 import os
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Minimal env so config.py loads without errors
@@ -57,6 +58,7 @@ def _db(**overrides) -> MagicMock:
     db.create_product = AsyncMock(return_value=42)
     db.edit_product = AsyncMock(return_value=None)
     db.mark_sale_paid = AsyncMock(return_value=False)
+    db.upsert_client = AsyncMock(return_value=None)
     for k, v in overrides.items():
         setattr(db, k, v)
     return db
@@ -375,3 +377,113 @@ class TestOnNameQtyInput:
         state.set_state.assert_not_called()
         text = msg.answer.call_args[0][0]
         assert "დასახელება" in text
+
+
+# ─── Deeplink handler ─────────────────────────────────────────────────────────
+
+from bot.handlers.deeplink import handle_catalog_deeplink, _parse_product_id  # noqa: E402
+
+
+def _deeplink_msg(text: str, username: Optional[str] = "testuser") -> MagicMock:
+    """Message mock with realistic from_user for deeplink tests."""
+    msg = MagicMock()
+    msg.text = text
+    msg.from_user = MagicMock()
+    msg.from_user.id = _USER_ID
+    msg.from_user.full_name = "Test User"
+    msg.from_user.username = username
+    msg.bot = AsyncMock()
+    msg.answer = AsyncMock()
+    return msg
+
+
+_PRODUCT: dict = {
+    "id": 42,
+    "name": "ზეთის ფილტრი",
+    "oem_code": "HU7009Z",
+    "unit_price": "29.90",
+}
+
+
+class TestParseProductId:
+    def test_valid_payload_returns_id(self):
+        assert _parse_product_id("/start order_42") == 42
+
+    def test_non_numeric_payload_returns_none(self):
+        assert _parse_product_id("/start order_abc") is None
+
+    def test_empty_suffix_returns_none(self):
+        assert _parse_product_id("/start order_") is None
+
+    def test_leading_zeros_still_valid(self):
+        # "007" is all digits → int("007") == 7
+        assert _parse_product_id("/start order_007") == 7
+
+
+class TestDeeplinkHandler:
+    async def test_valid_deeplink_creates_urgent_order(self):
+        msg = _deeplink_msg("/start order_42")
+        db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
+        await handle_catalog_deeplink(msg, db)
+        db.create_order.assert_called_once()
+        kwargs = db.create_order.call_args[1]
+        assert kwargs["product_id"] == 42
+        assert kwargs["priority"] == "urgent"
+        assert kwargs["quantity_needed"] == 1
+        assert kwargs["notes"] == "კატალოგიდან"
+
+    async def test_valid_deeplink_upserts_client(self):
+        msg = _deeplink_msg("/start order_42")
+        db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
+        await handle_catalog_deeplink(msg, db)
+        db.upsert_client.assert_called_once_with(
+            telegram_id=_USER_ID,
+            full_name="Test User",
+            username="testuser",
+        )
+
+    async def test_valid_deeplink_replies_with_confirmation(self):
+        msg = _deeplink_msg("/start order_42")
+        db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
+        await handle_catalog_deeplink(msg, db)
+        msg.answer.assert_called_once()
+        text = msg.answer.call_args[0][0]
+        assert "შეკვეთა მიღებულია" in text
+        assert "ზეთის ფილტრი" in text
+        assert "HU7009Z" in text
+
+    async def test_non_numeric_payload_sends_error_no_db_write(self):
+        msg = _deeplink_msg("/start order_abc")
+        db = _db()
+        await handle_catalog_deeplink(msg, db)
+        msg.answer.assert_called_once()
+        text = msg.answer.call_args[0][0]
+        assert "ვეღარ მოიძებნა" in text
+        db.create_order.assert_not_called()
+        db.upsert_client.assert_not_called()
+
+    async def test_unknown_product_id_sends_error_no_order(self):
+        msg = _deeplink_msg("/start order_9999")
+        db = _db(get_product_by_id=AsyncMock(return_value=None))
+        await handle_catalog_deeplink(msg, db)
+        msg.answer.assert_called_once()
+        text = msg.answer.call_args[0][0]
+        assert "ვეღარ მოიძებნა" in text
+        db.create_order.assert_not_called()
+
+    async def test_group_notification_sent_after_order(self):
+        msg = _deeplink_msg("/start order_42")
+        db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
+        await handle_catalog_deeplink(msg, db)
+        msg.bot.send_message.assert_called_once()
+        kwargs = msg.bot.send_message.call_args[1]
+        assert kwargs["chat_id"] == int(os.environ["GROUP_ID"])
+        assert "კატალოგის შეკვეთა" in kwargs["text"]
+
+    async def test_product_without_oem_omits_oem_line(self):
+        product_no_oem = {**_PRODUCT, "oem_code": None}
+        msg = _deeplink_msg("/start order_42")
+        db = _db(get_product_by_id=AsyncMock(return_value=product_no_oem))
+        await handle_catalog_deeplink(msg, db)
+        text = msg.answer.call_args[0][0]
+        assert "OEM" not in text
