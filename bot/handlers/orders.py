@@ -1,9 +1,10 @@
 import html
 import logging
-from typing import Dict
+from typing import Dict, Union
 
 from aiogram import F, Router
 from aiogram.enums import ChatType, ParseMode
+from aiogram.filters import Filter
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -60,6 +61,14 @@ _STATUS_ANSWER_LABELS = {
 
 # user_id → order_id: tracks who is currently being asked for ordered quantity.
 _pending_ordered_qty: Dict[int, int] = {}
+
+
+class _HasPendingQty(Filter):
+    """Passes only when the sending user has a pending ordered-quantity request."""
+
+    async def __call__(self, event: Union[Message, CallbackQuery]) -> bool:
+        user_id = event.from_user.id if event.from_user else None
+        return user_id is not None and user_id in _pending_ordered_qty
 
 
 def _order_status_kb(order_id: int) -> InlineKeyboardMarkup:
@@ -236,6 +245,7 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
     F.chat.type == ChatType.PRIVATE,
     IsAdmin(),
     F.text,
+    _HasPendingQty(),
 )
 async def handle_ordered_qty_reply(message: Message, db: Database) -> None:
     user_id = message.from_user.id if message.from_user else None
