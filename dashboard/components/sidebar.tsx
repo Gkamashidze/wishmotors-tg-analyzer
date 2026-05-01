@@ -18,6 +18,7 @@ import {
   UserX,
   ShoppingCart,
   SearchX,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  target?: string;
 };
 
 const NAV: NavItem[] = [
@@ -40,6 +42,7 @@ const NAV: NavItem[] = [
   { href: "/debtors", label: "ნისია", icon: UserX },
   { href: "/personal-orders", label: "კერძო შეკვეთები", icon: ShoppingCart },
   { href: "/lost-searches", label: "ვერ-ნაპოვნი ძიებები", icon: SearchX },
+  { href: "/catalog", label: "🌐 კატალოგი", icon: Globe, target: "_blank" },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
@@ -78,6 +81,8 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              target={item.target}
+              rel={item.target === "_blank" ? "noopener noreferrer" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
                 active
