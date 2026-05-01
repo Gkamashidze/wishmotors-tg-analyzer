@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
 import { query } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const baseUrl = process.env.NEXT_PUBLIC_CATALOG_BASE_URL ?? "";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
