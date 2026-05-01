@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Footer from "./_components/Footer";
 
 const baseUrl = process.env.NEXT_PUBLIC_CATALOG_BASE_URL ?? "";
 
@@ -18,6 +19,7 @@ export default function CatalogLayout({
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto font-sans">
       {children}
+      <Footer />
     </div>
   );
 }

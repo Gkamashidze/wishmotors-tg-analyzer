@@ -44,6 +44,101 @@ function chipCls(active: boolean): string {
   ].join(" ");
 }
 
+// ─── Smart stock badge ────────────────────────────────────────────────────────
+
+function StockBadge({ stock }: { stock: number }) {
+  if (stock >= 10)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+        მარაგშია
+      </span>
+    );
+  if (stock >= 5)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+        ბევრი გვაქვს
+      </span>
+    );
+  if (stock >= 1)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
+        დარჩა {stock} ცალი
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-foreground/10 text-foreground/50 font-medium">
+      შეკვეთით
+    </span>
+  );
+}
+
+// ─── Trust strip ──────────────────────────────────────────────────────────────
+
+function TrustStrip() {
+  const years = process.env.NEXT_PUBLIC_YEARS_IN_BUSINESS;
+
+  const badges = [
+    {
+      label: "ორიგინალი ნაწილები",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          <polyline points="9 12 11 14 15 10" />
+        </svg>
+      ),
+    },
+    {
+      label: "მიწოდება მთელ საქართველოში",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="1" y="3" width="15" height="13" />
+          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+          <circle cx="5.5" cy="18.5" r="2.5" />
+          <circle cx="18.5" cy="18.5" r="2.5" />
+        </svg>
+      ),
+    },
+    {
+      label: "უფასო კონსულტაცია",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 10.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.29 6.29l1.28-1.29a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+        </svg>
+      ),
+    },
+    ...(years
+      ? [
+          {
+            label: `${years}+ წელი ბაზარზე`,
+            icon: (
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="8" r="6" />
+                <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" />
+              </svg>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-1 mb-5 scrollbar-thin">
+      {badges.map((b) => (
+        <div
+          key={b.label}
+          className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-secondary/50 text-foreground/70 border border-border/50 shrink-0"
+        >
+          {b.icon}
+          <span>✓ {b.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Product card ─────────────────────────────────────────────────────────────
 
 function ProductCard({ product }: { product: PublicProductItem }) {
@@ -97,17 +192,7 @@ function ProductCard({ product }: { product: PublicProductItem }) {
         )}
 
         <div className="flex items-center gap-2 mt-auto pt-1.5">
-          {product.currentStock > 0 ? (
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
-              მარაგშია
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-destructive inline-block" />
-              არ არის მარაგში
-            </span>
-          )}
+          <StockBadge stock={product.currentStock} />
           <span className="text-sm font-semibold ml-auto">₾{price}</span>
         </div>
 
@@ -241,46 +326,6 @@ function Pagination({
   );
 }
 
-// ─── Footer contact ───────────────────────────────────────────────────────────
-
-function FooterContact() {
-  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
-  const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
-  const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
-  const waHref = waPhone ? `https://wa.me/${waPhone}` : null;
-
-  if (!tgHref && !waHref) return null;
-
-  return (
-    <div className="mt-16 pb-8 text-center text-sm text-foreground/40 space-y-1">
-      <p>ვერ პოულობთ სასურველ ნაწილს?</p>
-      <p>
-        {tgHref && (
-          <a
-            href={tgHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-          >
-            Telegram
-          </a>
-        )}
-        {tgHref && waHref && " · "}
-        {waHref && (
-          <a
-            href={waHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-          >
-            WhatsApp
-          </a>
-        )}
-      </p>
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CatalogPage({ searchParams }: PageProps) {
@@ -290,7 +335,6 @@ export default async function CatalogPage({ searchParams }: PageProps) {
   const currentCategory = rawCategory?.trim() || undefined;
   const currentSearch = rawSearch?.trim() || undefined;
   const currentPage = Math.max(1, Number(rawPage ?? 1));
-  const base = { category: currentCategory, search: currentSearch };
 
   const [catalog, categories] = await Promise.all([
     getPublicCatalog({
@@ -321,6 +365,9 @@ export default async function CatalogPage({ searchParams }: PageProps) {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+        {/* ── Trust badges ── */}
+        <TrustStrip />
+
         {/* ── Category filter chips ── */}
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-thin">
@@ -375,8 +422,6 @@ export default async function CatalogPage({ searchParams }: PageProps) {
           </div>
         )}
 
-        {/* ── Footer contact nudge ── */}
-        <FooterContact />
       </main>
     </div>
   );

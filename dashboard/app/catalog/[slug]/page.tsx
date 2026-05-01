@@ -377,15 +377,27 @@ export default async function ProductDetailPage({
 
             {/* Stock indicator */}
             <div>
-              {product.currentStock > 0 ? (
+              {product.currentStock >= 10 && (
                 <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-success/10 text-success font-medium">
                   <span className="h-2 w-2 rounded-full bg-success inline-block" />
                   მარაგშია ({product.currentStock} {product.unit})
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-destructive/10 text-destructive font-medium">
-                  <span className="h-2 w-2 rounded-full bg-destructive inline-block" />
-                  არ არის მარაგში
+              )}
+              {product.currentStock >= 5 && product.currentStock < 10 && (
+                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-success/10 text-success font-medium">
+                  <span className="h-2 w-2 rounded-full bg-success inline-block" />
+                  ბევრი გვაქვს ({product.currentStock} {product.unit})
+                </span>
+              )}
+              {product.currentStock >= 1 && product.currentStock < 5 && (
+                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
+                  ⚡ დარჩა მხოლოდ {product.currentStock} {product.unit}
+                </span>
+              )}
+              {product.currentStock === 0 && (
+                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-foreground/10 text-foreground/50 font-medium">
+                  ⏳ შეკვეთით — 3-5 დღეში
                 </span>
               )}
             </div>

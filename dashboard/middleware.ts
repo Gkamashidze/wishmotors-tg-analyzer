@@ -27,6 +27,7 @@ export function middleware(req: NextRequest) {
     path.startsWith("/api/public/") ||
     path === "/catalog" ||
     path.startsWith("/catalog/") ||
+    path === "/about" ||
     path === "/sitemap.xml" ||
     path === "/robots.txt"
   ) {
