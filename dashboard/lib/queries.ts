@@ -880,9 +880,70 @@ export type PublicProductDetail = {
   compatibility: CompatibilityRow[];
 };
 
+// ─── Vehicle picker queries ───────────────────────────────────────────────────
+
+export type VehicleModel = { model: string; productCount: number };
+export type VehicleEngine = { engine: string; fuelType: string | null };
+
+export async function getCatalogModels(): Promise<VehicleModel[]> {
+  noStore();
+  const rows = await query<{ model: string; product_count: string }>(
+    `SELECT pc.model,
+            COUNT(DISTINCT pc.product_id) AS product_count
+     FROM product_compatibility pc
+     INNER JOIN products p ON p.id = pc.product_id
+     WHERE p.is_published = TRUE
+       AND pc.model IS NOT NULL
+       AND TRIM(pc.model) <> ''
+     GROUP BY pc.model
+     ORDER BY pc.model ASC`,
+    [],
+  );
+  return rows.map((r) => ({
+    model: r.model,
+    productCount: Number(r.product_count),
+  }));
+}
+
+export async function getCatalogEnginesByModel(
+  model: string,
+): Promise<VehicleEngine[]> {
+  noStore();
+  const rows = await query<{ engine: string; fuel_type: string | null }>(
+    `SELECT DISTINCT pc.engine, pc.fuel_type
+     FROM product_compatibility pc
+     INNER JOIN products p ON p.id = pc.product_id
+     WHERE p.is_published = TRUE
+       AND pc.model = $1
+       AND pc.engine IS NOT NULL
+       AND TRIM(pc.engine) <> ''
+     ORDER BY pc.engine ASC`,
+    [model],
+  );
+  return rows.map((r) => ({ engine: r.engine, fuelType: r.fuel_type }));
+}
+
+export async function getCatalogYearRangeByModel(
+  model: string,
+): Promise<{ min: number; max: number } | null> {
+  noStore();
+  const row = await queryOne<{ y_min: number | null; y_max: number | null }>(
+    `SELECT MIN(pc.year_from) AS y_min, MAX(pc.year_to) AS y_max
+     FROM product_compatibility pc
+     INNER JOIN products p ON p.id = pc.product_id
+     WHERE p.is_published = TRUE AND pc.model = $1`,
+    [model],
+  );
+  if (!row || row.y_min == null || row.y_max == null) return null;
+  return { min: Number(row.y_min), max: Number(row.y_max) };
+}
+
 export async function getPublicCatalog(filters: {
   category?: string;
   search?: string;
+  model?: string;
+  engine?: string;
+  year?: number;
   page?: number;
   limit?: number;
 }): Promise<PublicCatalogResult> {
@@ -905,6 +966,26 @@ export async function getPublicCatalog(filters: {
     conditions.push(
       `(p.name ILIKE $${params.length} OR p.oem_code ILIKE $${params.length})`,
     );
+  }
+
+  if (filters.model) {
+    params.push(filters.model);
+    let vehicleExists = `EXISTS (
+      SELECT 1 FROM product_compatibility pc2
+      WHERE pc2.product_id = p.id
+        AND pc2.model = $${params.length}`;
+    if (filters.engine) {
+      params.push(filters.engine);
+      vehicleExists += ` AND pc2.engine = $${params.length}`;
+    }
+    if (filters.year) {
+      params.push(filters.year);
+      vehicleExists += ` AND (pc2.year_from IS NULL OR pc2.year_from <= $${params.length})`;
+      params.push(filters.year);
+      vehicleExists += ` AND (pc2.year_to IS NULL OR pc2.year_to >= $${params.length})`;
+    }
+    vehicleExists += `)`;
+    conditions.push(vehicleExists);
   }
 
   const rows = await query<{

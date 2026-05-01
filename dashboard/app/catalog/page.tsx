@@ -7,6 +7,7 @@ import {
   type PublicProductItem,
 } from "@/lib/queries";
 import SearchBar from "./_components/SearchBar";
+import { VehiclePicker } from "./_components/VehiclePicker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,20 +15,32 @@ type PageProps = {
   searchParams: Promise<{
     category?: string;
     search?: string;
+    model?: string;
+    engine?: string;
+    year?: string;
     page?: string;
   }>;
 };
 
 // ─── URL builder ──────────────────────────────────────────────────────────────
 
-function catalogUrl(
-  overrides: Partial<{ category: string; search: string; page: number }>,
-  base: { category?: string; search?: string } = {},
-): string {
+type CatalogFilters = {
+  category?: string;
+  search?: string;
+  model?: string;
+  engine?: string;
+  year?: string;
+  page?: number;
+};
+
+function catalogUrl(overrides: Partial<CatalogFilters>, base: Omit<CatalogFilters, "page"> = {}): string {
   const merged = { ...base, ...overrides };
   const params = new URLSearchParams();
   if (merged.category) params.set("category", merged.category);
   if (merged.search) params.set("search", merged.search);
+  if (merged.model) params.set("model", merged.model);
+  if (merged.engine) params.set("engine", merged.engine);
+  if (merged.year) params.set("year", merged.year);
   if (merged.page && merged.page > 1) params.set("page", String(merged.page));
   const qs = params.toString();
   return `/catalog${qs ? `?${qs}` : ""}`;
@@ -209,34 +222,69 @@ function ProductCard({ product }: { product: PublicProductItem }) {
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ model, engine, year }: { model?: string; engine?: string; year?: string }) {
   const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
+
+  const isVehicleSearch = Boolean(model);
+
+  let waText = "გამარჯობა! მინდა ნაწილის შეკვეთა.";
+  if (isVehicleSearch) {
+    const parts = [model, engine, year ? `${year} წ.` : undefined].filter(Boolean);
+    waText = `გამარჯობა! მინდა ნაწილი: SsangYong ${parts.join(", ")}`;
+  }
+
+  const waHref = waPhone
+    ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}`
+    : null;
   const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
 
   return (
-    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+    <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
       <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
         <Search className="h-7 w-7 text-foreground/30" />
       </div>
-      <div>
-        <p className="text-lg font-medium">ვერ მოიძებნა</p>
-        <p className="text-sm text-foreground/60 mt-1">
-          სხვა საძიებო სიტყვა სცადეთ
-          {tgHref && (
-            <>
-              {" "}ან{" "}
-              <a
-                href={tgHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline underline-offset-2 hover:text-primary/80"
-              >
-                დაგვიკავშირდით
-              </a>
-            </>
-          )}
-        </p>
+      <div className="max-w-sm">
+        {isVehicleSearch ? (
+          <>
+            <p className="text-lg font-medium">ამ მანქანისთვის ჯერ არაფერი გვაქვს</p>
+            <p className="text-sm text-foreground/60 mt-1">
+              მოგვწერეთ — ვცდილობთ მოვიტანოთ
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-lg font-medium">ვერ მოიძებნა</p>
+            <p className="text-sm text-foreground/60 mt-1">
+              სხვა საძიებო სიტყვა სცადეთ ან დაგვიკავშირდით
+            </p>
+          </>
+        )}
       </div>
+      {(waHref || tgHref) && (
+        <div className="flex gap-3">
+          {waHref && (
+            <a
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:bg-[#22c55e] transition-colors"
+            >
+              WhatsApp
+            </a>
+          )}
+          {tgHref && (
+            <a
+              href={tgHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0088cc] text-white text-sm font-medium hover:bg-[#0077b3] transition-colors"
+            >
+              Telegram
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -264,13 +312,19 @@ function Pagination({
   totalPages,
   category,
   search,
+  model,
+  engine,
+  year,
 }: {
   currentPage: number;
   totalPages: number;
   category?: string;
   search?: string;
+  model?: string;
+  engine?: string;
+  year?: string;
 }) {
-  const base = { category, search };
+  const base = { category, search, model, engine, year };
   const btnCls =
     "min-w-[2.25rem] px-2 py-2 text-sm text-center rounded-lg border transition-colors";
 
@@ -329,17 +383,29 @@ function Pagination({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CatalogPage({ searchParams }: PageProps) {
-  const { category: rawCategory, search: rawSearch, page: rawPage } =
-    await searchParams;
+  const {
+    category: rawCategory,
+    search: rawSearch,
+    model: rawModel,
+    engine: rawEngine,
+    year: rawYear,
+    page: rawPage,
+  } = await searchParams;
 
   const currentCategory = rawCategory?.trim() || undefined;
   const currentSearch = rawSearch?.trim() || undefined;
+  const currentModel = rawModel?.trim() || undefined;
+  const currentEngine = rawEngine?.trim() || undefined;
+  const currentYear = rawYear ? Number(rawYear) : undefined;
   const currentPage = Math.max(1, Number(rawPage ?? 1));
 
   const [catalog, categories] = await Promise.all([
     getPublicCatalog({
       category: currentCategory,
       search: currentSearch,
+      model: currentModel,
+      engine: currentEngine,
+      year: currentYear,
       page: currentPage,
       limit: 24,
     }),
@@ -368,11 +434,33 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         {/* ── Trust badges ── */}
         <TrustStrip />
 
+        {/* ── Vehicle picker ── */}
+        <VehiclePicker />
+
+        {/* ── Active vehicle filter chip ── */}
+        {currentModel && (
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <span className="text-xs text-muted-foreground">ფილტრი:</span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+              {[currentModel, currentEngine, rawYear ? `${rawYear} წ.` : undefined]
+                .filter(Boolean)
+                .join(" • ")}
+              <Link
+                href={catalogUrl({ page: 1 }, { search: currentSearch, category: currentCategory })}
+                className="ml-1 hover:text-primary/60"
+                aria-label="ფილტრის გასუფთავება"
+              >
+                ×
+              </Link>
+            </span>
+          </div>
+        )}
+
         {/* ── Category filter chips ── */}
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-thin">
             <Link
-              href={catalogUrl({ page: 1 }, { search: currentSearch })}
+              href={catalogUrl({ page: 1 }, { search: currentSearch, model: currentModel, engine: currentEngine, year: rawYear })}
               className={chipCls(!currentCategory)}
             >
               ყველა
@@ -382,7 +470,7 @@ export default async function CatalogPage({ searchParams }: PageProps) {
                 key={cat}
                 href={catalogUrl(
                   { category: cat, page: 1 },
-                  { search: currentSearch },
+                  { search: currentSearch, model: currentModel, engine: currentEngine, year: rawYear },
                 )}
                 className={chipCls(currentCategory === cat)}
               >
@@ -401,7 +489,7 @@ export default async function CatalogPage({ searchParams }: PageProps) {
 
         {/* ── Product grid / Empty state ── */}
         {catalog.items.length === 0 ? (
-          <EmptyState />
+          <EmptyState model={currentModel} engine={currentEngine} year={rawYear} />
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {catalog.items.map((product) => (
@@ -418,6 +506,9 @@ export default async function CatalogPage({ searchParams }: PageProps) {
               totalPages={catalog.totalPages}
               category={currentCategory}
               search={currentSearch}
+              model={currentModel}
+              engine={currentEngine}
+              year={rawYear}
             />
           </div>
         )}
