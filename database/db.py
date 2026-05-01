@@ -3196,23 +3196,26 @@ class Database:
         transportation_cost: Optional[float] = None,
         vat_amount: Optional[float] = None,
         sale_price_min: Optional[float] = None,
+        sale_price_currency: str = "GEL",
         estimated_arrival: Optional[Any] = None,
         notes: Optional[str] = None,
     ) -> PersonalOrderRow:
         primary_name = items[0][0] if items else ""
         primary_oem = items[0][1] if items else None
+        currency = "USD" if sale_price_currency.upper() == "USD" else "GEL"
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     """INSERT INTO personal_orders
                            (customer_name, customer_contact, part_name, oem_code,
                             cost_price, transportation_cost, vat_amount,
-                            sale_price_min, sale_price, estimated_arrival, notes)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                            sale_price_min, sale_price, sale_price_currency,
+                            amount_paid_currency, estimated_arrival, notes)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12)
                        RETURNING *""",
                     customer_name, customer_contact, primary_name, primary_oem,
                     cost_price, transportation_cost, vat_amount,
-                    sale_price_min, sale_price, estimated_arrival, notes,
+                    sale_price_min, sale_price, currency, estimated_arrival, notes,
                 )
                 order_id = row["id"]
                 for part_name, oem_code in items:
@@ -3247,7 +3250,8 @@ class Database:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""SELECT o.id, o.tracking_token, o.customer_name, o.part_name, o.oem_code,
-                           o.sale_price_min, o.sale_price, o.amount_paid,
+                           o.sale_price_min, o.sale_price, o.sale_price_currency,
+                           o.amount_paid, o.amount_paid_currency,
                            o.status, o.estimated_arrival, o.created_at,
                            {self._ITEMS_SUBQUERY}
                     FROM personal_orders o
@@ -3265,7 +3269,8 @@ class Database:
         allowed = {
             "customer_name", "customer_contact", "part_name", "oem_code",
             "cost_price", "transportation_cost", "vat_amount",
-            "sale_price_min", "sale_price", "amount_paid", "status", "estimated_arrival", "notes",
+            "sale_price_min", "sale_price", "sale_price_currency",
+            "amount_paid", "amount_paid_currency", "status", "estimated_arrival", "notes",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
