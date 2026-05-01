@@ -174,7 +174,7 @@ export function CreatableCombobox({
             <Plus className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span>
               <span className="text-muted-foreground">{createLabel}: </span>
-              <span className="font-medium">"{inputValue.trim()}"</span>
+              <span className="font-medium">&quot;{inputValue.trim()}&quot;</span>
             </span>
             {creating && <span className="ml-auto text-xs text-muted-foreground animate-pulse">ინახება...</span>}
           </li>

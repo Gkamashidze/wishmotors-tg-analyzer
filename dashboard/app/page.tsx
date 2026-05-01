@@ -122,7 +122,7 @@ export default async function DashboardPage() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                სრული სია — გვერდით მენიუდან „შეკვეთები".
+                სრული სია — გვერდით მენიუდან &bdquo;შეკვეთები&rdquo;.
               </p>
             </CardContent>
           </Card>
