@@ -20,8 +20,13 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
-  // Public tracking page — no auth required
-  if (req.nextUrl.pathname.startsWith("/track/")) {
+  // Public routes — no auth required
+  const path = req.nextUrl.pathname;
+  if (
+    path.startsWith("/track/") ||
+    path.startsWith("/api/public/") ||
+    path.startsWith("/catalog/")
+  ) {
     return applySecurityHeaders(NextResponse.next());
   }
 

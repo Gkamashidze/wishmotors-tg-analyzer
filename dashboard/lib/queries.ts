@@ -830,6 +830,205 @@ export async function getProducts(): Promise<ProductRow[]> {
 export { PRODUCTS_PAGE_SIZE } from "./constants";
 import { PRODUCTS_PAGE_SIZE } from "./constants";
 
+// ─── Public catalog types ─────────────────────────────────────────────────────
+
+export type PublicProductItem = {
+  id: number;
+  slug: string;
+  name: string;
+  oemCode: string | null;
+  category: string | null;
+  currentStock: number;
+  price: number;
+  imageUrl: string | null;
+  compatibility: CompatibilityRow[];
+};
+
+export type PublicCatalogResult = {
+  items: PublicProductItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+};
+
+export type PublicProductDetail = {
+  id: number;
+  slug: string;
+  name: string;
+  oemCode: string | null;
+  category: string | null;
+  currentStock: number;
+  unit: string;
+  price: number;
+  imageUrl: string | null;
+  description: string | null;
+  compatibilityNotes: string | null;
+  compatibility: CompatibilityRow[];
+};
+
+export async function getPublicCatalog(filters: {
+  category?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<PublicCatalogResult> {
+  noStore();
+
+  const page = Math.max(1, filters.page ?? 1);
+  const limit = Math.min(48, Math.max(1, filters.limit ?? 24));
+  const offset = (page - 1) * limit;
+
+  const params: unknown[] = [limit, offset];
+  const conditions: string[] = ["p.is_published = TRUE", "p.current_stock > 0"];
+
+  if (filters.category) {
+    params.push(filters.category);
+    conditions.push(`p.category = $${params.length}`);
+  }
+
+  if (filters.search) {
+    params.push(`%${filters.search}%`);
+    conditions.push(
+      `(p.name ILIKE $${params.length} OR p.oem_code ILIKE $${params.length})`,
+    );
+  }
+
+  const rows = await query<{
+    id: number;
+    slug: string;
+    name: string;
+    oem_code: string | null;
+    category: string | null;
+    current_stock: number;
+    display_price: string;
+    image_url: string | null;
+    compatibility: CompatibilityRow[];
+    total_count: string;
+  }>(
+    `SELECT
+       p.id,
+       p.slug,
+       p.name,
+       p.oem_code,
+       p.category,
+       p.current_stock,
+       COALESCE(p.recommended_price, p.unit_price) AS display_price,
+       p.image_url,
+       COALESCE(
+         json_agg(
+           json_build_object(
+             'id',       pc.id,
+             'model',    pc.model,
+             'drive',    pc.drive,
+             'engine',   pc.engine,
+             'fuelType', pc.fuel_type,
+             'yearFrom', pc.year_from,
+             'yearTo',   pc.year_to
+           ) ORDER BY pc.model
+         ) FILTER (WHERE pc.id IS NOT NULL),
+         '[]'::json
+       ) AS compatibility,
+       COUNT(*) OVER() AS total_count
+     FROM products p
+     LEFT JOIN product_compatibility pc ON pc.product_id = p.id
+     WHERE ${conditions.join(" AND ")}
+     GROUP BY p.id
+     ORDER BY p.name ASC
+     LIMIT $1 OFFSET $2`,
+    params,
+  );
+
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      name: r.name,
+      oemCode: r.oem_code,
+      category: r.category,
+      currentStock: r.current_stock,
+      price: Number(r.display_price),
+      imageUrl: r.image_url,
+      compatibility: r.compatibility ?? [],
+    })),
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+export async function getPublicProduct(
+  slug: string,
+): Promise<PublicProductDetail | null> {
+  noStore();
+
+  const row = await queryOne<{
+    id: number;
+    slug: string;
+    name: string;
+    oem_code: string | null;
+    category: string | null;
+    current_stock: number;
+    unit: string;
+    display_price: string;
+    image_url: string | null;
+    description: string | null;
+    compatibility_notes: string | null;
+    compatibility: CompatibilityRow[];
+  }>(
+    `SELECT
+       p.id,
+       p.slug,
+       p.name,
+       p.oem_code,
+       p.category,
+       p.current_stock,
+       p.unit,
+       COALESCE(p.recommended_price, p.unit_price) AS display_price,
+       p.image_url,
+       p.description,
+       p.compatibility_notes,
+       COALESCE(
+         json_agg(
+           json_build_object(
+             'id',       pc.id,
+             'model',    pc.model,
+             'drive',    pc.drive,
+             'engine',   pc.engine,
+             'fuelType', pc.fuel_type,
+             'yearFrom', pc.year_from,
+             'yearTo',   pc.year_to
+           ) ORDER BY pc.model
+         ) FILTER (WHERE pc.id IS NOT NULL),
+         '[]'::json
+       ) AS compatibility
+     FROM products p
+     LEFT JOIN product_compatibility pc ON pc.product_id = p.id
+     WHERE p.slug = $1
+       AND p.is_published = TRUE
+     GROUP BY p.id`,
+    [slug],
+  );
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    oemCode: row.oem_code,
+    category: row.category,
+    currentStock: row.current_stock,
+    unit: row.unit,
+    price: Number(row.display_price),
+    imageUrl: row.image_url,
+    description: row.description,
+    compatibilityNotes: row.compatibility_notes,
+    compatibility: row.compatibility ?? [],
+  };
+}
+
 export async function getProductsPaged(
   page: number,
   limit: number = PRODUCTS_PAGE_SIZE,
