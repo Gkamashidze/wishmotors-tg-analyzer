@@ -59,6 +59,7 @@ def _db(**overrides) -> MagicMock:
     db.edit_product = AsyncMock(return_value=None)
     db.mark_sale_paid = AsyncMock(return_value=False)
     db.upsert_client = AsyncMock(return_value=None)
+    db.upsert_client_and_create_catalog_order = AsyncMock(return_value=99)
     for k, v in overrides.items():
         setattr(db, k, v)
     return db
@@ -425,22 +426,20 @@ class TestDeeplinkHandler:
         msg = _deeplink_msg("/start order_42")
         db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
         await handle_catalog_deeplink(msg, db)
-        db.create_order.assert_called_once()
-        kwargs = db.create_order.call_args[1]
+        db.upsert_client_and_create_catalog_order.assert_called_once()
+        kwargs = db.upsert_client_and_create_catalog_order.call_args[1]
         assert kwargs["product_id"] == 42
-        assert kwargs["priority"] == "urgent"
-        assert kwargs["quantity_needed"] == 1
         assert kwargs["notes"] == "კატალოგიდან"
 
     async def test_valid_deeplink_upserts_client(self):
         msg = _deeplink_msg("/start order_42")
         db = _db(get_product_by_id=AsyncMock(return_value=_PRODUCT))
         await handle_catalog_deeplink(msg, db)
-        db.upsert_client.assert_called_once_with(
-            telegram_id=_USER_ID,
-            full_name="Test User",
-            username="testuser",
-        )
+        db.upsert_client_and_create_catalog_order.assert_called_once()
+        kwargs = db.upsert_client_and_create_catalog_order.call_args[1]
+        assert kwargs["telegram_id"] == _USER_ID
+        assert kwargs["full_name"] == "Test User"
+        assert kwargs["username"] == "testuser"
 
     async def test_valid_deeplink_replies_with_confirmation(self):
         msg = _deeplink_msg("/start order_42")
@@ -459,8 +458,7 @@ class TestDeeplinkHandler:
         msg.answer.assert_called_once()
         text = msg.answer.call_args[0][0]
         assert "ვეღარ მოიძებნა" in text
-        db.create_order.assert_not_called()
-        db.upsert_client.assert_not_called()
+        db.upsert_client_and_create_catalog_order.assert_not_called()
 
     async def test_unknown_product_id_sends_error_no_order(self):
         msg = _deeplink_msg("/start order_9999")
@@ -469,7 +467,7 @@ class TestDeeplinkHandler:
         msg.answer.assert_called_once()
         text = msg.answer.call_args[0][0]
         assert "ვეღარ მოიძებნა" in text
-        db.create_order.assert_not_called()
+        db.upsert_client_and_create_catalog_order.assert_not_called()
 
     async def test_group_notification_sent_after_order(self):
         msg = _deeplink_msg("/start order_42")
