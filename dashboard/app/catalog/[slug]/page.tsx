@@ -13,6 +13,7 @@ import {
 import { TrackView } from "../_components/TrackView";
 import { RecentlyViewed } from "../_components/RecentlyViewed";
 import { ShareButton } from "../_components/ShareButton";
+import { ProductGallery } from "../_components/ProductGallery";
 
 // Deduplicates the DB call between generateMetadata and page render
 const fetchProduct = cache(getPublicProduct);
@@ -392,7 +393,7 @@ export default async function ProductDetailPage({
         {/* ── Two-column layout: image left, details right ── */}
         <div className="grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
           {/* Left: product image */}
-          <ProductImage imageUrl={product.imageUrl} name={product.name} />
+          <ProductGallery images={product.images} name={product.name} />
 
           {/* Right: product details */}
           <div className="flex flex-col gap-5">

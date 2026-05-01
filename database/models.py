@@ -589,6 +589,26 @@ CREATE INDEX IF NOT EXISTS idx_imports_history_supplier ON imports_history(suppl
 -- quantity_needed - quantity_ordered = remaining units still to be ordered.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_ordered INTEGER NOT NULL DEFAULT 0;
 
+-- ─── Product images (multi-image gallery) ────────────────────────────────────
+-- Each product can have many images. position controls display order.
+-- The legacy products.image_url is kept as the "primary" image and is also
+-- stored as the first row in product_images for backwards compatibility.
+CREATE TABLE IF NOT EXISTS product_images (
+    id         SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    url        TEXT    NOT NULL,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id, position);
+
+-- Back-fill: every product that has image_url but no product_images row gets one
+INSERT INTO product_images (product_id, url, position)
+SELECT p.id, p.image_url, 0
+FROM products p
+WHERE p.image_url IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM product_images pi WHERE pi.product_id = p.id);
+
 -- ─── Public catalog fields ────────────────────────────────────────────────────
 -- slug:         URL-friendly identifier, auto-generated from name + oem_code.
 -- is_published: only published products appear in the public catalog (default: hidden).

@@ -876,6 +876,7 @@ export type PublicProductDetail = {
   unit: string;
   price: number;
   imageUrl: string | null;
+  images: string[];
   description: string | null;
   compatibilityNotes: string | null;
   compatibility: CompatibilityRow[];
@@ -1095,6 +1096,7 @@ export async function getPublicProduct(
     description: string | null;
     compatibility_notes: string | null;
     compatibility: CompatibilityRow[];
+    images: string[];
   }>(
     `SELECT
        p.id,
@@ -1109,8 +1111,8 @@ export async function getPublicProduct(
        p.description,
        p.compatibility_notes,
        COALESCE(
-         json_agg(
-           json_build_object(
+         json_agg(DISTINCT
+           jsonb_build_object(
              'id',       pc.id,
              'model',    pc.model,
              'drive',    pc.drive,
@@ -1118,10 +1120,16 @@ export async function getPublicProduct(
              'fuelType', pc.fuel_type,
              'yearFrom', pc.year_from,
              'yearTo',   pc.year_to
-           ) ORDER BY pc.model
+           )
          ) FILTER (WHERE pc.id IS NOT NULL),
          '[]'::json
-       ) AS compatibility
+       ) AS compatibility,
+       COALESCE(
+         (SELECT json_agg(pi.url ORDER BY pi.position ASC, pi.id ASC)
+          FROM product_images pi
+          WHERE pi.product_id = p.id),
+         '[]'::json
+       ) AS images
      FROM products p
      LEFT JOIN product_compatibility pc ON pc.product_id = p.id
      WHERE p.slug = $1
@@ -1131,6 +1139,10 @@ export async function getPublicProduct(
   );
 
   if (!row) return null;
+
+  // Build the gallery: prefer product_images rows; fall back to legacy image_url
+  const gallery: string[] = (row.images ?? []).filter(Boolean);
+  if (gallery.length === 0 && row.image_url) gallery.push(row.image_url);
 
   return {
     id: row.id,
@@ -1142,6 +1154,7 @@ export async function getPublicProduct(
     unit: row.unit,
     price: Number(row.display_price),
     imageUrl: row.image_url,
+    images: gallery,
     description: row.description,
     compatibilityNotes: row.compatibility_notes,
     compatibility: row.compatibility ?? [],

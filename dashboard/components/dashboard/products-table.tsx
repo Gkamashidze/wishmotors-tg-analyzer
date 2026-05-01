@@ -16,6 +16,7 @@ import type { ProductRow, CompatibilityRow } from "@/lib/queries";
 import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 import type { ProductMetricRow } from "@/lib/financial-queries";
 import { formatGEL, formatNumber, cn } from "@/lib/utils";
+import { GalleryManager } from "./gallery-manager";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1571,6 +1572,13 @@ export function ProductsTable({
                 {uploadingImage ? "იტვირთება..." : "ფოტოს ატვირთვა"}
               </Button>
             </div>
+
+            {/* Multi-image gallery (optional, additional images) */}
+            {editRow && (
+              <div className="rounded-xl border border-border p-3">
+                <GalleryManager productId={editRow.id} />
+              </div>
+            )}
 
             {/* Structured compatibility */}
             <div className="space-y-2 rounded-xl border border-border p-3">
