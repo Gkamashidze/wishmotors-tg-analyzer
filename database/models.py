@@ -588,6 +588,75 @@ CREATE INDEX IF NOT EXISTS idx_imports_history_supplier ON imports_history(suppl
 -- How many units were actually placed with the supplier (may be less than quantity_needed).
 -- quantity_needed - quantity_ordered = remaining units still to be ordered.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity_ordered INTEGER NOT NULL DEFAULT 0;
+
+-- ─── Public catalog fields ────────────────────────────────────────────────────
+-- slug:         URL-friendly identifier, auto-generated from name + oem_code.
+-- is_published: only published products appear in the public catalog (default: hidden).
+-- description:  long-form product description shown on the detail page.
+-- image_url:    primary product image URL (multi-image support added later if needed).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS slug         TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description  TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url    TEXT;
+
+-- Unique index serves both UNIQUE enforcement and slug lookup performance.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
+
+-- Backfill slugs for existing products (Georgian → Latin transliteration, URL-safe).
+-- Runs only for rows where slug IS NULL so re-runs are safe.
+DO $$
+DECLARE
+  v_base    TEXT;
+  v_slug    TEXT;
+  v_counter INT;
+  prod      RECORD;
+BEGIN
+  FOR prod IN
+    SELECT id, name, oem_code FROM products WHERE slug IS NULL ORDER BY id
+  LOOP
+    v_base := prod.name || COALESCE(' ' || prod.oem_code, '');
+
+    -- Multi-char Georgian → Latin (must run before single-char translate)
+    v_base := replace(v_base, 'ჟ', 'zh');
+    v_base := replace(v_base, 'შ', 'sh');
+    v_base := replace(v_base, 'ჩ', 'ch');
+    v_base := replace(v_base, 'ც', 'ts');
+    v_base := replace(v_base, 'ძ', 'dz');
+    v_base := replace(v_base, 'წ', 'ts');
+    v_base := replace(v_base, 'ჭ', 'ch');
+    v_base := replace(v_base, 'ხ', 'kh');
+    v_base := replace(v_base, 'ღ', 'gh');
+
+    -- Single-char Georgian → Latin (1-to-1; source and dest are both 23 chars)
+    -- ა→a ბ→b გ→g დ→d ე→e ვ→v ზ→z თ→t ი→i კ→k ლ→l მ→m ნ→n ო→o პ→p რ→r ს→s ტ→t უ→u ფ→p ქ→k ყ→q ჰ→h
+    v_base := translate(v_base,
+      'აბგდევზთიკლმნოპრსტუფქყჰ',
+      'abgdevztiklmnoprstupkqh'
+    );
+
+    -- Lowercase (normalises Latin chars from OEM codes like HU7009Z)
+    v_base := lower(v_base);
+    -- Collapse any non-alphanumeric run into a single hyphen
+    v_base := regexp_replace(v_base, '[^a-z0-9]+', '-', 'g');
+    -- Strip leading/trailing hyphens
+    v_base := trim(both '-' from v_base);
+
+    -- Fallback for products whose name+oem produced an empty string
+    IF v_base = '' THEN
+      v_base := 'product-' || prod.id::text;
+    END IF;
+
+    -- Resolve slug collisions by appending -2, -3, …
+    v_slug    := v_base;
+    v_counter := 2;
+    WHILE EXISTS (SELECT 1 FROM products WHERE slug = v_slug) LOOP
+      v_slug    := v_base || '-' || v_counter;
+      v_counter := v_counter + 1;
+    END LOOP;
+
+    UPDATE products SET slug = v_slug WHERE id = prod.id;
+  END LOOP;
+END $$;
 """
 
 
@@ -613,6 +682,10 @@ class ProductRow(TypedDict):
     recommended_price: Optional[float]
     category: Optional[str]
     compatibility_notes: Optional[str]
+    slug: Optional[str]
+    is_published: bool
+    description: Optional[str]
+    image_url: Optional[str]
     created_at: object  # datetime in practice
 
 
