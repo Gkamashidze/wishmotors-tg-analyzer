@@ -1,0 +1,402 @@
+import { notFound } from "next/navigation";
+import { cache } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import type { Metadata } from "next";
+import {
+  getPublicProduct,
+  type PublicProductDetail,
+  type CompatibilityRow,
+} from "@/lib/queries";
+
+// Deduplicates the DB call between generateMetadata and page render
+const fetchProduct = cache(getPublicProduct);
+
+type Params = Promise<{ slug: string }>;
+
+// ─── Metadata ─────────────────────────────────────────────────────────────────
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Params;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await fetchProduct(slug);
+
+  if (!product) return { title: "პროდუქტი ვერ მოიძებნა — WishMotors" };
+
+  const title = `${product.name} — WishMotors`;
+  const description =
+    product.description ??
+    `ყიდეთ ${product.name}${
+      product.oemCode ? ` (OEM: ${product.oemCode})` : ""
+    } WishMotors-ის კატალოგიდან.`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: product.imageUrl ? [{ url: product.imageUrl }] : [],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: product.imageUrl ? [product.imageUrl] : [],
+    },
+  };
+}
+
+// ─── JSON-LD (placed in body — valid for schema.org, read by all crawlers) ────
+
+function ProductJsonLd({ product }: { product: PublicProductDetail }) {
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    ...(product.description && { description: product.description }),
+    ...(product.imageUrl && { image: product.imageUrl }),
+    ...(product.oemCode && { sku: product.oemCode }),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "GEL",
+      price: product.price,
+      availability: "https://schema.org/InStock",
+    },
+  };
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtPrice(n: number): string {
+  return new Intl.NumberFormat("ka-GE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function yearRange(e: CompatibilityRow): string {
+  if (e.yearFrom && e.yearTo) return `${e.yearFrom}–${e.yearTo}`;
+  if (e.yearFrom) return `${e.yearFrom}–`;
+  if (e.yearTo) return `–${e.yearTo}`;
+  return "—";
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function ProductImage({
+  imageUrl,
+  name,
+}: {
+  imageUrl: string | null;
+  name: string;
+}) {
+  return (
+    <div className="relative aspect-square rounded-2xl bg-secondary overflow-hidden shadow-sm">
+      {imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={name}
+          fill
+          unoptimized
+          priority
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, 50vw"
+        />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-foreground/20">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-24 w-24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="0.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+          </svg>
+          <span className="text-sm">სურათი არ არის</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompatibilityTable({
+  entries,
+}: {
+  entries: CompatibilityRow[];
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <section aria-labelledby="compat-heading">
+      <h2
+        id="compat-heading"
+        className="text-lg font-semibold mb-4"
+      >
+        თავსებადი მოდელები
+      </h2>
+      <div className="rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-secondary text-foreground/60 text-left text-xs uppercase tracking-wide">
+              <th className="px-4 py-3 font-medium">მოდელი</th>
+              <th className="px-4 py-3 font-medium hidden sm:table-cell">ძრავი</th>
+              <th className="px-4 py-3 font-medium hidden md:table-cell">Drive</th>
+              <th className="px-4 py-3 font-medium hidden md:table-cell">საწვავი</th>
+              <th className="px-4 py-3 font-medium">წლები</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {entries.map((e) => (
+              <tr
+                key={e.id}
+                className="hover:bg-secondary/40 transition-colors"
+              >
+                <td className="px-4 py-3 font-medium">{e.model}</td>
+                <td className="px-4 py-3 text-foreground/70 hidden sm:table-cell">
+                  {e.engine ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
+                  {e.drive ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
+                  {e.fuelType ?? "—"}
+                </td>
+                <td className="px-4 py-3 text-foreground/70 whitespace-nowrap">
+                  {yearRange(e)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CtaButtons({ product }: { product: PublicProductDetail }) {
+  const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE ?? "";
+  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
+  const contactPhone = process.env.NEXT_PUBLIC_CONTACT_PHONE ?? "";
+
+  const waText = encodeURIComponent(
+    `გამარჯობა! მაინტერესებს ${product.name}${
+      product.oemCode ? ` (OEM: ${product.oemCode})` : ""
+    }. შეგიძლიათ ფასისა და მარაგის შესახებ?`,
+  );
+
+  const waHref = waPhone ? `https://wa.me/${waPhone}?text=${waText}` : null;
+  const tgHref = tgUsername
+    ? `https://t.me/${tgUsername}?start=order_${product.id}`
+    : null;
+  const telHref = contactPhone
+    ? `tel:${contactPhone.replace(/\s/g, "")}`
+    : null;
+
+  const base =
+    "flex items-center justify-center gap-2.5 rounded-xl py-4 px-5 font-semibold text-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* WhatsApp */}
+      <a
+        href={waHref ?? "#"}
+        target={waHref ? "_blank" : undefined}
+        rel="noopener noreferrer"
+        aria-label="WhatsApp-ით დაკავშირება"
+        className={`${base} text-white`}
+        style={{ backgroundColor: "#25D366" }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5 fill-current shrink-0"
+          aria-hidden="true"
+        >
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.553 4.107 1.52 5.847L.057 23.994l6.302-1.651A11.932 11.932 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.795 9.795 0 01-4.99-1.369l-.358-.213-3.712.973.99-3.617-.234-.371A9.769 9.769 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z" />
+        </svg>
+        WhatsApp
+      </a>
+
+      {/* Telegram */}
+      <a
+        href={tgHref ?? "#"}
+        target={tgHref ? "_blank" : undefined}
+        rel="noopener noreferrer"
+        aria-label="Telegram-ით დაკავშირება"
+        className={`${base} text-white`}
+        style={{ backgroundColor: "#229ED9" }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5 fill-current shrink-0"
+          aria-hidden="true"
+        >
+          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z" />
+        </svg>
+        Telegram
+      </a>
+
+      {/* Phone */}
+      <a
+        href={telHref ?? "#"}
+        aria-label={`დარეკვა — ${contactPhone}`}
+        className={`${base} border-2 border-border hover:border-primary/50 hover:bg-secondary`}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 10.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.29 6.29l1.28-1.29a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+        </svg>
+        {contactPhone || "დარეკვა"}
+      </a>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default async function ProductDetailPage({
+  params,
+}: {
+  params: Params;
+}) {
+  const { slug } = await params;
+  const product = await fetchProduct(slug);
+
+  if (!product) notFound();
+
+  return (
+    <>
+      {/* JSON-LD in body — accepted by all major crawlers */}
+      <ProductJsonLd product={product} />
+
+      {/* ── Sticky header ── */}
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center gap-3">
+          <Link
+            href="/catalog"
+            className="flex items-center gap-1.5 text-foreground/60 hover:text-foreground transition-colors text-sm shrink-0"
+            aria-label="კატალოგზე დაბრუნება"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className="h-4 w-4 fill-current"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="hidden sm:inline">კატალოგი</span>
+          </Link>
+
+          <Link
+            href="/catalog"
+            className="font-bold text-lg tracking-tight text-foreground hover:text-primary transition-colors"
+          >
+            WishMotors
+          </Link>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-8 pb-20">
+        {/* ── Two-column layout: image left, details right ── */}
+        <div className="grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
+          {/* Left: product image */}
+          <ProductImage imageUrl={product.imageUrl} name={product.name} />
+
+          {/* Right: product details */}
+          <div className="flex flex-col gap-5">
+            {/* Category chip */}
+            {product.category && (
+              <span className="inline-flex w-fit px-3 py-1 rounded-full text-xs font-medium bg-secondary text-foreground/60 border border-border">
+                {product.category}
+              </span>
+            )}
+
+            {/* Name */}
+            <h1 className="text-2xl sm:text-3xl font-bold leading-snug">
+              {product.name}
+            </h1>
+
+            {/* OEM code */}
+            {product.oemCode && (
+              <p className="text-sm text-foreground/50">
+                OEM:{" "}
+                <span className="font-mono tracking-wide text-foreground/70">
+                  {product.oemCode}
+                </span>
+              </p>
+            )}
+
+            {/* Price */}
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold">₾{fmtPrice(product.price)}</span>
+              <span className="text-sm text-foreground/50">{product.unit}</span>
+            </div>
+
+            {/* Stock indicator */}
+            <div>
+              <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-success/10 text-success font-medium">
+                <span className="h-2 w-2 rounded-full bg-success inline-block" />
+                მარაგშია ({product.currentStock} {product.unit})
+              </span>
+            </div>
+
+            {/* Description */}
+            {product.description && (
+              <p className="text-sm text-foreground/70 leading-relaxed whitespace-pre-line">
+                {product.description}
+              </p>
+            )}
+
+            {/* Compatibility notes */}
+            {product.compatibilityNotes && (
+              <p className="text-xs text-foreground/50 leading-relaxed border-l-2 border-border pl-3">
+                {product.compatibilityNotes}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* ── 3 CTA buttons below both columns ── */}
+        <div className="mt-10">
+          <CtaButtons product={product} />
+        </div>
+
+        {/* ── Compatibility table ── */}
+        {product.compatibility.length > 0 && (
+          <div className="mt-14">
+            <CompatibilityTable entries={product.compatibility} />
+          </div>
+        )}
+      </main>
+    </>
+  );
+}
