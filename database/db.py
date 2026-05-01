@@ -1494,6 +1494,48 @@ class Database:
 
     # ─── Clients ──────────────────────────────────────────────────────────────
 
+    async def upsert_client_and_create_catalog_order(
+        self,
+        telegram_id: int,
+        full_name: Optional[str],
+        username: Optional[str],
+        product_id: int,
+        product_name: str,
+        oem_code: Optional[str],
+        price: float,
+        notes: Optional[str] = None,
+    ) -> int:
+        """Upsert the Telegram client and insert a catalog_orders row atomically.
+
+        Returns the new catalog_order id.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """INSERT INTO clients (id, full_name, username)
+                       VALUES ($1, $2, $3)
+                       ON CONFLICT (id) DO UPDATE
+                         SET full_name = COALESCE(EXCLUDED.full_name, clients.full_name),
+                             username  = COALESCE(EXCLUDED.username,  clients.username)""",
+                    telegram_id, full_name or None, username or None,
+                )
+                row = await conn.fetchrow(
+                    """INSERT INTO catalog_orders
+                           (product_id, product_name, oem_code, price, quantity,
+                            client_id, client_name, client_username, notes)
+                       VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8)
+                       RETURNING id""",
+                    product_id, product_name, oem_code, price,
+                    telegram_id, full_name, username, notes,
+                )
+        order_id: int = row["id"]
+        self._audit("catalog_order_created", {
+            "catalog_order_id": order_id,
+            "product_id": product_id,
+            "client_id": telegram_id,
+        }, reference_id=f"catalog_order:{order_id}")
+        return order_id
+
     async def upsert_client(
         self,
         telegram_id: int,

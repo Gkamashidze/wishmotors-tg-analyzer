@@ -59,18 +59,14 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
         return
 
     try:
-        await db.upsert_client(
+        order_id = await db.upsert_client_and_create_catalog_order(
             telegram_id=user.id,
             full_name=user.full_name,
             username=user.username,
-        )
-        order_id = await db.create_order(
             product_id=product["id"],
-            quantity_needed=1,
-            priority="urgent",
+            product_name=product["name"],
             oem_code=product["oem_code"],
-            part_name=product["name"],
-            client_id=user.id,
+            price=float(product["unit_price"]),
             notes="კატალოგიდან",
         )
     except Exception as exc:
@@ -97,7 +93,7 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
         parse_mode="HTML",
     )
 
-    logger.info("catalog deeplink: order #%d created product_id=%d user=%d", order_id, product_id, user.id)
+    logger.info("catalog deeplink: catalog_order #%d created product_id=%d user=%d", order_id, product_id, user.id)
 
     if message.bot is None:
         return
@@ -108,7 +104,7 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
         else html.escape(user.full_name or str(user.id))
     )
     notify_text = (
-        f"🛒 <b>კატალოგის შეკვეთა #{order_id}</b>\n"
+        f"🌐 <b>კატალოგის შეკვეთა #{order_id}</b>\n"
         f"პროდუქტი: {html.escape(product['name'])}"
         f"{oem_line}\n"
         f"ფასი: {price_str}\n"

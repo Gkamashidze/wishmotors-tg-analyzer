@@ -657,6 +657,36 @@ BEGIN
     UPDATE products SET slug = v_slug WHERE id = prod.id;
   END LOOP;
 END $$;
+
+-- clients table was sometimes created with only (id, created_at) before full_name/username
+-- were added. These idempotent ALTERs ensure the columns exist regardless.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS full_name TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS username  TEXT;
+
+-- ─── catalog_orders: orders placed by customers via the public catalog ────────
+-- Kept separate from `orders` (owner's internal supply management).
+-- status: new → confirmed → fulfilled | cancelled
+CREATE TABLE IF NOT EXISTS catalog_orders (
+    id              SERIAL PRIMARY KEY,
+    product_id      INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_name    TEXT           NOT NULL,
+    oem_code        TEXT,
+    price           NUMERIC(12, 2) NOT NULL,
+    quantity        INTEGER        NOT NULL DEFAULT 1,
+    status          TEXT           NOT NULL DEFAULT 'new',
+    client_id       BIGINT         REFERENCES clients(id) ON DELETE SET NULL,
+    client_name     TEXT,
+    client_username TEXT,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT catalog_orders_status_check CHECK (
+        status IN ('new', 'confirmed', 'fulfilled', 'cancelled')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_orders_created_at ON catalog_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_catalog_orders_status     ON catalog_orders(status);
+CREATE INDEX IF NOT EXISTS idx_catalog_orders_client_id  ON catalog_orders(client_id);
 """
 
 
