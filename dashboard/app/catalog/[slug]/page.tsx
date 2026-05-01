@@ -5,9 +5,13 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import {
   getPublicProduct,
+  getRelatedProducts,
   type PublicProductDetail,
+  type PublicProductMini,
   type CompatibilityRow,
 } from "@/lib/queries";
+import { TrackView } from "../_components/TrackView";
+import { RecentlyViewed } from "../_components/RecentlyViewed";
 
 // Deduplicates the DB call between generateMetadata and page render
 const fetchProduct = cache(getPublicProduct);
@@ -77,6 +81,38 @@ function ProductJsonLd({ product }: { product: PublicProductDetail }) {
       type="application/ld+json"
       dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
     />
+  );
+}
+
+// ─── Related products mini card ───────────────────────────────────────────────
+
+function RelatedCard({ p }: { p: PublicProductMini }) {
+  const price = new Intl.NumberFormat("ka-GE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(p.price);
+  return (
+    <Link
+      href={`/catalog/${p.slug}`}
+      className="shrink-0 w-40 rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+    >
+      <div className="relative aspect-video bg-secondary overflow-hidden">
+        {p.imageUrl ? (
+          <Image src={p.imageUrl} alt={p.name} fill unoptimized loading="lazy" className="object-cover" sizes="160px" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <svg className="h-7 w-7 text-foreground/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <div className="p-2.5 flex flex-col gap-1">
+        <p className="text-xs font-medium leading-snug line-clamp-2">{p.name}</p>
+        {p.oemCode && <p className="text-[10px] text-foreground/40 font-mono truncate">{p.oemCode}</p>}
+        <p className="text-sm font-semibold mt-0.5">₾{price}</p>
+      </div>
+    </Link>
   );
 }
 
@@ -303,10 +339,22 @@ export default async function ProductDetailPage({
 
   if (!product) notFound();
 
+  const models = product.compatibility.map((c) => c.model);
+  const related = await getRelatedProducts(product.id, product.category, models);
+
   return (
     <>
       {/* JSON-LD in body — accepted by all major crawlers */}
       <ProductJsonLd product={product} />
+
+      {/* Track this view in localStorage (client-only, invisible) */}
+      <TrackView
+        slug={product.slug}
+        name={product.name}
+        price={product.price}
+        imageUrl={product.imageUrl}
+        oemCode={product.oemCode}
+      />
 
       {/* ── Sticky header ── */}
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b">
@@ -423,6 +471,22 @@ export default async function ProductDetailPage({
             <CompatibilityTable entries={product.compatibility} />
           </div>
         )}
+
+        {/* ── Related products ── */}
+        {related.length > 0 && (
+          <section className="mt-14">
+            <h2 className="text-base font-semibold mb-4">მსგავსი პროდუქტები</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+              {related.map((p) => (
+                <RelatedCard key={p.id} p={p} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Recently viewed (client-side localStorage) ── */}
+        <RecentlyViewed currentSlug={product.slug} />
+
       </main>
     </>
   );

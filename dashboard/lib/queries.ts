@@ -1124,6 +1124,66 @@ export async function getPublicProduct(
   };
 }
 
+// ─── Related products ─────────────────────────────────────────────────────────
+
+export type PublicProductMini = {
+  id: number;
+  slug: string;
+  name: string;
+  oemCode: string | null;
+  category: string | null;
+  currentStock: number;
+  price: number;
+  imageUrl: string | null;
+};
+
+export async function getRelatedProducts(
+  productId: number,
+  category: string | null,
+  models: string[],
+  limit = 6,
+): Promise<PublicProductMini[]> {
+  noStore();
+  const rows = await query<{
+    id: number;
+    slug: string;
+    name: string;
+    oem_code: string | null;
+    category: string | null;
+    current_stock: number;
+    display_price: string;
+    image_url: string | null;
+  }>(
+    `SELECT p.id, p.slug, p.name, p.oem_code, p.category, p.current_stock,
+            COALESCE(p.recommended_price, p.unit_price) AS display_price,
+            p.image_url
+     FROM products p
+     WHERE p.is_published = TRUE
+       AND p.id <> $1
+       AND (
+         ($2::text IS NOT NULL AND p.category = $2)
+         OR EXISTS (
+           SELECT 1 FROM product_compatibility pc
+           WHERE pc.product_id = p.id
+             AND pc.model = ANY($3::text[])
+         )
+       )
+     ORDER BY p.name ASC
+     LIMIT $4`,
+    [productId, category, models.length > 0 ? models : [""], limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    oemCode: r.oem_code,
+    category: r.category,
+    currentStock: r.current_stock,
+    price: Number(r.display_price),
+    imageUrl: r.image_url,
+  }));
+}
+
 export async function getPublicCategories(): Promise<string[]> {
   noStore();
   const rows = await query<{ category: string }>(
