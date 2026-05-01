@@ -30,7 +30,9 @@ export function middleware(req: NextRequest) {
     path === "/about" ||
     path === "/delivery" ||
     path === "/sitemap.xml" ||
-    path === "/robots.txt"
+    path === "/robots.txt" ||
+    path === "/manifest.webmanifest" ||
+    path.startsWith("/icons/")
   ) {
     return applySecurityHeaders(NextResponse.next());
   }
