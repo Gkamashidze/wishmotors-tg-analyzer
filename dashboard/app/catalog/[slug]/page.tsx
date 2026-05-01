@@ -194,11 +194,17 @@ function CtaButtons({ product }: { product: PublicProductDetail }) {
   const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE ?? "";
   const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "";
   const contactPhone = process.env.NEXT_PUBLIC_CONTACT_PHONE ?? "";
+  const catalogBaseUrl =
+    process.env.NEXT_PUBLIC_CATALOG_BASE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    "";
 
+  const oem = product.oemCode ? ` (OEM: ${product.oemCode})` : "";
+  const productUrl = catalogBaseUrl
+    ? ` ${catalogBaseUrl}/catalog/${product.slug}`
+    : "";
   const waText = encodeURIComponent(
-    `გამარჯობა! მაინტერესებს ${product.name}${
-      product.oemCode ? ` (OEM: ${product.oemCode})` : ""
-    }. შეგიძლიათ ფასისა და მარაგის შესახებ?`,
+    `გამარჯობა! მაინტერესებს ${product.name}${oem}. შეგიძლიათ ფასისა და მარაგის შესახებ?${productUrl}`,
   );
 
   const waHref = waPhone ? `https://wa.me/${waPhone}?text=${waText}` : null;
@@ -235,23 +241,28 @@ function CtaButtons({ product }: { product: PublicProductDetail }) {
       </a>
 
       {/* Telegram */}
-      <a
-        href={tgHref ?? "#"}
-        target={tgHref ? "_blank" : undefined}
-        rel="noopener noreferrer"
-        aria-label="Telegram-ით დაკავშირება"
-        className={`${base} text-white`}
-        style={{ backgroundColor: "#229ED9" }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          className="h-5 w-5 fill-current shrink-0"
-          aria-hidden="true"
+      <div className="flex flex-col">
+        <a
+          href={tgHref ?? "#"}
+          target={tgHref ? "_blank" : undefined}
+          rel="noopener noreferrer"
+          aria-label="Telegram-ით დაკავშირება"
+          className={`${base} text-white`}
+          style={{ backgroundColor: "#229ED9" }}
         >
-          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z" />
-        </svg>
-        Telegram
-      </a>
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5 fill-current shrink-0"
+            aria-hidden="true"
+          >
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z" />
+          </svg>
+          Telegram
+        </a>
+        <p className="text-xs text-center text-foreground/40 mt-1">
+          ღილაკზე დაჭერის შემდეგ ბოტში &bdquo;Start&rdquo;-ს დააჭირეთ
+        </p>
+      </div>
 
       {/* Phone */}
       <a
