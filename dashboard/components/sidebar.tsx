@@ -50,8 +50,13 @@ const BOTTOM_NAV: NavItem[] = [
   { href: "#", label: "დახმარება", icon: LifeBuoy },
 ];
 
+const PUBLIC_PATH_PREFIXES = ["/catalog", "/about", "/delivery", "/track"];
+
 export function Sidebar() {
   const pathname = usePathname();
+  if (PUBLIC_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return null;
+  }
   return (
     <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-border bg-card">
       <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
