@@ -4,10 +4,14 @@ import { Search } from "lucide-react";
 import {
   getPublicCatalog,
   getPublicCategories,
+  getPopularProducts,
   type PublicProductItem,
+  type PublicProductMini,
 } from "@/lib/queries";
 import SearchBar from "./_components/SearchBar";
 import { VehiclePicker } from "./_components/VehiclePicker";
+import { SortBar } from "./_components/SortBar";
+import type { CatalogSortOption } from "@/lib/queries";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,6 +22,9 @@ type PageProps = {
     model?: string;
     engine?: string;
     year?: string;
+    sort?: string;
+    priceMin?: string;
+    priceMax?: string;
     page?: string;
   }>;
 };
@@ -147,6 +154,36 @@ function TrustStrip() {
 
 // ─── Product card ─────────────────────────────────────────────────────────────
 
+function PopularMiniCard({ p }: { p: PublicProductMini }) {
+  const price = new Intl.NumberFormat("ka-GE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(p.price);
+  return (
+    <Link
+      href={`/catalog/${p.slug}`}
+      className="shrink-0 w-40 rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+    >
+      <div className="relative aspect-video bg-secondary overflow-hidden">
+        {p.imageUrl ? (
+          <Image src={p.imageUrl} alt={p.name} fill unoptimized loading="lazy" className="object-cover" sizes="160px" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <svg className="h-7 w-7 text-foreground/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <div className="p-2.5 flex flex-col gap-1">
+        <p className="text-xs font-medium leading-snug line-clamp-2">{p.name}</p>
+        {p.oemCode && <p className="text-[10px] text-foreground/40 font-mono truncate">{p.oemCode}</p>}
+        <p className="text-sm font-semibold mt-0.5">₾{price}</p>
+      </div>
+    </Link>
+  );
+}
+
 function ProductCard({ product }: { product: PublicProductItem }) {
   const price = new Intl.NumberFormat("ka-GE", {
     minimumFractionDigits: 2,
@@ -157,6 +194,11 @@ function ProductCard({ product }: { product: PublicProductItem }) {
     <article className="rounded-xl border bg-card shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-col">
       {/* 16:9 image */}
       <div className="relative aspect-video bg-secondary overflow-hidden">
+        {product.isNew && (
+          <span className="absolute top-2 left-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary text-primary-foreground uppercase tracking-wide">
+            ახალი
+          </span>
+        )}
         {product.imageUrl ? (
           <Image
             src={product.imageUrl}
@@ -382,6 +424,9 @@ export default async function CatalogPage({ searchParams }: PageProps) {
     model: rawModel,
     engine: rawEngine,
     year: rawYear,
+    sort: rawSort,
+    priceMin: rawPriceMin,
+    priceMax: rawPriceMax,
     page: rawPage,
   } = await searchParams;
 
@@ -390,19 +435,28 @@ export default async function CatalogPage({ searchParams }: PageProps) {
   const currentModel = rawModel?.trim() || undefined;
   const currentEngine = rawEngine?.trim() || undefined;
   const currentYear = rawYear ? Number(rawYear) : undefined;
+  const currentSort = (rawSort as CatalogSortOption | undefined) || undefined;
+  const currentPriceMin = rawPriceMin ? Number(rawPriceMin) : undefined;
+  const currentPriceMax = rawPriceMax ? Number(rawPriceMax) : undefined;
   const currentPage = Math.max(1, Number(rawPage ?? 1));
 
-  const [catalog, categories] = await Promise.all([
+  const showPopular = !currentSearch && !currentCategory && !currentModel && currentPage === 1;
+
+  const [catalog, categories, popular] = await Promise.all([
     getPublicCatalog({
       category: currentCategory,
       search: currentSearch,
       model: currentModel,
       engine: currentEngine,
       year: currentYear,
+      sort: currentSort,
+      priceMin: currentPriceMin,
+      priceMax: currentPriceMax,
       page: currentPage,
       limit: 24,
     }),
     getPublicCategories(),
+    showPopular ? getPopularProducts(8).catch(() => []) : Promise.resolve([]),
   ]);
 
   return (
@@ -426,6 +480,18 @@ export default async function CatalogPage({ searchParams }: PageProps) {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
         {/* ── Trust badges ── */}
         <TrustStrip />
+
+        {/* ── Popular products (homepage only) ── */}
+        {popular.length > 0 && (
+          <section className="mb-6">
+            <h2 className="text-sm font-semibold mb-3 text-foreground/70">🔥 პოპულარული</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+              {popular.map((p) => (
+                <PopularMiniCard key={p.id} p={p} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Delivery banner ── */}
         <Link
@@ -482,11 +548,14 @@ export default async function CatalogPage({ searchParams }: PageProps) {
           </div>
         )}
 
-        {/* ── Results count ── */}
+        {/* ── Results count + Sort ── */}
         {catalog.total > 0 && (
-          <p className="text-sm text-foreground/50 mb-4">
-            {catalog.total.toLocaleString("ka-GE")} პროდუქტი
-          </p>
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <p className="text-sm text-foreground/50">
+              {catalog.total.toLocaleString("ka-GE")} პროდუქტი
+            </p>
+            <SortBar currentSort={currentSort} />
+          </div>
         )}
 
         {/* ── Product grid / Empty state ── */}

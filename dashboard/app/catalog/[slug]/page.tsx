@@ -12,6 +12,7 @@ import {
 } from "@/lib/queries";
 import { TrackView } from "../_components/TrackView";
 import { RecentlyViewed } from "../_components/RecentlyViewed";
+import { ShareButton } from "../_components/ShareButton";
 
 // Deduplicates the DB call between generateMetadata and page render
 const fetchProduct = cache(getPublicProduct);
@@ -460,9 +461,13 @@ export default async function ProductDetailPage({
           </div>
         </div>
 
-        {/* ── 3 CTA buttons below both columns ── */}
-        <div className="mt-10">
+        {/* ── CTAs + Share below both columns ── */}
+        <div className="mt-10 space-y-3">
           <CtaButtons product={product} />
+          <ShareButton
+            name={product.name}
+            url={`${process.env.NEXT_PUBLIC_CATALOG_BASE_URL ?? ""}/catalog/${product.slug}`}
+          />
         </div>
 
         {/* ── Compatibility table ── */}

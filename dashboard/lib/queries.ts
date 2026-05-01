@@ -856,6 +856,7 @@ export type PublicProductItem = {
   price: number;
   imageUrl: string | null;
   compatibility: CompatibilityRow[];
+  isNew: boolean;
 };
 
 export type PublicCatalogResult = {
@@ -938,12 +939,17 @@ export async function getCatalogYearRangeByModel(
   return { min: Number(row.y_min), max: Number(row.y_max) };
 }
 
+export type CatalogSortOption = "name_asc" | "price_asc" | "price_desc" | "newest";
+
 export async function getPublicCatalog(filters: {
   category?: string;
   search?: string;
   model?: string;
   engine?: string;
   year?: number;
+  sort?: CatalogSortOption;
+  priceMin?: number;
+  priceMax?: number;
   page?: number;
   limit?: number;
 }): Promise<PublicCatalogResult> {
@@ -988,6 +994,16 @@ export async function getPublicCatalog(filters: {
     conditions.push(vehicleExists);
   }
 
+  if (filters.priceMin != null) {
+    params.push(filters.priceMin);
+    conditions.push(`COALESCE(p.recommended_price, p.unit_price) >= $${params.length}`);
+  }
+
+  if (filters.priceMax != null) {
+    params.push(filters.priceMax);
+    conditions.push(`COALESCE(p.recommended_price, p.unit_price) <= $${params.length}`);
+  }
+
   const rows = await query<{
     id: number;
     slug: string;
@@ -997,6 +1013,7 @@ export async function getPublicCatalog(filters: {
     current_stock: number;
     display_price: string;
     image_url: string | null;
+    is_new: boolean;
     compatibility: CompatibilityRow[];
     total_count: string;
   }>(
@@ -1009,6 +1026,7 @@ export async function getPublicCatalog(filters: {
        p.current_stock,
        COALESCE(p.recommended_price, p.unit_price) AS display_price,
        p.image_url,
+       (p.created_at >= NOW() - INTERVAL '30 days') AS is_new,
        COALESCE(
          json_agg(
            json_build_object(
@@ -1028,7 +1046,12 @@ export async function getPublicCatalog(filters: {
      LEFT JOIN product_compatibility pc ON pc.product_id = p.id
      WHERE ${conditions.join(" AND ")}
      GROUP BY p.id
-     ORDER BY p.name ASC
+     ORDER BY ${
+       filters.sort === "price_asc"  ? "display_price ASC, p.name ASC" :
+       filters.sort === "price_desc" ? "display_price DESC, p.name ASC" :
+       filters.sort === "newest"     ? "p.created_at DESC" :
+       "p.name ASC"
+     }
      LIMIT $1 OFFSET $2`,
     params,
   );
@@ -1045,6 +1068,7 @@ export async function getPublicCatalog(filters: {
       currentStock: r.current_stock,
       price: Number(r.display_price),
       imageUrl: r.image_url,
+      isNew: r.is_new ?? false,
       compatibility: r.compatibility ?? [],
     })),
     total,
@@ -1171,6 +1195,50 @@ export async function getRelatedProducts(
      ORDER BY p.name ASC
      LIMIT $4`,
     [productId, category, models.length > 0 ? models : [""], limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    oemCode: r.oem_code,
+    category: r.category,
+    currentStock: r.current_stock,
+    price: Number(r.display_price),
+    imageUrl: r.image_url,
+  }));
+}
+
+// ─── Popular products (top sellers last 60 days, published) ───────────────────
+
+export async function getPopularProducts(limit = 8): Promise<PublicProductMini[]> {
+  noStore();
+  const rows = await query<{
+    id: number;
+    slug: string;
+    name: string;
+    oem_code: string | null;
+    category: string | null;
+    current_stock: number;
+    display_price: string;
+    image_url: string | null;
+  }>(
+    `SELECT p.id, p.slug, p.name, p.oem_code, p.category, p.current_stock,
+            COALESCE(p.recommended_price, p.unit_price) AS display_price,
+            p.image_url
+     FROM products p
+     INNER JOIN (
+       SELECT product_id, SUM(quantity) AS total_qty
+       FROM sales
+       WHERE sold_at >= NOW() - INTERVAL '60 days'
+         AND status != 'returned'
+         AND product_id IS NOT NULL
+       GROUP BY product_id
+       ORDER BY total_qty DESC
+       LIMIT $1
+     ) top ON top.product_id = p.id
+     WHERE p.is_published = TRUE
+     ORDER BY top.total_qty DESC`,
+    [limit],
   );
   return rows.map((r) => ({
     id: r.id,
