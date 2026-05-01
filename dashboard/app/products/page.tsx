@@ -2,7 +2,7 @@ import { TopBar } from "@/components/top-bar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProductsTable } from "@/components/dashboard/products-table";
 import { FixUnknownsPanel } from "@/components/dashboard/fix-unknowns-panel";
-import { getProductsPaged } from "@/lib/queries";
+import { getProductsPaged, getPublishedProductCount } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,7 +15,10 @@ export default async function ProductsPage({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1));
   const search = params.search ?? "";
-  const { rows: products, total } = await getProductsPaged(page, undefined, search);
+  const [{ rows: products, total }, publishedCount] = await Promise.all([
+    getProductsPaged(page, undefined, search),
+    getPublishedProductCount(),
+  ]);
 
   return (
     <>
@@ -38,10 +41,17 @@ export default async function ProductsPage({
 
         <Card>
           <CardHeader>
-            <CardTitle>პროდუქციის კატალოგი</CardTitle>
-            <CardDescription>
-              ყველა პროდუქტი — OEM კოდი, დასახელება, ნახვა, რედაქტირება
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>პროდუქციის კატალოგი</CardTitle>
+                <CardDescription>
+                  ყველა პროდუქტი — OEM კოდი, დასახელება, ნახვა, რედაქტირება
+                </CardDescription>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap">
+                გამოქვეყნებული: {publishedCount.published} / {publishedCount.total}
+              </span>
+            </div>
           </CardHeader>
           <CardContent>
             <ProductsTable rows={products} total={total} page={page} search={search} />

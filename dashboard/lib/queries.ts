@@ -445,6 +445,9 @@ export type ProductRow = {
   compatCount: number;
   createdAt: string;
   imageUrl: string | null;
+  slug: string | null;
+  isPublished: boolean;
+  description: string | null;
 };
 
 export type CompatibilityRow = {
@@ -828,6 +831,9 @@ export async function getProducts(): Promise<ProductRow[]> {
         ? r.created_at.toISOString()
         : String(r.created_at),
     imageUrl: r.image_url,
+    slug: null,
+    isPublished: false,
+    description: null,
   }));
 }
 
@@ -1073,6 +1079,9 @@ export async function getProductsPaged(
     created_at: Date;
     total_count: string;
     image_url: string | null;
+    slug: string | null;
+    is_published: boolean;
+    description: string | null;
   }>(
     `WITH cc AS (
        SELECT product_id, COUNT(*) AS cnt FROM product_compatibility GROUP BY product_id
@@ -1081,7 +1090,7 @@ export async function getProductsPaged(
             p.category, p.compatibility_notes, p.created_at,
             COALESCE(cc.cnt, 0) AS compat_count,
             COUNT(*) OVER() AS total_count,
-            p.image_url
+            p.image_url, p.slug, p.is_published, p.description
      FROM products p
      LEFT JOIN cc ON cc.product_id = p.id
      ${whereClause}
@@ -1108,7 +1117,23 @@ export async function getProductsPaged(
           ? r.created_at.toISOString()
           : String(r.created_at),
       imageUrl: r.image_url,
+      slug: r.slug,
+      isPublished: r.is_published,
+      description: r.description,
     })),
     total,
+  };
+}
+
+export async function getPublishedProductCount(): Promise<{ published: number; total: number }> {
+  const row = await queryOne<{ published: string; total: string }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE is_published = TRUE) AS published,
+       COUNT(*) AS total
+     FROM products`,
+  );
+  return {
+    published: Number(row?.published ?? 0),
+    total: Number(row?.total ?? 0),
   };
 }

@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, ChevronDown, ChevronUp } from "lucide-react";
+import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -132,6 +134,35 @@ interface NewCompatState {
 
 const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", fuel_type: "", year_from: "", year_to: "" };
 
+// ─── Georgian → Latin transliteration (for slug suggestion) ──────────────────
+
+const GEO_LATIN: Record<string, string> = {
+  ა: "a", ბ: "b", გ: "g", დ: "d", ე: "e", ვ: "v", ზ: "z",
+  თ: "t", ი: "i", კ: "k", ლ: "l", მ: "m", ნ: "n", ო: "o",
+  პ: "p", ჟ: "zh", რ: "r", ს: "s", ტ: "t", უ: "u", ფ: "f",
+  ქ: "k", ღ: "gh", ყ: "k", შ: "sh", ჩ: "ch", ც: "ts", ძ: "dz",
+  წ: "ts", ჭ: "ch", ხ: "kh", ჯ: "j", ჰ: "h",
+};
+
+function nameToSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .split("")
+    .map((c) => GEO_LATIN[c] ?? c)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 200);
+}
+
+// ─── Catalog inline edit state ────────────────────────────────────────────────
+
+interface CatalogEditState {
+  slug: string;
+  description: string;
+  image_url: string;
+}
+
 // ─── Product edit / add state ─────────────────────────────────────────────────
 
 interface EditState {
@@ -220,6 +251,14 @@ export function ProductsTable({
   const [search, setSearch] = useState(initialSearch);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
+
+  // Catalog publish / inline edit state
+  const [publishedMap, setPublishedMap] = useState<Record<number, boolean>>(
+    () => Object.fromEntries(rows.map((r) => [r.id, r.isPublished])),
+  );
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [catalogEdit, setCatalogEdit] = useState<CatalogEditState | null>(null);
+  const [catalogSaving, setCatalogSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/products/metrics")
@@ -678,6 +717,82 @@ export function ProductsTable({
     }
   }, [writeoffRow, writeoffQty, writeoffReason, closeWriteoff, router]);
 
+  // ── Catalog publish toggle ──────────────────────────────────────────────────
+
+  const handleTogglePublish = useCallback(async (r: ProductRow) => {
+    const next = !publishedMap[r.id];
+    setPublishedMap((prev) => ({ ...prev, [r.id]: next }));
+    try {
+      const res = await fetch(`/api/products/${r.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_published: next }),
+      });
+      if (!res.ok) throw new Error("server error");
+      toast.success(next ? "გამოქვეყნდა" : "დაიმალა");
+    } catch {
+      setPublishedMap((prev) => ({ ...prev, [r.id]: !next }));
+      toast.error("შეცდომა");
+    }
+  }, [publishedMap]);
+
+  // ── Catalog inline expand/save ───────────────────────────────────────────────
+
+  const openExpand = useCallback((r: ProductRow) => {
+    if (expandedId === r.id) {
+      setExpandedId(null);
+      setCatalogEdit(null);
+      return;
+    }
+    setExpandedId(r.id);
+    setCatalogEdit({
+      slug: r.slug ?? "",
+      description: r.description ?? "",
+      image_url: r.imageUrl ?? "",
+    });
+  }, [expandedId]);
+
+  const handleSaveCatalog = useCallback(async (r: ProductRow) => {
+    if (!catalogEdit) return;
+    const original: CatalogEditState = {
+      slug: r.slug ?? "",
+      description: r.description ?? "",
+      image_url: r.imageUrl ?? "",
+    };
+    const payload: Record<string, unknown> = {};
+    if (catalogEdit.slug !== original.slug) payload.slug = catalogEdit.slug;
+    if (catalogEdit.description !== original.description) payload.description = catalogEdit.description || null;
+    if (catalogEdit.image_url !== original.image_url) payload.image_url = catalogEdit.image_url || null;
+    if (Object.keys(payload).length === 0) {
+      setExpandedId(null);
+      setCatalogEdit(null);
+      return;
+    }
+    setCatalogSaving(true);
+    try {
+      const res = await fetch(`/api/products/${r.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 409) {
+        toast.error("ეს slug სხვა პროდუქტს უჭირავს");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(body.error ?? "შეცდომა");
+        return;
+      }
+      toast.success("შენახულია");
+      setExpandedId(null);
+      setCatalogEdit(null);
+      router.refresh();
+    } finally {
+      setCatalogSaving(false);
+    }
+  }, [catalogEdit, router]);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -714,6 +829,7 @@ export function ProductsTable({
               <TableHead className="w-20">ერთეული</TableHead>
               <TableHead className="w-28 text-right">გასაყიდი ფასი</TableHead>
               <TableHead>თავსებადობა / შენ.</TableHead>
+              <TableHead className="w-24 text-center">კატალოგი</TableHead>
               <TableHead className="w-24 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
@@ -725,59 +841,207 @@ export function ProductsTable({
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((r, idx) => (
-                <TableRow key={r.id}>
-                  <TableCell className="tabular-nums text-muted-foreground text-xs">
-                    {(page - 1) * PRODUCTS_PAGE_SIZE + idx + 1}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {r.oemCode ?? <span className="italic">—</span>}
-                  </TableCell>
-                  <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {r.category ?? <span className="italic text-xs">—</span>}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {r.unit}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm font-medium">
-                    {formatGEL(r.unitPrice)}
-                  </TableCell>
-                  <TableCell className="text-xs max-w-[200px] truncate">
-                    {r.compatCount > 0 ? (
-                      <span className="text-[hsl(var(--success))] font-medium">✓ {r.compatCount} ჩანაწ.</span>
-                    ) : r.compatibilityNotes ? (
-                      <span className="text-muted-foreground truncate">{r.compatibilityNotes}</span>
-                    ) : (
-                      <span className="italic text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Tooltip label="ნახვა">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="რედაქტირება">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="ჩამოწერა">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => openWriteoff(r)} aria-label="ჩამოწერა">
-                          <PackageMinus className="h-3.5 w-3.5" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="წაშლა">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </Tooltip>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              filtered.flatMap((r, idx) => {
+                const isExpanded = expandedId === r.id;
+                const isPublished = publishedMap[r.id] ?? r.isPublished;
+                const mainRow = (
+                  <TableRow key={r.id}>
+                    <TableCell className="tabular-nums text-muted-foreground text-xs">
+                      {(page - 1) * PRODUCTS_PAGE_SIZE + idx + 1}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {r.oemCode ?? <span className="italic">—</span>}
+                    </TableCell>
+                    <TableCell className="font-medium">{r.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {r.category ?? <span className="italic text-xs">—</span>}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {r.unit}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-sm font-medium">
+                      {formatGEL(r.unitPrice)}
+                    </TableCell>
+                    <TableCell className="text-xs max-w-[200px] truncate">
+                      {r.compatCount > 0 ? (
+                        <span className="text-[hsl(var(--success))] font-medium">✓ {r.compatCount} ჩანაწ.</span>
+                      ) : r.compatibilityNotes ? (
+                        <span className="text-muted-foreground truncate">{r.compatibilityNotes}</span>
+                      ) : (
+                        <span className="italic text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={isPublished}
+                        onCheckedChange={() => handleTogglePublish(r)}
+                        aria-label={isPublished ? "კატალოგიდან დამალვა" : "კატალოგში გამოქვეყნება"}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Tooltip label="კატალოგის რედ.">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 cursor-pointer"
+                            onClick={() => openExpand(r)}
+                            aria-label="კატალოგის რედაქტირება"
+                          >
+                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="ნახვა">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="რედაქტირება">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => openEdit(r)} aria-label="რედაქტირება">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="ჩამოწერა">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => openWriteoff(r)} aria-label="ჩამოწერა">
+                            <PackageMinus className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="წაშლა">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive cursor-pointer" onClick={() => setDeleteRow(r)} aria-label="წაშლა">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+
+                if (!isExpanded || !catalogEdit) return [mainRow];
+
+                const suggestedSlug = !r.slug ? nameToSlug(r.name) : "";
+                const previewUrl = catalogEdit.image_url.startsWith("http")
+                  ? catalogEdit.image_url
+                  : null;
+
+                const expandRow = (
+                  <TableRow key={`${r.id}-expand`} className="bg-muted/30 border-t-0">
+                    <TableCell colSpan={9} className="py-4 px-6">
+                      <div className="space-y-3 max-w-2xl">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          კატალოგის ინფო — {r.name}
+                        </p>
+
+                        {/* Slug */}
+                        <div className="space-y-1">
+                          <label htmlFor={`slug-${r.id}`} className="text-xs font-medium text-muted-foreground">
+                            Slug (URL identifier)
+                          </label>
+                          <input
+                            id={`slug-${r.id}`}
+                            type="text"
+                            value={catalogEdit.slug}
+                            onChange={(e) =>
+                              setCatalogEdit((prev) =>
+                                prev ? { ...prev, slug: e.target.value } : prev,
+                              )
+                            }
+                            placeholder={suggestedSlug || "product-slug"}
+                            className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          {suggestedSlug && !catalogEdit.slug && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCatalogEdit((prev) =>
+                                  prev ? { ...prev, slug: suggestedSlug } : prev,
+                                )
+                              }
+                              className="text-xs text-primary hover:underline cursor-pointer"
+                            >
+                              ↳ გამოიყენე: {suggestedSlug}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Description */}
+                        <div className="space-y-1">
+                          <label htmlFor={`desc-${r.id}`} className="text-xs font-medium text-muted-foreground">
+                            აღწერა (მაქს. 2000 სიმბოლო)
+                          </label>
+                          <textarea
+                            id={`desc-${r.id}`}
+                            rows={4}
+                            maxLength={2000}
+                            value={catalogEdit.description}
+                            onChange={(e) =>
+                              setCatalogEdit((prev) =>
+                                prev ? { ...prev, description: e.target.value } : prev,
+                              )
+                            }
+                            placeholder="პროდუქტის დეტალური აღწერა..."
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                          />
+                          <p className="text-xs text-muted-foreground text-right">
+                            {catalogEdit.description.length} / 2000
+                          </p>
+                        </div>
+
+                        {/* Image URL */}
+                        <div className="space-y-1">
+                          <label htmlFor={`imgurl-${r.id}`} className="text-xs font-medium text-muted-foreground">
+                            სურათის URL
+                          </label>
+                          <input
+                            id={`imgurl-${r.id}`}
+                            type="url"
+                            value={catalogEdit.image_url}
+                            onChange={(e) =>
+                              setCatalogEdit((prev) =>
+                                prev ? { ...prev, image_url: e.target.value } : prev,
+                              )
+                            }
+                            placeholder="https://..."
+                            className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          {previewUrl && (
+                            <div className="mt-2 w-32 h-20 rounded-md border border-border overflow-hidden bg-muted/30">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={previewUrl}
+                                alt="preview"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSaveCatalog(r)}
+                            disabled={catalogSaving}
+                            className="cursor-pointer"
+                          >
+                            {catalogSaving ? "ინახება..." : "შენახვა"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { setExpandedId(null); setCatalogEdit(null); }}
+                            disabled={catalogSaving}
+                            className="cursor-pointer"
+                          >
+                            გაუქმება
+                          </Button>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+
+                return [mainRow, expandRow];
+              })
             )}
           </TableBody>
         </Table>

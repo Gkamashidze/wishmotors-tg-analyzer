@@ -125,6 +125,9 @@ function ProductCard({ product }: { product: PublicProductItem }) {
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState() {
+  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
+
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
       <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
@@ -133,15 +136,20 @@ function EmptyState() {
       <div>
         <p className="text-lg font-medium">ვერ მოიძებნა</p>
         <p className="text-sm text-foreground/60 mt-1">
-          სხვა საძიებო სიტყვა სცადეთ ან{" "}
-          <a
-            href="https://t.me/wishmotors"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline underline-offset-2 hover:text-primary/80"
-          >
-            დაგვიკავშირდით
-          </a>
+          სხვა საძიებო სიტყვა სცადეთ
+          {tgHref && (
+            <>
+              {" "}ან{" "}
+              <a
+                href={tgHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline underline-offset-2 hover:text-primary/80"
+              >
+                დაგვიკავშირდით
+              </a>
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -230,6 +238,46 @@ function Pagination({
         </Link>
       )}
     </nav>
+  );
+}
+
+// ─── Footer contact ───────────────────────────────────────────────────────────
+
+function FooterContact() {
+  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
+  const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
+  const waHref = waPhone ? `https://wa.me/${waPhone}` : null;
+
+  if (!tgHref && !waHref) return null;
+
+  return (
+    <div className="mt-16 pb-8 text-center text-sm text-foreground/40 space-y-1">
+      <p>ვერ პოულობთ სასურველ ნაწილს?</p>
+      <p>
+        {tgHref && (
+          <a
+            href={tgHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            Telegram
+          </a>
+        )}
+        {tgHref && waHref && " · "}
+        {waHref && (
+          <a
+            href={waHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            WhatsApp
+          </a>
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -328,28 +376,7 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         )}
 
         {/* ── Footer contact nudge ── */}
-        <div className="mt-16 pb-8 text-center text-sm text-foreground/40 space-y-1">
-          <p>ვერ პოულობთ სასურველ ნაწილს?</p>
-          <p>
-            <a
-              href="https://t.me/wishmotors"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              Telegram
-            </a>{" "}
-            ·{" "}
-            <a
-              href="https://wa.me/995000000000"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              WhatsApp
-            </a>
-          </p>
-        </div>
+        <FooterContact />
       </main>
     </div>
   );
