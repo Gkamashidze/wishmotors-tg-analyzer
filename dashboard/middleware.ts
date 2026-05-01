@@ -28,6 +28,7 @@ export function middleware(req: NextRequest) {
     path === "/catalog" ||
     path.startsWith("/catalog/") ||
     path === "/about" ||
+    path === "/delivery" ||
     path === "/sitemap.xml" ||
     path === "/robots.txt"
   ) {

@@ -427,6 +427,15 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         {/* ── Trust badges ── */}
         <TrustStrip />
 
+        {/* ── Delivery banner ── */}
+        <Link
+          href="/delivery"
+          className="flex items-center justify-between gap-2 mb-4 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20 text-sm text-foreground/70 hover:bg-primary/10 transition-colors"
+        >
+          <span>🚚 მიწოდება მთელ საქართველოში · Bog Pay · TBC Pay · ნაღდი</span>
+          <span className="text-primary shrink-0">დეტალები →</span>
+        </Link>
+
         {/* ── Vehicle picker ── */}
         <VehiclePicker />
 

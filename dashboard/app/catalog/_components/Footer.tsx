@@ -112,8 +112,8 @@ export default function Footer() {
                 </Link>
               </p>
               <p>
-                <Link href="/delivery" className="hover:text-foreground/40 transition-colors">
-                  მიწოდება
+                <Link href="/delivery" className="hover:text-primary transition-colors">
+                  მიწოდება და გადახდა
                 </Link>
               </p>
               {hasSocial && (
