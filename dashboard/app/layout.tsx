@@ -15,6 +15,9 @@ export const metadata: Metadata = {
   title: "WishMotors — Sales Console",
   description:
     "ავტონაწილების გაყიდვების, ხარჯებისა და შეკვეთების მართვის დაფა",
+  verification: {
+    google: "pCz3tHjo8HfescsEYSeUAunD4JVKQAiJ6PDJc0Mm368",
+  },
 };
 
 export default function RootLayout({
