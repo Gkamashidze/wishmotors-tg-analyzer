@@ -1,7 +1,8 @@
 """AI-powered product search using the full catalog + Claude."""
+import asyncio
 import json
 import logging
-from typing import List
+from typing import Any, List, Optional
 
 import config
 
@@ -66,10 +67,23 @@ def _build_catalog_text(products: List[dict]) -> str:
     return "\n".join(lines)
 
 
-async def search_catalog(query: str, products: List[dict]) -> List[int]:
+def _fire_and_forget_log(db: Any, query: str) -> None:
+    """Schedule a lost-search log write without blocking the caller."""
+    try:
+        asyncio.get_running_loop().create_task(
+            db.log_lost_search(query.strip(), "bot_search")
+        )
+    except Exception:
+        pass
+
+
+async def search_catalog(
+    query: str, products: List[dict], db: Optional[Any] = None
+) -> List[int]:
     """Ask Claude to match `query` against the product catalog.
 
     Returns a list of matching product IDs (may be empty).
+    Logs zero-result searches to lost_searches if `db` is provided.
     """
     if not products:
         return []
@@ -113,7 +127,10 @@ async def search_catalog(query: str, products: List[dict]) -> List[int]:
     try:
         ids = json.loads(raw)
         if isinstance(ids, list):
-            return [int(i) for i in ids if str(i).lstrip("-").isdigit()]
+            result = [int(i) for i in ids if str(i).lstrip("-").isdigit()]
+            if not result and db is not None and query.strip():
+                _fire_and_forget_log(db, query)
+            return result
     except Exception:
         logger.warning("Could not parse Claude response as JSON: %r", raw)
     return []

@@ -17,6 +17,7 @@ import {
   FileText,
   UserX,
   ShoppingCart,
+  SearchX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ const NAV: NavItem[] = [
   { href: "/vat", label: "დღგ-ს დეკლარაცია", icon: FileText },
   { href: "/debtors", label: "ნისია", icon: UserX },
   { href: "/personal-orders", label: "კერძო შეკვეთები", icon: ShoppingCart },
+  { href: "/lost-searches", label: "ვერ-ნაპოვნი ძიებები", icon: SearchX },
 ];
 
 const BOTTOM_NAV: NavItem[] = [

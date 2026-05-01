@@ -691,6 +691,33 @@ CREATE INDEX IF NOT EXISTS idx_catalog_orders_client_id  ON catalog_orders(clien
 -- updated_at for products (used by sitemap for lastModified)
 ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at DESC);
+
+-- item_type: inventory (საქონელი) | fixed_asset (ძირ. საშ.) | consumable (სახარჯი)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'inventory';
+
+-- backfill from most recent import_items entry per product
+UPDATE products p
+SET item_type = sub.item_type
+FROM (
+  SELECT DISTINCT ON (product_id) product_id, item_type
+  FROM import_items
+  WHERE item_type IS NOT NULL
+  ORDER BY product_id, id DESC
+) sub
+WHERE sub.product_id = p.id
+  AND p.item_type = 'inventory';
+
+-- Lost search log: every zero-result catalog search is recorded here.
+-- Used as a shopping list for items to import next.
+CREATE TABLE IF NOT EXISTS lost_searches (
+    id               SERIAL PRIMARY KEY,
+    query            TEXT           NOT NULL,
+    source           TEXT           NOT NULL DEFAULT 'catalog',
+    results_count    INTEGER        NOT NULL DEFAULT 0,
+    created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_lost_searches_created ON lost_searches(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lost_searches_query   ON lost_searches(LOWER(query));
 """
 
 
@@ -720,6 +747,7 @@ class ProductRow(TypedDict):
     is_published: bool
     description: Optional[str]
     image_url: Optional[str]
+    item_type: str  # 'inventory' | 'fixed_asset' | 'consumable'
     created_at: object  # datetime in practice
     updated_at: object  # datetime in practice
 

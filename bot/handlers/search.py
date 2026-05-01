@@ -107,7 +107,7 @@ async def handle_search(message: Message, db: Database) -> None:
 
     try:
         products = await db.get_catalog_for_search()
-        matched_ids = await search_catalog(query, products)
+        matched_ids = await search_catalog(query, products, db=db)
 
         id_to_product = {p["id"]: p for p in products}
         matches = [id_to_product[pid] for pid in matched_ids if pid in id_to_product]

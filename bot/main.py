@@ -108,6 +108,39 @@ async def _purge_old_parse_failures(db: Database) -> None:
         logger.warning("Failed to purge old parse failures: %s", exc)
 
 
+async def _send_lost_searches_report(bot: Bot, db: Database) -> None:
+    logger.info("Sending lost searches weekly report...")
+    try:
+        rows = await db.get_top_lost_searches(days=7, limit=10)
+        if not rows:
+            logger.info("No lost searches in the past 7 days — skipping report.")
+            return
+
+        lines = []
+        for i, r in enumerate(rows, start=1):
+            suffix = "ჯერ" if r["cnt"] == 1 else "ჯერ"
+            lines.append(f"{i}. {r['query']} — {r['cnt']}-{suffix}")
+
+        text = (
+            "🔍 <b>ვერ-ნაპოვნი ძიებები — ბოლო 7 დღე</b>\n\n"
+            + "\n".join(lines)
+        )
+
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=text,
+                    parse_mode="HTML",
+                )
+            except Exception as dm_exc:
+                logger.warning("Could not DM admin %d: %s", admin_id, dm_exc)
+
+        logger.info("Lost searches report sent successfully.")
+    except Exception as exc:
+        logger.error("Failed to send lost searches report: %s", exc)
+
+
 async def _send_weekly_report(bot: Bot, db: Database) -> None:
     logger.info("Sending scheduled weekly report...")
     try:
@@ -247,6 +280,13 @@ async def main() -> None:
         trigger=CronTrigger(minute=45, timezone=tz),  # every hour at :45
         kwargs={"db": db, "bot": bot},
         id="audit_integrity_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _send_lost_searches_report,
+        trigger=CronTrigger(day_of_week="mon", hour=9, minute=0, timezone=tz),
+        kwargs={"bot": bot, "db": db},
+        id="lost_searches_report",
         replace_existing=True,
     )
     scheduler.start()

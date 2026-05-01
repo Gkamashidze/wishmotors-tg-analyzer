@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPublicCatalog } from "@/lib/queries";
+import { query as dbQuery } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await getPublicCatalog({ category, search, page, limit });
+
+    if (result.total === 0 && search) {
+      dbQuery(
+        "INSERT INTO lost_searches (query, source, results_count) VALUES ($1, 'catalog', 0)",
+        [search],
+      ).catch(() => {});
+    }
+
     return NextResponse.json(result, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error("[api/public/catalog] GET error:", err);

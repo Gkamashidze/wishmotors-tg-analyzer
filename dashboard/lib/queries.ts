@@ -448,6 +448,7 @@ export type ProductRow = {
   slug: string | null;
   isPublished: boolean;
   description: string | null;
+  itemType: string;
 };
 
 export type CompatibilityRow = {
@@ -1056,15 +1057,27 @@ export async function getProductsPaged(
   page: number,
   limit: number = PRODUCTS_PAGE_SIZE,
   search?: string,
+  itemType?: string,
 ): Promise<{ rows: ProductRow[]; total: number }> {
   const offset = (Math.max(1, page) - 1) * limit;
   const q = search?.trim() ?? "";
-  const params: unknown[] = q
-    ? [limit, offset, `%${q}%`]
-    : [limit, offset];
-  const whereClause = q
-    ? `WHERE p.name ILIKE $3 OR p.oem_code ILIKE $3 OR p.category ILIKE $3 OR p.compatibility_notes ILIKE $3`
-    : "";
+  const validItemType = (itemType && ["inventory", "fixed_asset", "consumable"].includes(itemType))
+    ? itemType
+    : null;
+
+  const params: unknown[] = [limit, offset];
+  const conditions: string[] = [];
+
+  if (q) {
+    params.push(`%${q}%`);
+    conditions.push(`(p.name ILIKE $${params.length} OR p.oem_code ILIKE $${params.length} OR p.category ILIKE $${params.length} OR p.compatibility_notes ILIKE $${params.length})`);
+  }
+  if (validItemType) {
+    params.push(validItemType);
+    conditions.push(`p.item_type = $${params.length}`);
+  }
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
   const rows = await query<{
     id: number;
     name: string;
@@ -1082,6 +1095,7 @@ export async function getProductsPaged(
     slug: string | null;
     is_published: boolean;
     description: string | null;
+    item_type: string;
   }>(
     `WITH cc AS (
        SELECT product_id, COUNT(*) AS cnt FROM product_compatibility GROUP BY product_id
@@ -1090,7 +1104,8 @@ export async function getProductsPaged(
             p.category, p.compatibility_notes, p.created_at,
             COALESCE(cc.cnt, 0) AS compat_count,
             COUNT(*) OVER() AS total_count,
-            p.image_url, p.slug, p.is_published, p.description
+            p.image_url, p.slug, p.is_published, p.description,
+            COALESCE(p.item_type, 'inventory') AS item_type
      FROM products p
      LEFT JOIN cc ON cc.product_id = p.id
      ${whereClause}
@@ -1120,6 +1135,7 @@ export async function getProductsPaged(
       slug: r.slug,
       isPublished: r.is_published,
       description: r.description,
+      itemType: r.item_type,
     })),
     total,
   };
@@ -1136,4 +1152,34 @@ export async function getPublishedProductCount(): Promise<{ published: number; t
     published: Number(row?.published ?? 0),
     total: Number(row?.total ?? 0),
   };
+}
+
+export type LostSearchRow = {
+  query: string;
+  searches: number;
+  lastSeen: string;
+};
+
+export async function getLostSearches(days: number = 30): Promise<LostSearchRow[]> {
+  noStore();
+  const rows = await query<{ query: string; searches: string; last_seen: Date | string }>(
+    `SELECT
+       LOWER(query)      AS query,
+       COUNT(*)          AS searches,
+       MAX(created_at)   AS last_seen
+     FROM lost_searches
+     WHERE created_at > NOW() - ($1::int || ' days')::interval
+     GROUP BY LOWER(query)
+     ORDER BY searches DESC
+     LIMIT 100`,
+    [days],
+  );
+  return rows.map((r) => ({
+    query: r.query,
+    searches: Number(r.searches),
+    lastSeen:
+      r.last_seen instanceof Date
+        ? r.last_seen.toISOString()
+        : String(r.last_seen),
+  }));
 }

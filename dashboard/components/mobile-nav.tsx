@@ -20,6 +20,7 @@ import {
   UserX,
   Menu,
   X,
+  SearchX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const NAV = [
   { href: "/accounting", label: "ბუღალტერია", icon: BookOpen },
   { href: "/vat", label: "დღგ-ს დეკლარაცია", icon: FileText },
   { href: "/debtors", label: "ნისია", icon: UserX },
+  { href: "/lost-searches", label: "ვერ-ნაპოვნი ძიებები", icon: SearchX },
 ];
 
 const BOTTOM_NAV = [

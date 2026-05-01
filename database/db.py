@@ -3344,3 +3344,32 @@ class Database:
                    WHERE id = $1""",
                 order_id, amount_paid,
             )
+
+    # ─── Lost search log ──────────────────────────────────────────────────────
+
+    async def log_lost_search(self, query: str, source: str = "catalog") -> None:
+        """Record a zero-result search. Called fire-and-forget."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO lost_searches (query, source, results_count) VALUES ($1, $2, 0)",
+                    query.strip(), source,
+                )
+        except Exception as exc:
+            logger.warning("log_lost_search failed: %s", exc)
+
+    async def get_top_lost_searches(self, days: int = 7, limit: int = 10) -> List[Dict[str, Any]]:
+        """Return top zero-result queries grouped by LOWER(query) for the past N days."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT LOWER(query) AS query, COUNT(*) AS cnt
+                FROM lost_searches
+                WHERE created_at > NOW() - ($1::int || ' days')::interval
+                GROUP BY LOWER(query)
+                ORDER BY cnt DESC
+                LIMIT $2
+                """,
+                days, limit,
+            )
+        return [{"query": r["query"], "cnt": int(r["cnt"])} for r in rows]
