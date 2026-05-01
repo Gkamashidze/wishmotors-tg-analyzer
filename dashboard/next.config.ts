@@ -25,7 +25,10 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/catalog/:path*",
-        headers: [{ key: "X-Robots-Tag", value: "index, follow" }],
+        headers: [
+          { key: "X-Robots-Tag", value: "index, follow" },
+          { key: "X-WM-Build", value: "v5" },
+        ],
       },
     ];
   },
