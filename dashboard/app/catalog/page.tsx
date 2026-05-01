@@ -97,10 +97,17 @@ function ProductCard({ product }: { product: PublicProductItem }) {
         )}
 
         <div className="flex items-center gap-2 mt-auto pt-1.5">
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
-            <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
-            მარაგშია
-          </span>
+          {product.currentStock > 0 ? (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+              მარაგშია
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive inline-block" />
+              არ არის მარაგში
+            </span>
+          )}
           <span className="text-sm font-semibold ml-auto">₾{price}</span>
         </div>
 

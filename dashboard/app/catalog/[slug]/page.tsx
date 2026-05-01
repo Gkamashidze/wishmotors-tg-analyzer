@@ -363,10 +363,17 @@ export default async function ProductDetailPage({
 
             {/* Stock indicator */}
             <div>
-              <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-success/10 text-success font-medium">
-                <span className="h-2 w-2 rounded-full bg-success inline-block" />
-                მარაგშია ({product.currentStock} {product.unit})
-              </span>
+              {product.currentStock > 0 ? (
+                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-success/10 text-success font-medium">
+                  <span className="h-2 w-2 rounded-full bg-success inline-block" />
+                  მარაგშია ({product.currentStock} {product.unit})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full bg-destructive/10 text-destructive font-medium">
+                  <span className="h-2 w-2 rounded-full bg-destructive inline-block" />
+                  არ არის მარაგში
+                </span>
+              )}
             </div>
 
             {/* Description */}

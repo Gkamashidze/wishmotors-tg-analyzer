@@ -879,7 +879,7 @@ export async function getPublicCatalog(filters: {
   const offset = (page - 1) * limit;
 
   const params: unknown[] = [limit, offset];
-  const conditions: string[] = ["p.is_published = TRUE", "p.current_stock > 0"];
+  const conditions: string[] = ["p.is_published = TRUE"];
 
   if (filters.category) {
     params.push(filters.category);
