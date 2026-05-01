@@ -1029,6 +1029,19 @@ export async function getPublicProduct(
   };
 }
 
+export async function getPublicCategories(): Promise<string[]> {
+  noStore();
+  const rows = await query<{ category: string }>(
+    `SELECT DISTINCT category
+     FROM products
+     WHERE is_published = TRUE
+       AND current_stock > 0
+       AND category IS NOT NULL
+     ORDER BY category ASC`,
+  );
+  return rows.map((r) => r.category);
+}
+
 export async function getProductsPaged(
   page: number,
   limit: number = PRODUCTS_PAGE_SIZE,
