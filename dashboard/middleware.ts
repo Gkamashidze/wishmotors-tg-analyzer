@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+// Middleware only runs on paths that need auth protection.
+// Public paths (catalog, about, delivery, etc.) are EXCLUDED from the matcher
+// so this function is never called for them — no chance of accidental 401.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|healthz).*)"],
+  matcher: [
+    "/((?!catalog|about|delivery|track|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|icons|api/public|_next/static|_next/image|favicon\\.ico|healthz).*)",
+  ],
 };
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -20,27 +25,10 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
-  // Public routes — no auth required
-  const path = req.nextUrl.pathname;
-  if (
-    path.startsWith("/track/") ||
-    path.startsWith("/api/public/") ||
-    path === "/catalog" ||
-    path.startsWith("/catalog/") ||
-    path === "/about" ||
-    path === "/delivery" ||
-    path === "/sitemap.xml" ||
-    path === "/robots.txt" ||
-    path === "/manifest.webmanifest" ||
-    path.startsWith("/icons/")
-  ) {
-    return applySecurityHeaders(NextResponse.next());
-  }
-
   const expected = process.env.DASHBOARD_BASIC_AUTH;
   const isProd = process.env.NODE_ENV === "production";
 
-  // Production without a password is unsafe — refuse to serve.
+  // Production without a password configured is a misconfiguration.
   if (isProd && !expected) {
     return new NextResponse(
       "Dashboard is misconfigured: DASHBOARD_BASIC_AUTH is not set.",
