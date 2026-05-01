@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // Middleware only runs on paths that need auth protection.
-// Public paths (catalog, about, delivery, etc.) are EXCLUDED from the matcher
-// so this function is never called for them — no chance of accidental 401.
+// Public paths (catalog, about, delivery, etc.) AND all static assets are
+// EXCLUDED from the matcher so this function is never called for them.
 export const config = {
   matcher: [
-    "/((?!catalog|about|delivery|track|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|icons|api/public|_next/static|_next/image|favicon\\.ico|healthz).*)",
+    "/((?!catalog|about|delivery|track|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|icons|api/public|_next/static|_next/image|favicon\\.ico|healthz|.*\\.(?:jpg|jpeg|png|webp|svg|gif|ico|css|js|woff|woff2|ttf|otf|map)$).*)",
   ],
 };
 
