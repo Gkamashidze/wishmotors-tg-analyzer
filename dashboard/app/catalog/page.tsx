@@ -60,25 +60,18 @@ function chipCls(active: boolean): string {
 // ─── Smart stock badge ────────────────────────────────────────────────────────
 
 function StockBadge({ stock }: { stock: number }) {
-  if (stock >= 10)
+  if (stock >= 5)
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
         <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
         მარაგშია
       </span>
     );
-  if (stock >= 5)
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
-        <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
-        ბევრი გვაქვს
-      </span>
-    );
   if (stock >= 1)
     return (
       <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
         <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
-        დარჩა {stock} ცალი
+        ბოლო ცალები!
       </span>
     );
   return (
