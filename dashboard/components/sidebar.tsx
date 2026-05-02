@@ -59,19 +59,23 @@ export function Sidebar() {
   }
   return (
     <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-border bg-card">
-      <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
-        <Image
-          src="/logo.jpg"
-          alt="WishMotors"
-          width={36}
-          height={36}
-          priority
-          unoptimized
-          className="h-9 w-9 rounded-lg object-contain"
-        />
-        <div className="flex flex-col leading-tight">
-          <span className="font-semibold">WishMotors</span>
-          <span className="text-xs text-muted-foreground">Sales Console</span>
+      <div className="h-16 flex items-center gap-3 px-6 border-b border-border">
+        <div className="logo-ring">
+          <div className="logo-ring-inner">
+            <Image
+              src="/logo.jpg"
+              alt="WishMotors"
+              width={36}
+              height={36}
+              priority
+              unoptimized
+              className="h-9 w-9 object-contain block"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col leading-none gap-0.5">
+          <span className="font-semibold text-sm logo-text-gradient">WishMotors</span>
+          <span className="text-[10px] text-muted-foreground tracking-widest uppercase">Sales Console</span>
         </div>
       </div>
 

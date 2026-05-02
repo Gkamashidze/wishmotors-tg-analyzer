@@ -91,6 +91,57 @@
   }
 }
 
+/* ── Logo ring animation ─────────────────────────────────── */
+@property --logo-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes logo-ring-spin {
+  to {
+    --logo-angle: 360deg;
+  }
+}
+
+.logo-ring {
+  padding: 2px;
+  border-radius: 11px;
+  background: conic-gradient(
+    from var(--logo-angle),
+    #1b2b5e 0%,
+    #29abe2 30%,
+    #7dd8f8 50%,
+    #29abe2 70%,
+    #1b2b5e 100%
+  );
+  animation: logo-ring-spin 5s linear infinite;
+  flex-shrink: 0;
+}
+
+.logo-ring-inner {
+  background: hsl(var(--card));
+  border-radius: 9px;
+  overflow: hidden;
+  line-height: 0;
+  display: block;
+}
+
+.logo-text-gradient {
+  background: linear-gradient(120deg, #1b2b5e 0%, #29abe2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dark .logo-text-gradient {
+  background: linear-gradient(120deg, #93c5fd 0%, #29abe2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+/* ─────────────────────────────────────────────────────────── */
+
 @layer utilities {
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
