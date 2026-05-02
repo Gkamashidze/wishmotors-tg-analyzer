@@ -12,15 +12,14 @@ const EXT_MAP: Record<string, string> = {
 };
 
 function getDriveClient() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON ?? "";
+  const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN ?? "";
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? "";
-  if (!raw || !folderId) return null;
+  if (!clientId || !clientSecret || !refreshToken || !folderId) return null;
 
-  const credentials = JSON.parse(raw) as object;
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/drive"],
-  });
+  const auth = new google.auth.OAuth2(clientId, clientSecret);
+  auth.setCredentials({ refresh_token: refreshToken });
   return { drive: google.drive({ version: "v3", auth }), folderId };
 }
 
