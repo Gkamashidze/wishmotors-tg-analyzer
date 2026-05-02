@@ -10,8 +10,8 @@
     --card: 0 0% 100%;
     --card-foreground: 224 71% 4%;
 
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 198 76% 52%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 220 14% 96%;
     --secondary-foreground: 220 9% 20%;
@@ -36,7 +36,7 @@
 
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 221 83% 53%;
+    --ring: 198 76% 52%;
 
     --radius: 0.75rem;
   }
@@ -48,8 +48,8 @@
     --card: 222 47% 7%;
     --card-foreground: 210 40% 98%;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
+    --primary: 198 76% 65%;
+    --primary-foreground: 225 55% 10%;
 
     --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
@@ -74,7 +74,7 @@
 
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 217 91% 60%;
+    --ring: 198 76% 65%;
   }
 
   * {
@@ -109,18 +109,17 @@
   border-radius: 11px;
   background: conic-gradient(
     from var(--logo-angle),
-    #1b2b5e 0%,
-    #29abe2 30%,
-    #7dd8f8 50%,
-    #29abe2 70%,
-    #1b2b5e 100%
+    rgba(41, 171, 226, 0.35) 0%,
+    #29abe2 25%,
+    #a8e8fc 50%,
+    #29abe2 75%,
+    rgba(41, 171, 226, 0.35) 100%
   );
   animation: logo-ring-spin 5s linear infinite;
   flex-shrink: 0;
 }
 
 .logo-ring-inner {
-  background: hsl(var(--card));
   border-radius: 9px;
   overflow: hidden;
   line-height: 0;
@@ -139,6 +138,33 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ── Sidebar nav active indicator ──────────────────────────── */
+.wm-nav-active {
+  background: rgba(41, 171, 226, 0.16);
+  color: #29abe2;
+}
+
+.wm-nav-active:hover {
+  background: rgba(41, 171, 226, 0.22);
+}
+
+/* ── Primary button subtle gradient & feel ─────────────────── */
+.btn-brand {
+  background: linear-gradient(135deg, #29abe2 0%, #1d90c5 100%);
+  box-shadow: 0 1px 3px rgba(29, 144, 197, 0.35), 0 0 0 0 rgba(41, 171, 226, 0);
+  transition: box-shadow 0.2s ease, transform 0.1s ease, filter 0.2s ease;
+}
+
+.btn-brand:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 3px 10px rgba(29, 144, 197, 0.4);
+}
+
+.btn-brand:active {
+  transform: scale(0.98);
+  filter: brightness(0.97);
 }
 /* ─────────────────────────────────────────────────────────── */
 

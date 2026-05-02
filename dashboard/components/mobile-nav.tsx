@@ -86,30 +86,35 @@ export function MobileNav() {
       {/* Slide-in drawer — portaled to body */}
       <div
         className={cn(
-          "fixed top-0 left-0 h-full w-72 bg-card border-r border-border shadow-2xl flex flex-col md:hidden transition-transform duration-300 ease-in-out",
+          "fixed top-0 left-0 h-full w-72 border-r border-[#162248] shadow-2xl flex flex-col md:hidden transition-transform duration-300 ease-in-out",
           open ? "translate-x-0" : "-translate-x-full",
         )}
-        style={{ zIndex: 9999 }}
+        style={{ zIndex: 9999, backgroundColor: "#1b2b5e" }}
         role="dialog"
         aria-modal="true"
         aria-label="ნავიგაციის მენიუ"
       >
         {/* Drawer header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            <Image
-              src="/logo.jpg"
-              alt="WishMotors"
-              width={36}
-              height={36}
-              priority
-              unoptimized
-              className="h-9 w-9 rounded-lg object-contain"
-            />
+        <div className="h-16 flex items-center justify-between px-4 border-b border-[#243970] shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="logo-ring">
+              <div className="logo-ring-inner" style={{ backgroundColor: "#1b2b5e" }}>
+                <Image
+                  src="/logo.jpg"
+                  alt="WishMotors"
+                  width={36}
+                  height={36}
+                  priority
+                  unoptimized
+                  className="h-9 w-9 object-contain block"
+                />
+              </div>
+            </div>
+            <span className="font-semibold text-sm text-white">WishMotors</span>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-accent text-foreground transition-colors cursor-pointer"
+            className="flex items-center justify-center h-9 w-9 rounded-lg text-white/60 hover:bg-white/[0.08] hover:text-white transition-colors cursor-pointer"
             aria-label="მენიუ დახურვა"
           >
             <X className="h-5 w-5" />
@@ -117,7 +122,7 @@ export function MobileNav() {
         </div>
 
         {/* Main nav links */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {NAV.map((item) => {
             const Icon = item.icon;
             const active =
@@ -134,8 +139,8 @@ export function MobileNav() {
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors cursor-pointer",
                   active
-                    ? "bg-primary/10 text-primary"
-                    : "text-foreground/70 hover:bg-accent hover:text-foreground",
+                    ? "wm-nav-active"
+                    : "text-white/65 hover:bg-white/[0.07] hover:text-white",
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -146,7 +151,7 @@ export function MobileNav() {
         </nav>
 
         {/* Bottom nav */}
-        <div className="px-3 py-4 border-t border-border space-y-1 shrink-0">
+        <div className="px-3 py-4 border-t border-[#243970] space-y-0.5 shrink-0">
           {BOTTOM_NAV.map((item) => {
             const Icon = item.icon;
             return (
@@ -154,7 +159,7 @@ export function MobileNav() {
                 key={item.label}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-white/50 hover:bg-white/[0.07] hover:text-white/80 transition-colors cursor-pointer"
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>{item.label}</span>

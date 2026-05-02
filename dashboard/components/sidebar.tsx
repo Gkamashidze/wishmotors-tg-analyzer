@@ -58,10 +58,10 @@ export function Sidebar() {
     return null;
   }
   return (
-    <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-border bg-card">
-      <div className="h-16 flex items-center gap-3 px-6 border-b border-border">
+    <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-[#162248] bg-[#1b2b5e]">
+      <div className="h-16 flex items-center gap-3 px-6 border-b border-[#243970]">
         <div className="logo-ring">
-          <div className="logo-ring-inner">
+          <div className="logo-ring-inner" style={{ backgroundColor: "#1b2b5e" }}>
             <Image
               src="/logo.jpg"
               alt="WishMotors"
@@ -74,12 +74,12 @@ export function Sidebar() {
           </div>
         </div>
         <div className="flex flex-col leading-none gap-0.5">
-          <span className="font-semibold text-sm logo-text-gradient">WishMotors</span>
-          <span className="text-[10px] text-muted-foreground tracking-widest uppercase">Sales Console</span>
+          <span className="font-semibold text-sm text-white">WishMotors</span>
+          <span className="text-[10px] text-white/50 tracking-widest uppercase">Sales Console</span>
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-0.5">
         {NAV.map((item) => {
           const Icon = item.icon;
           const active =
@@ -95,25 +95,25 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
                 active
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  ? "wm-nav-active"
+                  : "text-white/65 hover:bg-white/[0.07] hover:text-white",
               )}
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="px-3 py-4 border-t border-border space-y-1">
+      <div className="px-3 py-4 border-t border-[#243970] space-y-0.5">
         {BOTTOM_NAV.map((item) => {
           const Icon = item.icon;
           return (
             <Link
               key={item.label}
               href={item.href}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-white/50 hover:bg-white/[0.07] hover:text-white/80 transition-colors cursor-pointer"
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
               <span>{item.label}</span>
