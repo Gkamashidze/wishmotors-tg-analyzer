@@ -12,20 +12,31 @@ const EXT_MAP: Record<string, string> = {
   "image/avif": "avif",
 };
 
-function getDriveClient() {
+async function getDriveClient() {
   const clientId = (process.env.GOOGLE_CLIENT_ID ?? "").trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET ?? "").trim();
   const refreshToken = (process.env.GOOGLE_REFRESH_TOKEN ?? "").trim();
   const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID ?? "").trim();
   if (!clientId || !clientSecret || !refreshToken || !folderId) return null;
 
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+  });
+  const tokenData = await tokenRes.json() as { access_token?: string; error?: string };
+  if (!tokenData.access_token) throw new Error(tokenData.error ?? "token refresh failed");
+
   const auth = new google.auth.OAuth2(clientId, clientSecret);
-  auth.setCredentials({ refresh_token: refreshToken });
+  auth.setCredentials({ access_token: tokenData.access_token });
   return { drive: google.drive({ version: "v3", auth }), folderId };
 }
 
 export async function POST(req: NextRequest) {
-  const client = getDriveClient();
+  const client = await getDriveClient().catch((err: unknown) => {
+    console.error("[upload] getDriveClient failed:", err);
+    return null;
+  });
   if (!client) {
     return NextResponse.json(
       { error: "Google Drive არ არის კონფიგურირებული" },
