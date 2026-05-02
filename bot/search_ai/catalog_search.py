@@ -60,8 +60,6 @@ def _build_catalog_text(products: List[dict]) -> str:
 
         if compat_parts:
             parts.append("→ " + "; ".join(compat_parts))
-        elif p.get("compatibility_notes"):
-            parts.append("→ " + p["compatibility_notes"])
 
         lines.append("  ".join(parts))
     return "\n".join(lines)

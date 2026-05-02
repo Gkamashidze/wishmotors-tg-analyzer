@@ -878,7 +878,6 @@ export type PublicProductDetail = {
   imageUrl: string | null;
   images: string[];
   description: string | null;
-  compatibilityNotes: string | null;
   compatibility: CompatibilityRow[];
 };
 
@@ -1094,7 +1093,6 @@ export async function getPublicProduct(
     display_price: string;
     image_url: string | null;
     description: string | null;
-    compatibility_notes: string | null;
     compatibility: CompatibilityRow[];
     images: string[];
   }>(
@@ -1109,7 +1107,6 @@ export async function getPublicProduct(
        COALESCE(p.recommended_price, p.unit_price) AS display_price,
        p.image_url,
        p.description,
-       p.compatibility_notes,
        COALESCE(
          json_agg(DISTINCT
            jsonb_build_object(
@@ -1156,7 +1153,6 @@ export async function getPublicProduct(
     imageUrl: row.image_url,
     images: gallery,
     description: row.description,
-    compatibilityNotes: row.compatibility_notes,
     compatibility: row.compatibility ?? [],
   };
 }

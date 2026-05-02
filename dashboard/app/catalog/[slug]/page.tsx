@@ -451,12 +451,6 @@ export default async function ProductDetailPage({
               </p>
             )}
 
-            {/* Compatibility notes */}
-            {product.compatibilityNotes && (
-              <p className="text-xs text-foreground/50 leading-relaxed border-l-2 border-border pl-3">
-                {product.compatibilityNotes}
-              </p>
-            )}
           </div>
         </div>
 

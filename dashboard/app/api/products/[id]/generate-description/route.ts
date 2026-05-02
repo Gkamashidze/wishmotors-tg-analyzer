@@ -30,11 +30,10 @@ export async function POST(_req: NextRequest, { params }: { params: Params }) {
   const product = await queryOne<{
     name: string;
     category: string | null;
-    compatibility_notes: string | null;
     unit: string;
     oem_code: string | null;
   }>(
-    `SELECT name, category, compatibility_notes, unit, oem_code
+    `SELECT name, category, unit, oem_code
      FROM products WHERE id = $1`,
     [productId],
   );
@@ -45,7 +44,6 @@ export async function POST(_req: NextRequest, { params }: { params: Params }) {
 
   const lines: string[] = [`სახელი: ${product.name}`];
   if (product.category) lines.push(`კატეგორია: ${product.category}`);
-  if (product.compatibility_notes) lines.push(`თავსებადობა: ${product.compatibility_notes}`);
   if (product.unit) lines.push(`ერთეული: ${product.unit}`);
 
   const userMessage = `პროდუქტის მონაცემები:\n${lines.join("\n")}\n\nდაწერე მოკლე მარკეტინგული აღწერა.`;
