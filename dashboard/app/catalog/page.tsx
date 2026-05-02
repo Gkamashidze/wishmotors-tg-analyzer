@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Search } from "lucide-react";
+import logo from "@/public/logo.jpg";
 import {
   getPublicCatalog,
   getPublicCategories,
@@ -466,10 +467,10 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
           <Link
             href="/catalog"
-            className="flex items-center gap-1.5 shrink-0 text-foreground hover:text-primary transition-colors"
+            className="shrink-0"
             aria-label="WishMotors კატალოგი"
           >
-            <span className="font-bold text-lg tracking-tight">WishMotors</span>
+            <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
           </Link>
           <div className="flex-1 max-w-lg">
             <SearchBar defaultValue={currentSearch} />

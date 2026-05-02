@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import logo from "@/public/logo.jpg";
 import type { Metadata } from "next";
 import {
   getPublicProduct,
@@ -380,11 +381,8 @@ export default async function ProductDetailPage({
             <span className="hidden sm:inline">კატალოგი</span>
           </Link>
 
-          <Link
-            href="/catalog"
-            className="font-bold text-lg tracking-tight text-foreground hover:text-primary transition-colors"
-          >
-            WishMotors
+          <Link href="/catalog" className="shrink-0">
+            <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
           </Link>
         </div>
       </header>

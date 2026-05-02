@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import logo from "@/public/logo.jpg";
 import type { Metadata } from "next";
 import {
   getCatalogModels,
@@ -108,8 +109,8 @@ export default async function ModelLandingPage({ params }: { params: Params }) {
             </svg>
             <span className="hidden sm:inline">კატალოგი</span>
           </Link>
-          <Link href="/catalog" className="font-bold text-lg tracking-tight hover:text-primary transition-colors">
-            WishMotors
+          <Link href="/catalog" className="shrink-0">
+            <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
           </Link>
         </div>
       </header>
