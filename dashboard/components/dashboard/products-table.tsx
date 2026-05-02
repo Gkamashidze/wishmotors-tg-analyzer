@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -257,14 +257,6 @@ function nameToSlug(name: string): string {
     .slice(0, 200);
 }
 
-// ─── Catalog inline edit state ────────────────────────────────────────────────
-
-interface CatalogEditState {
-  slug: string;
-  description: string;
-  image_url: string;
-}
-
 // ─── Product edit / add state ─────────────────────────────────────────────────
 
 interface EditState {
@@ -275,6 +267,9 @@ interface EditState {
   compatibility_notes: string;
   image_url: string;
   item_type: string;
+  slug: string;
+  description: string;
+  is_published: boolean;
 }
 
 interface AddState {
@@ -304,7 +299,7 @@ const DEFAULT_ADD: AddState = {
   min_stock: "0",
 };
 
-function rowToEdit(r: ProductRow): EditState {
+function rowToEdit(r: ProductRow, isPublished: boolean): EditState {
   return {
     name: r.name,
     oem_code: r.oemCode ?? "",
@@ -313,6 +308,9 @@ function rowToEdit(r: ProductRow): EditState {
     compatibility_notes: r.compatibilityNotes ?? "",
     image_url: r.imageUrl ?? "",
     item_type: r.itemType ?? "inventory",
+    slug: r.slug ?? "",
+    description: r.description ?? "",
+    is_published: isPublished,
   };
 }
 
@@ -370,9 +368,6 @@ export function ProductsTable({
   const [publishedMap, setPublishedMap] = useState<Record<number, boolean>>(
     () => Object.fromEntries(rows.map((r) => [r.id, r.isPublished])),
   );
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [catalogEdit, setCatalogEdit] = useState<CatalogEditState | null>(null);
-  const [catalogSaving, setCatalogSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/products/metrics")
@@ -584,8 +579,9 @@ export function ProductsTable({
   // ── Product edit/delete ─────────────────────────────────────────────────────
 
   const openEdit = useCallback((r: ProductRow) => {
+    const isPublished = publishedMap[r.id] ?? r.isPublished;
     setEditRow(r);
-    setEditState(rowToEdit(r));
+    setEditState(rowToEdit(r, isPublished));
     setCompatEntries([]);
     setNewCompat(DEFAULT_NEW_COMPAT);
     setCompatLoading(true);
@@ -658,6 +654,28 @@ export function ProductsTable({
         setSaveError(body.error ?? "შენახვა ვერ მოხერხდა. სცადეთ თავიდან.");
         return;
       }
+
+      const pubRes = await fetch(`/api/products/${editRow.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: editState.slug.trim() || null,
+          description: editState.description.trim() || null,
+          is_published: editState.is_published,
+          image_url: editState.image_url.trim() || null,
+        }),
+      });
+      if (pubRes.status === 409) {
+        setSaveError("ეს slug სხვა პროდუქტს უჭირავს");
+        return;
+      }
+      if (!pubRes.ok) {
+        const body = await pubRes.json().catch(() => ({})) as { error?: string };
+        setSaveError(body.error ?? "კატალოგის შენახვა ვერ მოხერხდა.");
+        return;
+      }
+
+      setPublishedMap((prev) => ({ ...prev, [editRow.id]: editState.is_published }));
       closeEdit();
       router.refresh();
     } finally {
@@ -842,7 +860,7 @@ export function ProductsTable({
     }
   }, [writeoffRow, writeoffQty, writeoffReason, closeWriteoff, router]);
 
-  // ── Catalog publish toggle ──────────────────────────────────────────────────
+  // ── Catalog publish toggle (table column quick-toggle) ─────────────────────
 
   const handleTogglePublish = useCallback(async (r: ProductRow) => {
     const next = !publishedMap[r.id];
@@ -860,63 +878,6 @@ export function ProductsTable({
       toast.error("შეცდომა");
     }
   }, [publishedMap]);
-
-  // ── Catalog inline expand/save ───────────────────────────────────────────────
-
-  const openExpand = useCallback((r: ProductRow) => {
-    if (expandedId === r.id) {
-      setExpandedId(null);
-      setCatalogEdit(null);
-      return;
-    }
-    setExpandedId(r.id);
-    setCatalogEdit({
-      slug: r.slug ?? "",
-      description: r.description ?? "",
-      image_url: r.imageUrl ?? "",
-    });
-  }, [expandedId]);
-
-  const handleSaveCatalog = useCallback(async (r: ProductRow) => {
-    if (!catalogEdit) return;
-    const original: CatalogEditState = {
-      slug: r.slug ?? "",
-      description: r.description ?? "",
-      image_url: r.imageUrl ?? "",
-    };
-    const payload: Record<string, unknown> = {};
-    if (catalogEdit.slug !== original.slug) payload.slug = catalogEdit.slug;
-    if (catalogEdit.description !== original.description) payload.description = catalogEdit.description || null;
-    if (catalogEdit.image_url !== original.image_url) payload.image_url = catalogEdit.image_url || null;
-    if (Object.keys(payload).length === 0) {
-      setExpandedId(null);
-      setCatalogEdit(null);
-      return;
-    }
-    setCatalogSaving(true);
-    try {
-      const res = await fetch(`/api/products/${r.id}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.status === 409) {
-        toast.error("ეს slug სხვა პროდუქტს უჭირავს");
-        return;
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        toast.error(body.error ?? "შეცდომა");
-        return;
-      }
-      toast.success("შენახულია");
-      setExpandedId(null);
-      setCatalogEdit(null);
-      router.refresh();
-    } finally {
-      setCatalogSaving(false);
-    }
-  }, [catalogEdit, router]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -987,10 +948,9 @@ export function ProductsTable({
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.flatMap((r, idx) => {
-                const isExpanded = expandedId === r.id;
+              filtered.map((r, idx) => {
                 const isPublished = publishedMap[r.id] ?? r.isPublished;
-                const mainRow = (
+                return (
                   <TableRow key={r.id}>
                     <TableCell className="tabular-nums text-muted-foreground text-xs">
                       {(page - 1) * PRODUCTS_PAGE_SIZE + idx + 1}
@@ -1029,17 +989,6 @@ export function ProductsTable({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Tooltip label="კატალოგის რედ.">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 cursor-pointer"
-                            onClick={() => openExpand(r)}
-                            aria-label="კატალოგის რედაქტირება"
-                          >
-                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          </Button>
-                        </Tooltip>
                         <Tooltip label="ნახვა">
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 cursor-pointer" onClick={() => setViewRow(r)} aria-label="ნახვა">
                             <Eye className="h-3.5 w-3.5" />
@@ -1064,142 +1013,6 @@ export function ProductsTable({
                     </TableCell>
                   </TableRow>
                 );
-
-                if (!isExpanded || !catalogEdit) return [mainRow];
-
-                const suggestedSlug = !r.slug ? nameToSlug(r.name) : "";
-                const previewUrl = catalogEdit.image_url.startsWith("http")
-                  ? catalogEdit.image_url
-                  : null;
-
-                const expandRow = (
-                  <TableRow key={`${r.id}-expand`} className="bg-muted/30 border-t-0">
-                    <TableCell colSpan={10} className="py-4 px-6">
-                      <div className="space-y-3 max-w-2xl">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          კატალოგის ინფო — {r.name}
-                        </p>
-
-                        {/* Slug */}
-                        <div className="space-y-1">
-                          <label htmlFor={`slug-${r.id}`} className="text-xs font-medium text-muted-foreground">
-                            Slug (URL identifier)
-                          </label>
-                          <input
-                            id={`slug-${r.id}`}
-                            type="text"
-                            value={catalogEdit.slug}
-                            onChange={(e) =>
-                              setCatalogEdit((prev) =>
-                                prev ? { ...prev, slug: e.target.value } : prev,
-                              )
-                            }
-                            placeholder={suggestedSlug || "product-slug"}
-                            className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                          />
-                          {suggestedSlug && !catalogEdit.slug && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setCatalogEdit((prev) =>
-                                  prev ? { ...prev, slug: suggestedSlug } : prev,
-                                )
-                              }
-                              className="text-xs text-primary hover:underline cursor-pointer"
-                            >
-                              ↳ გამოიყენე: {suggestedSlug}
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Description */}
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <label htmlFor={`desc-${r.id}`} className="text-xs font-medium text-muted-foreground">
-                              აღწერა (მაქს. 2000 სიმბოლო)
-                            </label>
-                            <AiDescriptionButton
-                              productId={r.id}
-                              onGenerated={(text) =>
-                                setCatalogEdit((prev) =>
-                                  prev ? { ...prev, description: text } : prev,
-                                )
-                              }
-                            />
-                          </div>
-                          <textarea
-                            id={`desc-${r.id}`}
-                            rows={4}
-                            maxLength={2000}
-                            value={catalogEdit.description}
-                            onChange={(e) =>
-                              setCatalogEdit((prev) =>
-                                prev ? { ...prev, description: e.target.value } : prev,
-                              )
-                            }
-                            placeholder="პროდუქტის დეტალური აღწერა..."
-                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                          />
-                          <p className="text-xs text-muted-foreground text-right">
-                            {catalogEdit.description.length} / 2000
-                          </p>
-                        </div>
-
-                        {/* Image URL */}
-                        <div className="space-y-1">
-                          <label htmlFor={`imgurl-${r.id}`} className="text-xs font-medium text-muted-foreground">
-                            სურათის URL
-                          </label>
-                          <input
-                            id={`imgurl-${r.id}`}
-                            type="url"
-                            value={catalogEdit.image_url}
-                            onChange={(e) =>
-                              setCatalogEdit((prev) =>
-                                prev ? { ...prev, image_url: e.target.value } : prev,
-                              )
-                            }
-                            placeholder="https://..."
-                            className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                          />
-                          {previewUrl && (
-                            <div className="mt-2 w-32 h-20 rounded-md border border-border overflow-hidden bg-muted/30">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={previewUrl}
-                                alt="preview"
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            onClick={() => handleSaveCatalog(r)}
-                            disabled={catalogSaving}
-                            className="cursor-pointer"
-                          >
-                            {catalogSaving ? "ინახება..." : "შენახვა"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => { setExpandedId(null); setCatalogEdit(null); }}
-                            disabled={catalogSaving}
-                            className="cursor-pointer"
-                          >
-                            გაუქმება
-                          </Button>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-
-                return [mainRow, expandRow];
               })
             )}
           </TableBody>
@@ -1812,6 +1625,73 @@ export function ProductsTable({
               onChange={set("compatibility_notes")}
               placeholder="სხვა ინფო (სურვილისამებრ)"
             />
+
+            {/* ── კატალოგის ველები ── */}
+            <div className="rounded-xl border border-border p-3 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">კატალოგი</p>
+
+              {/* Slug */}
+              <div className="space-y-1">
+                <label htmlFor="prod-slug" className="text-xs font-medium text-muted-foreground">
+                  Slug (URL identifier)
+                </label>
+                <input
+                  id="prod-slug"
+                  type="text"
+                  value={editState.slug}
+                  onChange={(e) => setEditState((prev) => prev ? { ...prev, slug: e.target.value } : prev)}
+                  placeholder={editState.slug || nameToSlug(editState.name) || "product-slug"}
+                  className="h-8 w-full rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                {!editState.slug && nameToSlug(editState.name) && (
+                  <button
+                    type="button"
+                    onClick={() => setEditState((prev) => prev ? { ...prev, slug: nameToSlug(prev.name) } : prev)}
+                    className="text-xs text-primary hover:underline cursor-pointer"
+                  >
+                    ↳ გამოიყენე: {nameToSlug(editState.name)}
+                  </button>
+                )}
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="prod-desc" className="text-xs font-medium text-muted-foreground">
+                    აღწერა (მაქს. 2000 სიმბოლო)
+                  </label>
+                  {editRow && (
+                    <AiDescriptionButton
+                      productId={editRow.id}
+                      onGenerated={(text) => setEditState((prev) => prev ? { ...prev, description: text } : prev)}
+                    />
+                  )}
+                </div>
+                <textarea
+                  id="prod-desc"
+                  rows={4}
+                  maxLength={2000}
+                  value={editState.description}
+                  onChange={(e) => setEditState((prev) => prev ? { ...prev, description: e.target.value } : prev)}
+                  placeholder="პროდუქტის დეტალური აღწერა..."
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+                <p className="text-xs text-muted-foreground text-right">{editState.description.length} / 2000</p>
+              </div>
+
+              {/* Publish toggle */}
+              <div className="flex items-center justify-between">
+                <label htmlFor="prod-publish" className="text-sm font-medium">
+                  🌐 კატალოგში გამოქვეყნება
+                </label>
+                <Switch
+                  id="prod-publish"
+                  checked={editState.is_published}
+                  onCheckedChange={(v) => setEditState((prev) => prev ? { ...prev, is_published: v } : prev)}
+                />
+              </div>
+            </div>
+
             {saveError && (
               <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
                 {saveError}
