@@ -4,11 +4,12 @@ import { Readable } from "stream";
 import { randomUUID } from "crypto";
 
 const MAX_SIZE = 5 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 const EXT_MAP: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+  "image/avif": "avif",
 };
 
 function getDriveClient() {
