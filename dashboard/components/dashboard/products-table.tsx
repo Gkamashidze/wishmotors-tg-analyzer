@@ -990,7 +990,7 @@ export function ProductsTable({
                       />
                     </TableCell>
                     <TableCell className="text-center">
-                      <CompletenessCell r={r} />
+                      {r.itemType === "inventory" ? <CompletenessCell r={r} /> : null}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
