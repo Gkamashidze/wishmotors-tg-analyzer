@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import logo from "@/public/logo.jpg";
 import {
   getPublicCatalog,
@@ -58,10 +58,10 @@ function catalogUrl(overrides: Partial<CatalogFilters>, base: Omit<CatalogFilter
 
 function chipCls(active: boolean): string {
   return [
-    "px-3 py-1.5 rounded-full text-sm font-medium border transition-colors whitespace-nowrap",
+    "px-3 py-1.5 rounded-full text-sm font-medium border transition-all whitespace-nowrap",
     active
-      ? "bg-primary text-primary-foreground border-primary"
-      : "bg-card text-foreground/70 border-border hover:border-primary/50 hover:text-foreground",
+      ? "bg-[linear-gradient(135deg,#29abe2,#1d90c5)] text-white border-primary shadow-sm shadow-primary/25"
+      : "bg-card text-foreground/70 border-border hover:border-primary/50 hover:text-foreground hover:bg-primary/[0.05]",
   ].join(" ");
 }
 
@@ -143,10 +143,10 @@ function TrustStrip() {
       {badges.map((b) => (
         <div
           key={b.label}
-          className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-secondary/50 text-foreground/70 border border-border/50 shrink-0"
+          className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-primary/10 text-foreground/75 border border-primary/20 shrink-0"
         >
-          {b.icon}
-          <span>✓ {b.label}</span>
+          <span className="text-primary">{b.icon}</span>
+          {b.label}
         </div>
       ))}
     </div>
@@ -163,7 +163,7 @@ function PopularMiniCard({ p }: { p: PublicProductMini }) {
   return (
     <Link
       href={`/catalog/${p.slug}`}
-      className="shrink-0 w-40 rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+      className="shrink-0 w-40 rounded-xl border bg-card overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col"
     >
       <div className="relative aspect-video bg-secondary overflow-hidden">
         {p.imageUrl ? (
@@ -192,7 +192,7 @@ function ProductCard({ product }: { product: PublicProductItem }) {
   }).format(product.price);
 
   return (
-    <article className="rounded-xl border bg-card shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-col">
+    <article className="rounded-xl border bg-card shadow-sm overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex flex-col">
       {/* 16:9 image */}
       <div className="relative aspect-video bg-secondary overflow-hidden">
         {product.isNew && (
@@ -247,9 +247,10 @@ function ProductCard({ product }: { product: PublicProductItem }) {
 
         <Link
           href={`/catalog/${product.slug}`}
-          className="mt-1.5 w-full py-2 text-sm font-medium text-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="mt-1.5 w-full py-2 text-sm font-medium rounded-lg btn-brand text-white flex items-center justify-center gap-1.5 group"
         >
-          ნახე →
+          ნახე
+          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
     </article>
@@ -277,8 +278,8 @@ function EmptyState({ model, engine, year }: { model?: string; engine?: string; 
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
-      <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
-        <Search className="h-7 w-7 text-foreground/30" />
+      <div className="h-20 w-20 rounded-2xl bg-secondary/60 border border-border/50 flex items-center justify-center">
+        <Search className="h-9 w-9 text-foreground/25" />
       </div>
       <div className="max-w-sm">
         {isVehicleSearch ? (
@@ -476,14 +477,19 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
           <Link
             href="/catalog"
-            className="shrink-0"
+            className="shrink-0 flex items-center gap-2.5"
             aria-label="WishMotors კატალოგი"
           >
             <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
+            <span className="hidden sm:block font-semibold text-sm text-[#1b2b5e]">WishMotors</span>
           </Link>
           <div className="flex-1 max-w-lg">
             <SearchBar defaultValue={currentSearch} />
           </div>
+          <nav className="hidden md:flex items-center gap-0.5 shrink-0">
+            <Link href="/about" className="px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground rounded-lg hover:bg-secondary transition-colors whitespace-nowrap">ჩვენ შესახებ</Link>
+            <Link href="/delivery" className="px-3 py-1.5 text-sm text-foreground/60 hover:text-foreground rounded-lg hover:bg-secondary transition-colors whitespace-nowrap">მიწოდება</Link>
+          </nav>
         </div>
       </header>
 
@@ -494,7 +500,10 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         {/* ── Popular products (homepage only) ── */}
         {popular.length > 0 && (
           <section className="mb-6">
-            <h2 className="text-sm font-semibold mb-3 text-foreground/70">🔥 პოპულარული</h2>
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-foreground">
+              <span className="w-1 h-4 rounded-full bg-primary inline-block shrink-0" />
+              პოპულარული
+            </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
               {popular.map((p) => (
                 <PopularMiniCard key={p.id} p={p} />
@@ -506,10 +515,16 @@ export default async function CatalogPage({ searchParams }: PageProps) {
         {/* ── Delivery banner ── */}
         <Link
           href="/delivery"
-          className="flex items-center justify-between gap-2 mb-4 px-4 py-2.5 rounded-lg bg-primary/5 border border-primary/20 text-sm text-foreground/70 hover:bg-primary/10 transition-colors"
+          className="flex items-center justify-between gap-2 mb-4 px-4 py-3 rounded-xl bg-primary/[0.07] border border-primary/20 border-l-4 border-l-primary text-sm text-foreground/80 hover:bg-primary/10 transition-colors"
         >
-          <span>🚚 მიწოდება მთელ საქართველოში · ნაღდი · გადარიცხვა</span>
-          <span className="text-primary shrink-0">დეტალები →</span>
+          <span className="flex items-center gap-2">
+            <span className="text-base">🚚</span>
+            <span>მიწოდება მთელ საქართველოში · ნაღდი · გადარიცხვა</span>
+          </span>
+          <span className="text-primary shrink-0 flex items-center gap-1 font-medium">
+            დეტალები
+            <ArrowRight className="h-3.5 w-3.5" />
+          </span>
         </Link>
 
         {/* ── Vehicle picker ── */}

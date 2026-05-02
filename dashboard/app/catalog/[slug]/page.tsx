@@ -196,7 +196,7 @@ function CompatibilityTable({
       <div className="rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-secondary text-foreground/60 text-left text-xs uppercase tracking-wide">
+            <tr className="bg-primary/[0.06] text-foreground/60 text-left text-xs uppercase tracking-wide border-b border-primary/10">
               <th className="px-4 py-3 font-medium">მოდელი</th>
               <th className="px-4 py-3 font-medium hidden sm:table-cell">ძრავი</th>
               <th className="px-4 py-3 font-medium hidden md:table-cell">Drive</th>
@@ -258,7 +258,7 @@ function CtaButtons({ product }: { product: PublicProductDetail }) {
     : null;
 
   const base =
-    "flex items-center justify-center gap-2.5 rounded-xl py-4 px-5 font-semibold text-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+    "flex items-center justify-center gap-2.5 rounded-xl py-4 px-5 font-semibold text-sm transition-all hover:-translate-y-0.5 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -397,7 +397,7 @@ export default async function ProductDetailPage({
           <div className="flex flex-col gap-5">
             {/* Category chip */}
             {product.category && (
-              <span className="inline-flex w-fit px-3 py-1 rounded-full text-xs font-medium bg-secondary text-foreground/60 border border-border">
+              <span className="inline-flex w-fit px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
                 {product.category}
               </span>
             )}

@@ -20,18 +20,18 @@ export default function Footer() {
   const hasSocial = !!(fbUrl || igUrl);
 
   return (
-    <footer className="border-t bg-secondary/20 mt-auto">
+    <footer className="mt-auto" style={{ backgroundColor: "#1b2b5e" }}>
       <div className="max-w-7xl mx-auto px-4 py-10">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
 
           {/* Column A — Contact */}
           {hasContact && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-sm">📞 დაგვიკავშირდით</h3>
-              <div className="space-y-2 text-sm text-foreground/60">
+              <h3 className="font-semibold text-sm text-white/90">დაგვიკავშირდით</h3>
+              <div className="space-y-2 text-sm text-white/55">
                 {telHref && (
                   <p>
-                    <a href={telHref} className="hover:text-primary transition-colors">
+                    <a href={telHref} className="hover:text-[#29abe2] transition-colors">
                       {phone}
                     </a>
                   </p>
@@ -42,7 +42,7 @@ export default function Footer() {
                       href={waHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:text-primary transition-colors"
+                      className="hover:text-[#29abe2] transition-colors"
                     >
                       WhatsApp
                     </a>
@@ -54,7 +54,7 @@ export default function Footer() {
                       href={tgHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:text-primary transition-colors"
+                      className="hover:text-[#29abe2] transition-colors"
                     >
                       Telegram
                     </a>
@@ -64,7 +64,7 @@ export default function Footer() {
                   <p>
                     <a
                       href={`mailto:${email}`}
-                      className="hover:text-primary transition-colors"
+                      className="hover:text-[#29abe2] transition-colors"
                     >
                       {email}
                     </a>
@@ -77,8 +77,8 @@ export default function Footer() {
           {/* Column B — Address & hours */}
           {hasAddress && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-sm">📍 მისამართი</h3>
-              <div className="space-y-2 text-sm text-foreground/60">
+              <h3 className="font-semibold text-sm text-white/90">მისამართი</h3>
+              <div className="space-y-2 text-sm text-white/55">
                 {address && <p>{address}</p>}
                 {hours && <p>{hours}</p>}
                 {mapsUrl && (
@@ -87,7 +87,7 @@ export default function Footer() {
                       href={mapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:text-primary transition-colors"
+                      className="hover:text-[#29abe2] transition-colors"
                     >
                       Google Maps-ზე ნახვა →
                     </a>
@@ -99,20 +99,20 @@ export default function Footer() {
 
           {/* Column C — Quick links */}
           <div className="space-y-3">
-            <h3 className="font-semibold text-sm">სწრაფი ბმულები</h3>
-            <div className="space-y-2 text-sm text-foreground/60">
+            <h3 className="font-semibold text-sm text-white/90">სწრაფი ბმულები</h3>
+            <div className="space-y-2 text-sm text-white/55">
               <p>
-                <Link href="/catalog" className="hover:text-primary transition-colors">
+                <Link href="/catalog" className="hover:text-[#29abe2] transition-colors">
                   კატალოგი
                 </Link>
               </p>
               <p>
-                <Link href="/about" className="hover:text-primary transition-colors">
+                <Link href="/about" className="hover:text-[#29abe2] transition-colors">
                   ჩვენ შესახებ
                 </Link>
               </p>
               <p>
-                <Link href="/delivery" className="hover:text-primary transition-colors">
+                <Link href="/delivery" className="hover:text-[#29abe2] transition-colors">
                   მიწოდება და გადახდა
                 </Link>
               </p>
@@ -124,7 +124,7 @@ export default function Footer() {
                         href={fbUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:text-primary transition-colors"
+                        className="hover:text-[#29abe2] transition-colors"
                       >
                         Facebook
                       </a>
@@ -136,7 +136,7 @@ export default function Footer() {
                         href={igUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:text-primary transition-colors"
+                        className="hover:text-[#29abe2] transition-colors"
                       >
                         Instagram
                       </a>
@@ -150,7 +150,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom strip */}
-        <div className="mt-8 pt-6 border-t text-xs text-foreground/40 text-center">
+        <div className="mt-8 pt-6 border-t border-white/10 text-xs text-white/30 text-center">
           © {new Date().getFullYear()} WishMotors. ყველა უფლება დაცულია.
         </div>
       </div>
