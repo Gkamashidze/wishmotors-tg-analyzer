@@ -33,13 +33,17 @@ async function getDriveClient() {
 }
 
 export async function POST(req: NextRequest) {
-  const client = await getDriveClient().catch((err: unknown) => {
-    console.error("[upload] getDriveClient failed:", err);
-    return null;
-  });
+  let client: Awaited<ReturnType<typeof getDriveClient>>;
+  try {
+    client = await getDriveClient();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[upload] getDriveClient failed:", msg);
+    return NextResponse.json({ error: `Drive კონფიგ შეცდომა: ${msg}` }, { status: 503 });
+  }
   if (!client) {
     return NextResponse.json(
-      { error: "Google Drive არ არის კონფიგურირებული" },
+      { error: "Google Drive env vars არ არის დაყენებული (CLIENT_ID / CLIENT_SECRET / REFRESH_TOKEN / FOLDER_ID)" },
       { status: 503 },
     );
   }
