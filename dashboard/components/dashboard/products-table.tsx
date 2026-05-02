@@ -108,6 +108,72 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+// ─── Catalog completeness ─────────────────────────────────────────────────────
+
+const CATALOG_FIELDS: { key: string; emoji: string; label: string }[] = [
+  { key: "photo",         emoji: "📷", label: "ფოტო" },
+  { key: "slug",          emoji: "🔗", label: "Slug" },
+  { key: "description",   emoji: "📝", label: "აღწერა" },
+  { key: "oem",           emoji: "🏷️",  label: "OEM კოდი" },
+  { key: "category",      emoji: "📂", label: "კატეგორია" },
+  { key: "compatibility", emoji: "🚗", label: "თავსებადობა" },
+];
+
+function getCatalogCompletion(r: ProductRow) {
+  return [
+    { ...CATALOG_FIELDS[0], done: !!r.imageUrl },
+    { ...CATALOG_FIELDS[1], done: !!r.slug },
+    { ...CATALOG_FIELDS[2], done: !!r.description },
+    { ...CATALOG_FIELDS[3], done: !!r.oemCode },
+    { ...CATALOG_FIELDS[4], done: !!r.category },
+    { ...CATALOG_FIELDS[5], done: r.compatCount > 0 },
+  ];
+}
+
+function CompletenessCell({ r }: { r: ProductRow }) {
+  const fields = getCatalogCompletion(r);
+  const score = fields.filter((f) => f.done).length;
+  const total = fields.length;
+
+  const badgeCls =
+    score === total
+      ? "bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success))] border-[hsl(var(--success)/0.3)]"
+      : score >= 4
+      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+      : "bg-destructive/10 text-destructive border-destructive/30";
+
+  return (
+    <div className="relative group/comp inline-flex justify-center">
+      <span
+        className={cn(
+          "inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full border cursor-default tabular-nums",
+          badgeCls,
+        )}
+      >
+        {score}/{total}
+      </span>
+      {/* Tooltip */}
+      <div className="absolute bottom-full right-0 mb-2 w-44 bg-popover border border-border rounded-xl shadow-lg p-3 opacity-0 group-hover/comp:opacity-100 transition-opacity pointer-events-none z-50">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+          კატალოგის სისრულე
+        </p>
+        <div className="space-y-1">
+          {fields.map((f) => (
+            <div key={f.key} className="flex items-center gap-2">
+              <span className={cn("text-xs font-bold", f.done ? "text-[hsl(var(--success))]" : "text-destructive")}>
+                {f.done ? "✓" : "✗"}
+              </span>
+              <span className={cn("text-xs", f.done ? "text-muted-foreground line-through" : "text-foreground")}>
+                {f.emoji} {f.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Compatibility constants ──────────────────────────────────────────────────
 
 const SSANGYONG_MODELS = [
@@ -874,13 +940,14 @@ export function ProductsTable({
               <TableHead className="w-28 text-right">გასაყიდი ფასი</TableHead>
               <TableHead>თავსებადობა / შენ.</TableHead>
               <TableHead className="w-24 text-center">კატალოგი</TableHead>
+              <TableHead className="w-16 text-center">სისრულე</TableHead>
               <TableHead className="w-24 text-right">მოქ.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-12">
                   შედეგი არ არის
                 </TableCell>
               </TableRow>
@@ -921,6 +988,9 @@ export function ProductsTable({
                         onCheckedChange={() => handleTogglePublish(r)}
                         aria-label={isPublished ? "კატალოგიდან დამალვა" : "კატალოგში გამოქვეყნება"}
                       />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <CompletenessCell r={r} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -969,7 +1039,7 @@ export function ProductsTable({
 
                 const expandRow = (
                   <TableRow key={`${r.id}-expand`} className="bg-muted/30 border-t-0">
-                    <TableCell colSpan={9} className="py-4 px-6">
+                    <TableCell colSpan={10} className="py-4 px-6">
                       <div className="space-y-3 max-w-2xl">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                           კატალოგის ინფო — {r.name}
