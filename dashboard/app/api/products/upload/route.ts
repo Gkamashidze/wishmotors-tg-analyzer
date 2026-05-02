@@ -61,27 +61,37 @@ export async function POST(req: NextRequest) {
 
   const { drive, folderId } = client;
 
-  const created = await drive.files.create({
-    requestBody: {
-      name: `${randomUUID()}.${ext}`,
-      parents: [folderId],
-    },
-    media: {
-      mimeType: file.type,
-      body: Readable.from(buffer),
-    },
-    fields: "id",
-  });
-
-  const fileId = created.data.id;
-  if (!fileId) {
-    return NextResponse.json({ error: "ატვირთვა ვერ მოხერხდა" }, { status: 500 });
+  let fileId: string;
+  try {
+    const created = await drive.files.create({
+      requestBody: {
+        name: `${randomUUID()}.${ext}`,
+        parents: [folderId],
+      },
+      media: {
+        mimeType: file.type,
+        body: Readable.from(buffer),
+      },
+      fields: "id",
+    });
+    if (!created.data.id) {
+      return NextResponse.json({ error: "Drive-მა ID არ დაბრუნა" }, { status: 500 });
+    }
+    fileId = created.data.id;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[upload] drive.files.create failed:", msg);
+    return NextResponse.json({ error: `Drive ატვირთვა ვერ მოხერხდა: ${msg}` }, { status: 500 });
   }
 
-  await drive.permissions.create({
-    fileId,
-    requestBody: { role: "reader", type: "anyone" },
-  });
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (err) {
+    console.error("[upload] drive.permissions.create failed:", err);
+  }
 
   return NextResponse.json({
     url: `https://lh3.googleusercontent.com/d/${fileId}`,
