@@ -151,7 +151,7 @@ export default function Footer() {
 
         {/* Bottom strip */}
         <div className="mt-8 pt-6 border-t text-xs text-foreground/40 text-center">
-          © 2025 WishMotors. ყველა უფლება დაცულია.
+          © {new Date().getFullYear()} WishMotors. ყველა უფლება დაცულია.
         </div>
       </div>
     </footer>
