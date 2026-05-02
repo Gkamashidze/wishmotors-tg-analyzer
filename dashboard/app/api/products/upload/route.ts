@@ -13,10 +13,10 @@ const EXT_MAP: Record<string, string> = {
 };
 
 function getDriveClient() {
-  const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN ?? "";
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID ?? "";
+  const clientId = (process.env.GOOGLE_CLIENT_ID ?? "").trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET ?? "").trim();
+  const refreshToken = (process.env.GOOGLE_REFRESH_TOKEN ?? "").trim();
+  const folderId = (process.env.GOOGLE_DRIVE_FOLDER_ID ?? "").trim();
   if (!clientId || !clientSecret || !refreshToken || !folderId) return null;
 
   const auth = new google.auth.OAuth2(clientId, clientSecret);
