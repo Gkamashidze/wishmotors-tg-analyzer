@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
+import logo from "@/public/logo.jpg";
 import { getPublicProductsInStockCount } from "@/lib/queries";
 
 export default async function AboutPage() {
@@ -49,6 +51,15 @@ export default async function AboutPage() {
 
         {/* ── Hero ── */}
         <section className="text-center mb-14">
+          <div className="flex justify-center mb-6">
+            <Image
+              src={logo}
+              alt="WishMotors"
+              height={80}
+              className="h-20 w-auto rounded-2xl shadow-sm"
+              unoptimized
+            />
+          </div>
           <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-4">
             WishMotors — ხარისხიანი ნაწილები<br className="hidden sm:block" /> ხარისხიანი მანქანებისთვის
           </h1>
