@@ -104,6 +104,44 @@ export default async function AboutPage() {
           </p>
         </section>
 
+        {/* ── Services ── */}
+        <section className="mb-14">
+          <h2 className="text-xl font-semibold text-foreground mb-5">ჩვენი სერვისები</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <div className="rounded-xl border bg-card p-5 flex gap-4">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-sm mb-1">ელექტრო დიაგნოსტიკა და შეკეთება</p>
+                <p className="text-sm text-foreground/60 leading-relaxed">
+                  სრული ელექტრო დიაგნოსტიკა და ელექტრული სისტემების შეკეთება — სენსორები, გაყვანილობა, კომპიუტერული სისტემები.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border bg-card p-5 flex gap-4">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4l3 3" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-sm mb-1">მანქანის სერვისი</p>
+                <p className="text-sm text-foreground/60 leading-relaxed">
+                  სავალი ნაწილის, ძრავისა და გადაცემათა კოლოფის შეკეთება — გამოცდილი სპეციალისტების მიერ.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
         {/* ── CTA buttons ── */}
         <section className="mb-14">
           <h2 className="text-xl font-semibold text-foreground mb-5">დაგვიკავშირდით</h2>
