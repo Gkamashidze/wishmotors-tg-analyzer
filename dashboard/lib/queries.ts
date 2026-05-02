@@ -1265,6 +1265,14 @@ export async function getPopularProducts(limit = 8): Promise<PublicProductMini[]
   }));
 }
 
+export async function getPublicProductsInStockCount(): Promise<number> {
+  noStore();
+  const row = await queryOne<{ cnt: string }>(
+    `SELECT COUNT(*) AS cnt FROM products WHERE is_published = TRUE AND current_stock > 0`,
+  );
+  return row ? Number(row.cnt) : 0;
+}
+
 export async function getPublicCategories(): Promise<string[]> {
   noStore();
   const rows = await query<{ category: string }>(

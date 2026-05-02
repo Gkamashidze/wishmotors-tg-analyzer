@@ -1,13 +1,15 @@
 import Link from "next/link";
+import { getPublicProductsInStockCount } from "@/lib/queries";
 
-export default function AboutPage() {
+export default async function AboutPage() {
   const phone = process.env.NEXT_PUBLIC_CONTACT_PHONE;
   const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
   const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
-  const yearsInBusiness = process.env.NEXT_PUBLIC_YEARS_IN_BUSINESS ?? "5";
-  const happyCustomers = process.env.NEXT_PUBLIC_HAPPY_CUSTOMERS ?? "1000+";
-  const productsInStock = process.env.NEXT_PUBLIC_PRODUCTS_IN_STOCK ?? "500+";
+  const yearsInBusiness = process.env.NEXT_PUBLIC_YEARS_IN_BUSINESS ?? "1";
+  const happyCustomers = process.env.NEXT_PUBLIC_HAPPY_CUSTOMERS ?? "500+";
   const mapsEmbed = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED;
+
+  const productsInStock = await getPublicProductsInStockCount().catch(() => 0);
 
   const waHref = waPhone ? `https://wa.me/${waPhone}` : null;
   const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
@@ -66,7 +68,7 @@ export default function AboutPage() {
             <p className="text-sm text-foreground/60 mt-1">კმაყოფილი კლიენტი</p>
           </div>
           <div className="rounded-2xl border bg-secondary/30 p-6 text-center">
-            <p className="text-3xl font-bold">{productsInStock}</p>
+            <p className="text-3xl font-bold">{productsInStock}+</p>
             <p className="text-sm text-foreground/60 mt-1">ნაწილი მარაგში</p>
           </div>
         </section>
@@ -82,7 +84,7 @@ export default function AboutPage() {
           </p>
           <p>
             ჩვენი გუნდი ყოველდღიურად მუშაობს იმისთვის, რომ კატალოგი განახლებული და
-            ზუსტი იყოს. ყოველ ნაწილზე ვამოწმებთ თავსებადობას, ვარსებობთ პასუხს
+            ზუსტი იყოს. ყოველ ნაწილზე ვამოწმებთ თავსებადობას, ვპასუხობთ
             ყველა შეკითხვაზე და ვცდილობთ მიწოდება სწრაფი იყოს.
           </p>
           <p>
