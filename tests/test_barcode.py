@@ -219,3 +219,107 @@ async def test_extract_part_info_empty_response():
 
     assert name_ka == ""
     assert name_en == ""
+
+
+# ─── _detect_media_type ───────────────────────────────────────────────────────
+
+def test_detect_media_type_jpeg():
+    from bot.barcode.decoder import _detect_media_type
+    assert _detect_media_type(b"\xff\xd8\xff" + b"\x00" * 10) == "image/jpeg"
+
+
+def test_detect_media_type_png():
+    from bot.barcode.decoder import _detect_media_type
+    assert _detect_media_type(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10) == "image/png"
+
+
+def test_detect_media_type_webp():
+    from bot.barcode.decoder import _detect_media_type
+    assert _detect_media_type(b"RIFF\x00\x00\x00\x00WEBP" + b"\x00") == "image/webp"
+
+
+# ─── extract_from_label ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_extract_from_label_success():
+    mock_ant = _make_anthropic_module("45201-06290 | Front Control Arm | წინა ბერკეტი")
+
+    with (
+        patch("bot.barcode.decoder.config") as mock_cfg,
+        patch.dict("sys.modules", {"anthropic": mock_ant}),
+    ):
+        mock_cfg.ANTHROPIC_API_KEY = "test-key"
+        from bot.barcode.decoder import extract_from_label
+
+        oem, name_ka, name_en = await extract_from_label(b"fake_jpeg")
+
+    assert oem == "45201-06290"
+    assert name_en == "Front Control Arm"
+    assert name_ka == "წინა ბერკეტი"
+
+
+@pytest.mark.asyncio
+async def test_extract_from_label_oem_only():
+    mock_ant = _make_anthropic_module("8390132500 | | ")
+
+    with (
+        patch("bot.barcode.decoder.config") as mock_cfg,
+        patch.dict("sys.modules", {"anthropic": mock_ant}),
+    ):
+        mock_cfg.ANTHROPIC_API_KEY = "test-key"
+        from bot.barcode.decoder import extract_from_label
+
+        oem, name_ka, name_en = await extract_from_label(b"fake_jpeg")
+
+    assert oem == "8390132500"
+    assert name_ka == ""
+    assert name_en == ""
+
+
+@pytest.mark.asyncio
+async def test_extract_from_label_nothing_found():
+    mock_ant = _make_anthropic_module("| | ")
+
+    with (
+        patch("bot.barcode.decoder.config") as mock_cfg,
+        patch.dict("sys.modules", {"anthropic": mock_ant}),
+    ):
+        mock_cfg.ANTHROPIC_API_KEY = "test-key"
+        from bot.barcode.decoder import extract_from_label
+
+        oem, name_ka, name_en = await extract_from_label(b"fake_jpeg")
+
+    assert oem == ""
+    assert name_ka == ""
+    assert name_en == ""
+
+
+@pytest.mark.asyncio
+async def test_extract_from_label_no_api_key():
+    with patch("bot.barcode.decoder.config") as mock_cfg:
+        mock_cfg.ANTHROPIC_API_KEY = None
+        from bot.barcode.decoder import extract_from_label
+
+        oem, name_ka, name_en = await extract_from_label(b"fake_jpeg")
+
+    assert oem == ""
+    assert name_ka == ""
+    assert name_en == ""
+
+
+@pytest.mark.asyncio
+async def test_extract_from_label_api_error():
+    mock_ant = _make_anthropic_module(side_effect=Exception("API timeout"))
+
+    with (
+        patch("bot.barcode.decoder.config") as mock_cfg,
+        patch.dict("sys.modules", {"anthropic": mock_ant}),
+    ):
+        mock_cfg.ANTHROPIC_API_KEY = "test-key"
+        from bot.barcode.decoder import extract_from_label
+
+        oem, name_ka, name_en = await extract_from_label(b"fake_jpeg")
+
+    assert oem == ""
+    assert name_ka == ""
+    assert name_en == ""

@@ -1,14 +1,15 @@
 """Barcode decoding and part-name extraction from label photos.
 
-decode_barcode()    — synchronous; run in an executor (CPU-bound).
-extract_part_info() — async; calls Claude Vision to OCR + translate the label.
+decode_barcode()       — synchronous; run in an executor (CPU-bound).
+extract_part_info()    — async; name-only extraction via Claude Vision.
+extract_from_label()   — async; full fallback: OEM code + name via Claude Vision.
 """
 from __future__ import annotations
 
 import base64
 import logging
 from io import BytesIO
-from typing import Optional
+from typing import Literal, Optional
 
 import config
 
@@ -16,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def decode_barcode(image_bytes: bytes) -> Optional[str]:
-    """Decode the first readable barcode in the image using zxingcpp.
+    """Decode the first readable barcode using zxingcpp.
 
     Tries multiple image variants (original, grayscale, sharpened, upscaled)
-    to improve detection on low-quality phone photos.
+    to improve detection on low-quality/compressed phone photos.
     Returns the raw text or None.
     """
     try:
@@ -39,13 +40,13 @@ def decode_barcode(image_bytes: bytes) -> Optional[str]:
         if result:
             return result
 
-        # Try 3: sharpen + increase contrast — helps with blurry/dark photos
+        # Try 3: sharpen + contrast — helps with blurry/dark photos
         sharpened = ImageEnhance.Contrast(gray).enhance(2.0).filter(ImageFilter.SHARPEN)
         result = _zxing_first(zxingcpp.read_barcodes(sharpened))
         if result:
             return result
 
-        # Try 4: scale up small images (barcodes on labels often tiny)
+        # Try 4: scale up small images (barcodes on labels are often tiny)
         if max(img.size) < 1000:
             big = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
             result = _zxing_first(zxingcpp.read_barcodes(big))
@@ -65,10 +66,22 @@ def _zxing_first(results: list) -> Optional[str]:  # type: ignore[type-arg]
     return None
 
 
-async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
-    """Use Claude Vision (Haiku) to extract and translate the part name from a label.
+def _detect_media_type(
+    image_bytes: bytes,
+) -> Literal["image/jpeg", "image/png", "image/gif", "image/webp"]:
+    """Detect image MIME type from magic bytes."""
+    if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
 
-    Returns (name_ka, name_en). Both are empty strings on failure or missing key.
+
+async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
+    """Claude Vision (Haiku): extract and translate the part name from a label.
+
+    Returns (name_ka, name_en). Both empty strings on failure.
+    Used when the barcode was already decoded and only the name is needed.
     """
     if not config.ANTHROPIC_API_KEY:
         return "", ""
@@ -88,7 +101,7 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
                             "type": "image",
                             "source": {
                                 "type": "base64",
-                                "media_type": "image/jpeg",
+                                "media_type": _detect_media_type(image_bytes),
                                 "data": b64,
                             },
                         },
@@ -114,3 +127,64 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
     except Exception as exc:
         logger.warning("Claude Vision part-name extraction failed: %s", exc)
         return "", ""
+
+
+async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
+    """Claude Vision fallback: extract OEM code + part name when zxingcpp fails.
+
+    Returns (oem, name_ka, name_en). All empty strings on failure.
+    Used when the barcode scan fails (e.g. due to Telegram JPEG compression).
+    """
+    if not config.ANTHROPIC_API_KEY:
+        return "", "", ""
+    try:
+        import anthropic
+
+        b64 = base64.standard_b64encode(image_bytes).decode()
+        client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=120,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": _detect_media_type(image_bytes),
+                                "data": b64,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "This is an auto part label photo. Find:\n"
+                                "1. The OEM/part number printed on the label "
+                                "(digits/letters near the barcode, e.g. '45201-06290')\n"
+                                "2. The part name in English\n"
+                                "3. Georgian translation of the part name\n\n"
+                                "Reply ONLY in this exact format:\n"
+                                "oem_code | english_name | georgian_name\n"
+                                "Examples:\n"
+                                "  45201-06290 | Front Control Arm | წინა ბერკეტი\n"
+                                "  8390132500 | Oil Filter | ზეთის ფილტრი\n"
+                                "Leave a field empty if not visible:\n"
+                                "  | Control Arm | ბერკეტი\n"
+                                "If nothing is readable: | | "
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+        raw = getattr(response.content[0], "text", "").strip()
+        parts = raw.split("|", 2)
+        oem = parts[0].strip() if len(parts) > 0 else ""
+        name_en = parts[1].strip() if len(parts) > 1 else ""
+        name_ka = parts[2].strip() if len(parts) > 2 else ""
+        return oem, name_ka, name_en
+    except Exception as exc:
+        logger.warning("Claude Vision full label extraction failed: %s", exc)
+        return "", "", ""
