@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import logo from "@/public/logo.jpg";
 import {
   getPublicCatalog,
@@ -361,56 +361,65 @@ function Pagination({
   year?: string;
 }) {
   const base = { category, search, model, engine, year };
-  const btnCls =
-    "min-w-[2.25rem] px-2 py-2 text-sm text-center rounded-lg border transition-colors";
 
   return (
     <nav
-      className="flex items-center justify-center gap-1 flex-wrap"
+      className="flex items-center justify-center gap-1.5 flex-wrap"
       aria-label="გვერდები"
     >
-      {currentPage > 1 && (
+      {/* Prev arrow */}
+      {currentPage > 1 ? (
         <Link
           href={catalogUrl({ page: currentPage - 1 }, base)}
-          className={`${btnCls} hover:bg-secondary`}
           aria-label="წინა გვერდი"
+          className="group h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
         >
-          ←
+          <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
         </Link>
+      ) : (
+        <span className="h-9 w-9 flex items-center justify-center rounded-lg border border-border/40 bg-background/50 text-muted-foreground/30 cursor-not-allowed select-none">
+          <ChevronLeft className="h-4 w-4" />
+        </span>
       )}
 
+      {/* Page numbers */}
       {getPagesToShow(currentPage, totalPages).map((p, i) =>
         p === "..." ? (
           <span
             key={`ellipsis-${i}`}
-            className="px-2 py-2 text-sm text-foreground/40 select-none"
+            className="h-9 w-9 flex items-center justify-center text-sm text-muted-foreground/40 select-none"
           >
-            …
+            ···
           </span>
         ) : (
           <Link
             key={p}
             href={catalogUrl({ page: p }, base)}
-            className={`${btnCls} ${
-              p === currentPage
-                ? "bg-primary text-primary-foreground border-primary"
-                : "hover:bg-secondary"
-            }`}
             aria-current={p === currentPage ? "page" : undefined}
+            className={
+              p === currentPage
+                ? "h-9 min-w-[2.25rem] px-2.5 flex items-center justify-center rounded-lg text-sm font-semibold bg-primary text-white border border-primary shadow-sm shadow-primary/25"
+                : "h-9 min-w-[2.25rem] px-2.5 flex items-center justify-center rounded-lg text-sm text-foreground/70 border border-border bg-background transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+            }
           >
             {p}
           </Link>
         ),
       )}
 
-      {currentPage < totalPages && (
+      {/* Next arrow */}
+      {currentPage < totalPages ? (
         <Link
           href={catalogUrl({ page: currentPage + 1 }, base)}
-          className={`${btnCls} hover:bg-secondary`}
           aria-label="შემდეგი გვერდი"
+          className="group h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
         >
-          →
+          <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Link>
+      ) : (
+        <span className="h-9 w-9 flex items-center justify-center rounded-lg border border-border/40 bg-background/50 text-muted-foreground/30 cursor-not-allowed select-none">
+          <ChevronRight className="h-4 w-4" />
+        </span>
       )}
     </nav>
   );
