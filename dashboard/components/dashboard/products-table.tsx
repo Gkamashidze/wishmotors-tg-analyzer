@@ -1163,30 +1163,29 @@ export function ProductsTable({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <Button
-            variant="outline"
-            size="sm"
+        <div className="flex items-center justify-center gap-2 pt-3">
+          <button
             onClick={() => goToPage(page - 1)}
             disabled={page <= 1}
-            className="gap-1 cursor-pointer"
+            className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
           >
-            <ChevronLeft className="h-4 w-4" />
-            წინა
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            გვ. <span className="font-medium text-foreground">{page}</span> / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
+            <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          </button>
+
+          <div className="flex items-center gap-1 px-3 h-8 rounded-lg bg-muted/60 text-sm select-none">
+            <span className="text-muted-foreground">გვ.</span>
+            <span className="font-semibold text-primary mx-0.5">{page}</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span className="text-muted-foreground ml-0.5">{totalPages}</span>
+          </div>
+
+          <button
             onClick={() => goToPage(page + 1)}
             disabled={page >= totalPages}
-            className="gap-1 cursor-pointer"
+            className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
           >
-            შემდეგი
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </button>
         </div>
       )}
 
