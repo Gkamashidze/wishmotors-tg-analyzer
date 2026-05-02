@@ -146,10 +146,17 @@ export default function DeliveryPage() {
         {/* ── Delivery ── */}
         <Section icon={<IconTruck />} title="მიწოდება">
           <div>
-            <Row label="თბილისი" value="კურიერი — 1-2 სამუშაო დღეში" />
-            <Row label="სხვა ქალაქები" value="სწრაფი ამანათი — 2-4 სამუშაო დღეში" />
+            <Row label="ბათუმი" value="კურიერი — იმავე დღეს" />
+            <Row label="რეგიონები" value="1-3 სამუშაო დღეში" />
             <Row label="საწყობიდან წაღება" value="უფასო — სამუშაო საათებში" />
-            <Row label="შეკვეთილი პროდუქტი" value="3-5 სამუშაო დღეში" />
+          </div>
+          <div className="mt-4 flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 px-4 py-3">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 mt-0.5 fill-none stroke-current stroke-2 text-primary" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <p className="text-sm text-foreground/70">
+              <span className="font-medium text-foreground">მიწოდება უფასოა</span> — 150 ლარზე მეტი ღირებულების ან 5 და მეტი ნაწილის შეძენისას
+            </p>
           </div>
         </Section>
 
@@ -158,9 +165,6 @@ export default function DeliveryPage() {
           <div className="flex flex-wrap gap-2">
             <PayBadge label="ნაღდი ფული" />
             <PayBadge label="საბანკო გადარიცხვა" />
-            <PayBadge label="Bog Pay" />
-            <PayBadge label="TBC Pay" />
-            <PayBadge label="ნისია — შეთანხმებით" />
           </div>
         </Section>
 
@@ -188,8 +192,8 @@ export default function DeliveryPage() {
         <Section icon={<IconQuestion />} title="ხშირად დასმული კითხვები">
           <div>
             <FaqItem
-              q="პროდუქტი არ არის მარაგში — მოიტანთ?"
-              a="კი. შეკვეთის შემდეგ 3-5 სამუშაო დღეში მოვიტანთ. დაგვიკავშირდით და შევაკვეთოთ."
+              q="პროდუქტი რომელიც მარაგში არ არის, შეიძლება შევუკვეთო?"
+              a="კი, ვიღებთ შეკვეთას. ჩამოსვლის სავარაუდო ვადა დაახლოებით ორი კვირა."
             />
             <FaqItem
               q="ნივთის დაბრუნება შეიძლება?"
