@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, ChevronDown, ChevronUp } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -200,6 +200,41 @@ interface NewCompatState {
 }
 
 const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", fuel_type: "", year_from: "", year_to: "" };
+
+// ─── AI Description Button ────────────────────────────────────────────────────
+
+function AiDescriptionButton({ productId, onGenerated }: { productId: number; onGenerated: (text: string) => void }) {
+  const [loading, setLoading] = useState(false);
+
+  async function generate() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/products/${productId}/generate-description`, { method: "POST" });
+      const data = (await res.json()) as { description?: string; error?: string };
+      if (!res.ok || !data.description) {
+        toast.error(data.error ?? "AI-მ ვერ დაწერა აღწერა");
+        return;
+      }
+      onGenerated(data.description);
+    } catch {
+      toast.error("კავშირის შეცდომა");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void generate()}
+      disabled={loading}
+      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      <Sparkles className="w-3 h-3" />
+      {loading ? "იწერება..." : "AI-ით დაწერა"}
+    </button>
+  );
+}
 
 // ─── Georgian → Latin transliteration (for slug suggestion) ──────────────────
 
@@ -1079,9 +1114,19 @@ export function ProductsTable({
 
                         {/* Description */}
                         <div className="space-y-1">
-                          <label htmlFor={`desc-${r.id}`} className="text-xs font-medium text-muted-foreground">
-                            აღწერა (მაქს. 2000 სიმბოლო)
-                          </label>
+                          <div className="flex items-center justify-between">
+                            <label htmlFor={`desc-${r.id}`} className="text-xs font-medium text-muted-foreground">
+                              აღწერა (მაქს. 2000 სიმბოლო)
+                            </label>
+                            <AiDescriptionButton
+                              productId={r.id}
+                              onGenerated={(text) =>
+                                setCatalogEdit((prev) =>
+                                  prev ? { ...prev, description: text } : prev,
+                                )
+                              }
+                            />
+                          </div>
                           <textarea
                             id={`desc-${r.id}`}
                             rows={4}
