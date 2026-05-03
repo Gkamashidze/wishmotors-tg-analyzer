@@ -15,6 +15,23 @@ _TIMEOUT = 15.0
 # Strong references prevent GC from collecting log tasks before completion.
 _log_tasks: set = set()
 
+# Module-level singleton — avoids creating a new HTTP connection pool per call.
+_client: Optional[Any] = None
+
+
+def _get_client() -> Optional[Any]:
+    global _client
+    api_key = getattr(config, "ANTHROPIC_API_KEY", None)
+    if not api_key:
+        return None
+    if _client is None:
+        try:
+            from anthropic import AsyncAnthropic
+            _client = AsyncAnthropic(api_key=api_key, timeout=_TIMEOUT)
+        except ImportError:
+            logger.warning("`anthropic` package not installed — catalog search unavailable.")
+    return _client
+
 _SYSTEM = """\
 შენ ხარ ავტო სათადარიგო ნაწილების მაღაზიის ძიების ასისტენტი (SsangYong).
 მომხმარებელი გეძლევა სათადარიგო ნაწილების კატალოგი და კლიენტის მოთხოვნა.
@@ -50,6 +67,9 @@ def _build_catalog_text(products: List[dict]) -> str:
 
         compat_parts = []
         for c in compat_entries:
+            if c.get("model") == "__ALL__":
+                compat_parts.append("ყველა მოდელი")
+                continue
             c_str = c.get("model", "")
             if c.get("drive"):
                 c_str += f" {c['drive']}"
@@ -91,28 +111,38 @@ async def search_catalog(
     if not products:
         return []
 
-    api_key = getattr(config, "ANTHROPIC_API_KEY", None)
-    if not api_key:
+    client = _get_client()
+    if client is None:
         logger.warning("ANTHROPIC_API_KEY not set — catalog search unavailable.")
-        return []
-
-    try:
-        from anthropic import AsyncAnthropic
-    except ImportError:
-        logger.warning("`anthropic` package not installed — catalog search unavailable.")
         return []
 
     catalog_text = _build_catalog_text(products)
     user_message = f"კატალოგი:\n{catalog_text}\n\nკლიენტის მოთხოვნა: {query}"
 
-    client = AsyncAnthropic(api_key=api_key, timeout=_TIMEOUT)
     try:
+        from anthropic import APIConnectionError, APITimeoutError, RateLimitError
         response = await client.messages.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
-            system=_SYSTEM,
+            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
+        usage = response.usage
+        logger.info(
+            "catalog_search tokens: in=%d out=%d cache_read=%d",
+            usage.input_tokens,
+            usage.output_tokens,
+            getattr(usage, "cache_read_input_tokens", 0),
+        )
+    except RateLimitError as exc:
+        logger.warning("Catalog search rate-limited: %s", exc)
+        return []
+    except APITimeoutError as exc:
+        logger.warning("Catalog search API timeout: %s", exc)
+        return []
+    except APIConnectionError as exc:
+        logger.warning("Catalog search API connection error: %s", exc)
+        return []
     except Exception as exc:
         logger.warning("Catalog search API call failed: %s", exc)
         return []

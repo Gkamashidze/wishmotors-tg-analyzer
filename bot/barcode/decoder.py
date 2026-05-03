@@ -9,11 +9,27 @@ from __future__ import annotations
 import base64
 import logging
 from io import BytesIO
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import config
 
 logger = logging.getLogger(__name__)
+
+# Module-level singleton — one HTTP connection pool for the lifetime of the process.
+_anthropic_client: Optional[Any] = None
+
+
+def _get_anthropic_client() -> Optional[Any]:
+    global _anthropic_client
+    if not config.ANTHROPIC_API_KEY:
+        return None
+    if _anthropic_client is None:
+        try:
+            import anthropic
+            _anthropic_client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        except ImportError:
+            logger.warning("`anthropic` package not installed — barcode AI extraction unavailable.")
+    return _anthropic_client
 
 
 def decode_barcode(image_bytes: bytes) -> Optional[str]:
@@ -83,13 +99,12 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
     Returns (name_ka, name_en). Both empty strings on failure.
     Used when the barcode was already decoded and only the name is needed.
     """
-    if not config.ANTHROPIC_API_KEY:
+    client = _get_anthropic_client()
+    if client is None:
         return "", ""
     try:
-        import anthropic
 
         b64 = base64.standard_b64encode(image_bytes).decode()
-        client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
         response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=80,
@@ -119,13 +134,18 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
                 }
             ],
         )
+        usage = response.usage
+        logger.info(
+            "extract_part_info tokens: in=%d out=%d",
+            usage.input_tokens, usage.output_tokens,
+        )
         raw = getattr(response.content[0], "text", "").strip()
         parts = raw.split("|", 1)
         name_en = parts[0].strip()
         name_ka = parts[1].strip() if len(parts) > 1 else ""
         return name_ka, name_en
     except Exception as exc:
-        logger.warning("Claude Vision part-name extraction failed: %s", exc)
+        logger.warning("Claude Vision part-name extraction failed (%s): %s", type(exc).__name__, exc)
         return "", ""
 
 
@@ -135,13 +155,12 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
     Returns (oem, name_ka, name_en). All empty strings on failure.
     Used when the barcode scan fails (e.g. due to Telegram JPEG compression).
     """
-    if not config.ANTHROPIC_API_KEY:
+    client = _get_anthropic_client()
+    if client is None:
         return "", "", ""
     try:
-        import anthropic
 
         b64 = base64.standard_b64encode(image_bytes).decode()
-        client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
         response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=120,
@@ -179,6 +198,11 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
                 }
             ],
         )
+        usage = response.usage
+        logger.info(
+            "extract_from_label tokens: in=%d out=%d",
+            usage.input_tokens, usage.output_tokens,
+        )
         raw = getattr(response.content[0], "text", "").strip()
         parts = raw.split("|", 2)
         oem = parts[0].strip() if len(parts) > 0 else ""
@@ -186,5 +210,5 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
         name_ka = parts[2].strip() if len(parts) > 2 else ""
         return oem, name_ka, name_en
     except Exception as exc:
-        logger.warning("Claude Vision full label extraction failed: %s", exc)
+        logger.warning("Claude Vision full label extraction failed (%s): %s", type(exc).__name__, exc)
         return "", "", ""

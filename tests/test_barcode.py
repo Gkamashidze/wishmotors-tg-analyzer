@@ -19,6 +19,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/test")
 os.environ.setdefault("ADMIN_IDS", "12345")
 os.environ.setdefault("TIMEZONE", "Asia/Tbilisi")
 
+import bot.barcode.decoder as _decoder_mod  # noqa: E402
 from bot.handlers.barcode import _bc_cache, _bc_get, _bc_set, bc_consume  # noqa: E402
 
 
@@ -26,6 +27,8 @@ from bot.handlers.barcode import _bc_cache, _bc_get, _bc_set, bc_consume  # noqa
 
 def setup_function():
     _bc_cache.clear()
+    # Reset Anthropic singleton so each test starts with a fresh mock client.
+    _decoder_mod._anthropic_client = None
 
 
 @pytest.mark.asyncio

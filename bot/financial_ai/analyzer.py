@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import config
 from bot.financial_ai.data_access import FinancialDataReader, FinancialSnapshot
@@ -34,6 +34,17 @@ _REQUEST_TIMEOUT_SECONDS = 30.0
 # Avoids burning tokens when /report is invoked multiple times for the same week.
 _CACHE_TTL_SECONDS = 60 * 60  # 1 hour
 _advice_cache: dict[tuple[str, str], tuple[float, str]] = {}
+
+# Module-level singleton — one HTTP connection pool for the lifetime of the process.
+_anthropic_client: Optional[Any] = None
+
+
+def _get_client(api_key: str) -> Any:
+    global _anthropic_client
+    if _anthropic_client is None:
+        from anthropic import AsyncAnthropic
+        _anthropic_client = AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS)
+    return _anthropic_client
 
 
 def _format_period_label(start: datetime, end: datetime) -> str:
@@ -101,14 +112,19 @@ async def generate_weekly_advice(
     try:
         # Lazy import: keep `anthropic` an optional dependency so the bot still
         # starts on deployments that haven't installed it yet.
-        from anthropic import AsyncAnthropic
+        from anthropic import (
+            AsyncAnthropic,  # noqa: F401
+            APIConnectionError,
+            APITimeoutError,
+            RateLimitError,
+        )
     except ImportError:
         logger.warning(
             "`anthropic` package not installed — AI financial analysis unavailable."
         )
         return None
 
-    client = AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS)
+    client = _get_client(api_key)
     messages = build_messages(snapshot.to_dict(), _format_period_label(period_start, period_end))
 
     try:
@@ -116,9 +132,25 @@ async def generate_weekly_advice(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
-            system=SYSTEM_PROMPT,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=messages,
         )
+        usage = response.usage
+        logger.info(
+            "financial_ai tokens: in=%d out=%d cache_read=%d",
+            usage.input_tokens,
+            usage.output_tokens,
+            getattr(usage, "cache_read_input_tokens", 0),
+        )
+    except RateLimitError as exc:
+        logger.warning("Financial AI rate-limited: %s", exc)
+        return None
+    except APITimeoutError as exc:
+        logger.warning("Financial AI API timeout: %s", exc)
+        return None
+    except APIConnectionError as exc:
+        logger.warning("Financial AI API connection error: %s", exc)
+        return None
     except Exception as exc:
         logger.warning("Anthropic API call failed: %s", exc)
         return None
