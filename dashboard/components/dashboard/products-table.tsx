@@ -26,7 +26,7 @@ import {
   formatDate, formatDateTime,
   PAYMENT_LABELS, STATUS_LABELS, PRIORITY_LABELS,
   SSANGYONG_MODELS, DRIVE_OPTIONS, FUEL_OPTIONS, DEFAULT_NEW_COMPAT, ALL_MODELS_SENTINEL,
-  nameToSlug, rowToEdit, saleToEdit, orderToEdit, ITEM_TYPE_FILTERS,
+  nameToSlug, rowToEdit, saleToEdit, orderToEdit, ITEM_TYPE_FILTERS, PUBLISHED_FILTERS,
 } from "./_utils";
 import type {
   EditState, SaleEditState, OrderEditState,
@@ -39,16 +39,19 @@ export function ProductsTable({
   page,
   search: initialSearch = "",
   itemType: initialItemType = "",
+  published: initialPublished = "",
 }: {
   rows: ProductRow[];
   total: number;
   page: number;
   search?: string;
   itemType?: string;
+  published?: string;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState(initialSearch);
   const [itemType, setItemType] = useState(initialItemType);
+  const [published, setPublished] = useState(initialPublished);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [productMetrics, setProductMetrics] = useState<ProductMetricRow[]>([]);
 
@@ -110,16 +113,18 @@ export function ProductsTable({
 
   const totalPages = Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE));
 
-  const buildParams = useCallback((overrides: { page?: number; search?: string; itemType?: string }) => {
+  const buildParams = useCallback((overrides: { page?: number; search?: string; itemType?: string; published?: string }) => {
     const params = new URLSearchParams();
     const p = overrides.page ?? page;
     const s = overrides.search ?? search;
     const t = overrides.itemType !== undefined ? overrides.itemType : itemType;
+    const pub = overrides.published !== undefined ? overrides.published : published;
     params.set("page", String(p));
     if (s.trim()) params.set("search", s.trim());
     if (t) params.set("item_type", t);
+    if (pub) params.set("published", pub);
     return params.toString();
-  }, [page, search, itemType]);
+  }, [page, search, itemType, published]);
 
   const goToPage = useCallback((p: number) => {
     router.push(`?${buildParams({ page: p })}`);
@@ -172,6 +177,11 @@ export function ProductsTable({
   const handleItemTypeFilter = useCallback((value: string) => {
     setItemType(value);
     router.push(`?${buildParams({ page: 1, itemType: value })}`);
+  }, [router, buildParams]);
+
+  const handlePublishedFilter = useCallback((value: string) => {
+    setPublished(value);
+    router.push(`?${buildParams({ page: 1, published: value })}`);
   }, [router, buildParams]);
 
   // rows are already filtered server-side; no client-side filtering needed
@@ -469,6 +479,25 @@ export function ProductsTable({
               className={cn(
                 "h-7 px-3 rounded-full text-xs font-medium border transition-colors cursor-pointer",
                 itemType === f.value
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:text-foreground hover:border-foreground/30",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {/* Published filter */}
+        <div className="flex gap-1.5 flex-wrap items-center">
+          <span className="text-xs text-muted-foreground">კატალოგი:</span>
+          {PUBLISHED_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => handlePublishedFilter(f.value)}
+              className={cn(
+                "h-7 px-3 rounded-full text-xs font-medium border transition-colors cursor-pointer",
+                published === f.value
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-background text-muted-foreground border-border hover:text-foreground hover:border-foreground/30",
               )}

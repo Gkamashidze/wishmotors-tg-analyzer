@@ -120,6 +120,12 @@ export const ITEM_TYPE_FILTERS = [
   { value: "consumable",  label: "სახარჯი" },
 ] as const;
 
+export const PUBLISHED_FILTERS = [
+  { value: "",  label: "ყველა" },
+  { value: "1", label: "გამოქვეყნებული" },
+  { value: "0", label: "გამოუქვეყნებელი" },
+] as const;
+
 export function rowToEdit(r: ProductRow, isPublished: boolean): EditState {
   return {
     name: r.name,

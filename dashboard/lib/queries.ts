@@ -1287,6 +1287,7 @@ export async function getProductsPaged(
   limit: number = PRODUCTS_PAGE_SIZE,
   search?: string,
   itemType?: string,
+  published?: boolean,
 ): Promise<{ rows: ProductRow[]; total: number }> {
   const offset = (Math.max(1, page) - 1) * limit;
   const q = search?.trim() ?? "";
@@ -1304,6 +1305,10 @@ export async function getProductsPaged(
   if (validItemType) {
     params.push(validItemType);
     conditions.push(`p.item_type = $${params.length}`);
+  }
+  if (published !== undefined) {
+    params.push(published);
+    conditions.push(`p.is_published = $${params.length}`);
   }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
