@@ -122,6 +122,14 @@ CREATE INDEX IF NOT EXISTS idx_inventory_batches_active
 # Applied once at startup to add new columns / constraints to existing tables (idempotent).
 # Constraints are added NOT VALID so they apply to future rows without scanning existing data.
 MIGRATE_SQL = """
+-- ─── Migration tracking ───────────────────────────────────────────────────────
+-- Backfill UPDATEs are gated by this table so they run exactly once even though
+-- MIGRATE_SQL itself executes on every bot restart.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    migration_id TEXT PRIMARY KEY,
+    applied_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Allow stock to go negative (wizard sales on unloaded inventory visible as negative)
 ALTER TABLE products DROP CONSTRAINT IF EXISTS products_current_stock_check;
 
@@ -308,9 +316,12 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
 CREATE INDEX IF NOT EXISTS idx_sales_status ON sales(status) WHERE status != 'active';
 
 -- Normalize legacy 'normal' priority orders → 'low'.
--- Bot only ever creates 'urgent' or 'low'; 'normal' was the old DB default.
--- Idempotent: safe to run multiple times.
-UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = 'normalize_order_priority') THEN
+    UPDATE orders SET priority = 'low' WHERE priority = 'normal' OR priority IS NULL;
+    INSERT INTO schema_migrations (migration_id) VALUES ('normalize_order_priority');
+  END IF;
+END $$;
 
 -- clients: one row per Telegram user who has placed at least one order.
 -- id = Telegram user ID (BIGINT — exceeds int32). Extra columns are optional
@@ -383,9 +394,14 @@ CREATE INDEX IF NOT EXISTS idx_sales_payment_status ON sales(payment_status) WHE
 -- cost_amount remains for reversal / ledger-posting backward compatibility.
 ALTER TABLE sales         ADD COLUMN IF NOT EXISTS cogs NUMERIC(14, 2) NOT NULL DEFAULT 0;
 ALTER TABLE deleted_sales ADD COLUMN IF NOT EXISTS cogs NUMERIC(14, 2) NOT NULL DEFAULT 0;
--- Back-fill from cost_amount for all existing rows.
-UPDATE sales         SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
-UPDATE deleted_sales SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
+-- Back-fill cogs from cost_amount (runs once).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = 'backfill_cogs') THEN
+    UPDATE sales         SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
+    UPDATE deleted_sales SET cogs = cost_amount WHERE cogs = 0 AND cost_amount > 0;
+    INSERT INTO schema_migrations (migration_id) VALUES ('backfill_cogs');
+  END IF;
+END $$;
 
 -- Output VAT (18%) extracted from VAT-inclusive sale price: total - total/1.18
 -- Always computed at sale time regardless of is_vat_included flag.
@@ -414,12 +430,20 @@ CREATE INDEX IF NOT EXISTS idx_vat_ledger_reference  ON vat_ledger(reference_id)
 -- Expense category default: ensure existing NULLs and future rows without an
 -- explicit category land on 'general' rather than NULL.
 ALTER TABLE expenses ALTER COLUMN category SET DEFAULT 'general';
-UPDATE expenses SET category = 'general' WHERE category IS NULL OR category = '';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = 'backfill_expense_category') THEN
+    UPDATE expenses SET category = 'general' WHERE category IS NULL OR category = '';
+    INSERT INTO schema_migrations (migration_id) VALUES ('backfill_expense_category');
+  END IF;
+END $$;
 
 -- Normalise seller_type: wizard previously stored 'company' instead of 'llc'.
--- This one-time back-fill ensures the VAT dashboard (which filters on 'llc')
--- picks up all historic შპს sales correctly.
-UPDATE sales SET seller_type = 'llc' WHERE seller_type = 'company';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE migration_id = 'normalize_seller_type') THEN
+    UPDATE sales SET seller_type = 'llc' WHERE seller_type = 'company';
+    INSERT INTO schema_migrations (migration_id) VALUES ('normalize_seller_type');
+  END IF;
+END $$;
 
 -- Back-fill output_vat for LLC sales where it was never computed at sale time.
 UPDATE sales
@@ -786,6 +810,12 @@ CREATE TABLE IF NOT EXISTS expense_edits (
 );
 CREATE INDEX IF NOT EXISTS idx_expense_edits_expense_id ON expense_edits(expense_id);
 CREATE INDEX IF NOT EXISTS idx_expense_edits_edited_at  ON expense_edits(edited_at DESC);
+
+-- ─── #27: Missing indexes on returns table ────────────────────────────────────
+-- Queries that look up returns by product or sale were doing full-table scans.
+CREATE INDEX IF NOT EXISTS idx_returns_product_id ON returns(product_id);
+CREATE INDEX IF NOT EXISTS idx_returns_sale_id    ON returns(sale_id) WHERE sale_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_returns_returned_at ON returns(returned_at DESC);
 """
 
 
