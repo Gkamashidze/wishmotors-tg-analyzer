@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[erp-imports GET]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ id: row.id }, { status: 201 });
   } catch (err) {
     console.error("[erp-imports POST]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

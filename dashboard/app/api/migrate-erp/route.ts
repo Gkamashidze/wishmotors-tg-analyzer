@@ -1,9 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+function requireAdminKey(req: NextRequest): NextResponse | null {
+  const key = process.env.INTERNAL_ADMIN_KEY;
+  if (!key) return NextResponse.json({ error: "Admin key not configured" }, { status: 503 });
+  if (req.headers.get("x-admin-key") !== key) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
+export async function POST(req: NextRequest) {
+  const denied = requireAdminKey(req);
+  if (denied) return denied;
   try {
     await query(`
       CREATE TABLE IF NOT EXISTS imports (
@@ -119,11 +130,13 @@ export async function POST() {
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[migrate-erp]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = requireAdminKey(req);
+  if (denied) return denied;
   try {
     const rows = await query<{ exists: boolean }>(`
       SELECT EXISTS (
@@ -133,6 +146,6 @@ export async function GET() {
     `);
     return NextResponse.json({ tablesExist: rows[0]?.exists ?? false });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

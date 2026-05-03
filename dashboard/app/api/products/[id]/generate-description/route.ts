@@ -79,8 +79,7 @@ export async function POST(_req: NextRequest, { params }: { params: Params }) {
 
     return NextResponse.json({ description });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[generate-description] Anthropic error:", msg);
-    return NextResponse.json({ error: `AI შეცდომა: ${msg}` }, { status: 500 });
+    console.error("[generate-description] Anthropic error:", err);
+    return NextResponse.json({ error: "AI სერვისი დროებით მიუწვდომელია" }, { status: 500 });
   }
 }

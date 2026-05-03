@@ -37,9 +37,8 @@ export async function POST(req: NextRequest) {
   try {
     client = await getDriveClient();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[upload] getDriveClient failed:", msg);
-    return NextResponse.json({ error: `Drive კონფიგ შეცდომა: ${msg}` }, { status: 503 });
+    console.error("[upload] getDriveClient failed:", err);
+    return NextResponse.json({ error: "Google Drive კონფიგურაცია ვერ ჩაიტვირთა" }, { status: 503 });
   }
   if (!client) {
     return NextResponse.json(
@@ -94,9 +93,8 @@ export async function POST(req: NextRequest) {
     }
     fileId = created.data.id;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[upload] drive.files.create failed:", msg);
-    return NextResponse.json({ error: `Drive ატვირთვა ვერ მოხერხდა: ${msg}` }, { status: 500 });
+    console.error("[upload] drive.files.create failed:", err);
+    return NextResponse.json({ error: "ფოტოს ატვირთვა ვერ მოხერხდა" }, { status: 500 });
   }
 
   try {

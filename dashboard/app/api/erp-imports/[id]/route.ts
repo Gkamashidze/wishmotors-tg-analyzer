@@ -117,7 +117,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     });
   } catch (err) {
     console.error("[erp-imports/:id GET]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -207,7 +207,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[erp-imports/:id PATCH]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -223,7 +223,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[erp-imports/:id DELETE]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

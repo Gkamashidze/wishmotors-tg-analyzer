@@ -1,9 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+function requireAdminKey(req: NextRequest): NextResponse | null {
+  const key = process.env.INTERNAL_ADMIN_KEY;
+  if (!key) return NextResponse.json({ error: "Admin key not configured" }, { status: 503 });
+  if (req.headers.get("x-admin-key") !== key) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
+export async function POST(req: NextRequest) {
+  const denied = requireAdminKey(req);
+  if (denied) return denied;
   try {
     await query(`
       ALTER TABLE accounting_partner_transactions
@@ -22,6 +33,6 @@ export async function POST() {
     return NextResponse.json({ ok: true, message: "Multi-currency migration applied." });
   } catch (err) {
     console.error("[migrate-currency] error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
