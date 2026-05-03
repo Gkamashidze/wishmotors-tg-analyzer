@@ -4,18 +4,18 @@
 
 | #  | კატეგორია     | პრობლემა                                                        | სიმძიმე | სტატუსი          | შენიშვნა |
 |----|---------------|-----------------------------------------------------------------|---------|------------------|----------|
-| 1  | Security      | debug/drive-config endpoint leaks OAuth secrets                 | 🔴      | ⬜ მოლოდინში     | |
-| 2  | Security      | timingSafeEqual timing oracle (password length leak)            | 🔴      | ⬜ მოლოდინში     | |
-| 3  | Database      | No SSL on asyncpg pool (database/db.py:44)                      | 🔴      | ⬜ მოლოდინში     | |
+| 1  | Security      | debug/drive-config endpoint leaks OAuth secrets                 | 🔴      | ✅ შესრულდა     | 5cf9f29 |
+| 2  | Security      | timingSafeEqual timing oracle (password length leak)            | 🔴      | ✅ შესრულდა     | 5cf9f29 |
+| 3  | Database      | No SSL on asyncpg pool (database/db.py:44)                      | 🔴      | ✅ შესრულდა     | 5cf9f29 |
 | 4  | Testing       | sales.py — zero tests (core revenue path)                       | 🔴      | ⬜ მოლოდინში     | |
 | 5  | Testing       | Dashboard — zero tests (vitest + playwright unused)             | 🔴      | ⬜ მოლოდინში     | |
 | 6  | Testing       | wizard.py — zero tests (primary UX flow)                        | 🔴      | ⬜ მოლოდინში     | |
 | 7  | Testing       | financial_ai — zero tests                                       | 🔴      | ⬜ მოლოდინში     | |
 | 8  | Testing       | DB error paths untested (UniqueViolation, pool exhaustion)      | 🔴      | ⬜ მოლოდინში     | |
-| 9  | Architecture  | In-process caches break multi-instance (barcode + rate limiter) | 🔴      | ⬜ მოლოდინში     | |
-| 10 | Architecture  | Untracked asyncio.create_task audit writes (silent data loss)   | 🔴      | ⬜ მოლოდინში     | |
-| 11 | Error Handling| No global @dp.errors() handler in aiogram (main.py)            | 🔴      | ⬜ მოლოდინში     | |
-| 12 | Error Handling| TelegramRetryAfter only handled in deeplink.py                  | 🔴      | ⬜ მოლოდინში     | |
+| 9  | Architecture  | In-process caches break multi-instance (barcode + rate limiter) | 🔴      | ✅ შესრულდა     | a8a9aa5 |
+| 10 | Architecture  | Untracked asyncio.create_task audit writes (silent data loss)   | 🔴      | ✅ შესრულდა     | e77eabf |
+| 11 | Error Handling| No global @dp.errors() handler in aiogram (main.py)            | 🔴      | ✅ შესრულდა     | e77eabf |
+| 12 | Error Handling| TelegramRetryAfter only handled in deeplink.py                  | 🔴      | ✅ შესრულდა     | e77eabf |
 | 13 | Frontend      | products-table.tsx — 1,921 lines (god component)                | 🔴      | ⬜ მოლოდინში     | |
 | 14 | Frontend      | No error.tsx / loading.tsx anywhere in dashboard/app            | 🔴      | ⬜ მოლოდინში     | |
 | 15 | Security      | Raw err.message returned to clients in 15+ API routes           | 🟡      | ⬜ მოლოდინში     | |
