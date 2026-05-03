@@ -25,7 +25,7 @@ import { WriteoffDialog } from "./_writeoff-dialog";
 import {
   formatDate, formatDateTime,
   PAYMENT_LABELS, STATUS_LABELS, PRIORITY_LABELS,
-  SSANGYONG_MODELS, DRIVE_OPTIONS, FUEL_OPTIONS, DEFAULT_NEW_COMPAT,
+  SSANGYONG_MODELS, DRIVE_OPTIONS, FUEL_OPTIONS, DEFAULT_NEW_COMPAT, ALL_MODELS_SENTINEL,
   nameToSlug, rowToEdit, saleToEdit, orderToEdit, ITEM_TYPE_FILTERS,
 } from "./_utils";
 import type {
@@ -928,14 +928,20 @@ export function ProductsTable({
                   {compatEntries.map((c) => (
                     <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-1.5 text-sm">
                       <span>
-                        <span className="font-medium">{c.model}</span>
-                        {c.drive && <span className="ml-1.5 text-muted-foreground">· {c.drive}</span>}
-                        {c.engine && <span className="ml-1.5 text-muted-foreground">· {c.engine}</span>}
-                        {c.fuelType && <span className="ml-1.5 text-muted-foreground">· {c.fuelType}</span>}
-                        {(c.yearFrom || c.yearTo) && (
-                          <span className="ml-1.5 text-muted-foreground">
-                            · {c.yearFrom ?? "?"} – {c.yearTo ?? "?"}
-                          </span>
+                        {c.model === ALL_MODELS_SENTINEL ? (
+                          <span className="font-medium">🌐 ყველა მოდელი</span>
+                        ) : (
+                          <>
+                            <span className="font-medium">{c.model}</span>
+                            {c.drive && <span className="ml-1.5 text-muted-foreground">· {c.drive}</span>}
+                            {c.engine && <span className="ml-1.5 text-muted-foreground">· {c.engine}</span>}
+                            {c.fuelType && <span className="ml-1.5 text-muted-foreground">· {c.fuelType}</span>}
+                            {(c.yearFrom || c.yearTo) && (
+                              <span className="ml-1.5 text-muted-foreground">
+                                · {c.yearFrom ?? "?"} – {c.yearTo ?? "?"}
+                              </span>
+                            )}
+                          </>
                         )}
                       </span>
                       <button
@@ -961,59 +967,64 @@ export function ProductsTable({
                   onChange={(e) => setNewCompat((p) => ({ ...p, model: e.target.value }))}
                   options={[
                     { value: "", label: "— აირჩიეთ —" },
+                    { value: ALL_MODELS_SENTINEL, label: "🌐 ყველა მოდელისთვის" },
                     ...SSANGYONG_MODELS.map((m) => ({ value: m, label: m })),
                   ]}
                 />
-                <Select
-                  id="nc-drive"
-                  label="წამყვანი"
-                  value={newCompat.drive}
-                  onChange={(e) => setNewCompat((p) => ({ ...p, drive: e.target.value }))}
-                  options={[
-                    { value: "", label: "— ყველა —" },
-                    ...DRIVE_OPTIONS.map((d) => ({ value: d, label: d })),
-                  ]}
-                />
-                <Input
-                  id="nc-engine"
-                  label="ძრავი (მაგ: 2.0, 2.7)"
-                  type="text"
-                  value={newCompat.engine}
-                  onChange={(e) => setNewCompat((p) => ({ ...p, engine: e.target.value }))}
-                  placeholder="სურვილისამებრ"
-                />
-                <Select
-                  id="nc-fuel"
-                  label="საწვავი"
-                  value={newCompat.fuel_type}
-                  onChange={(e) => setNewCompat((p) => ({ ...p, fuel_type: e.target.value }))}
-                  options={[
-                    { value: "", label: "— ყველა —" },
-                    ...FUEL_OPTIONS.map((f) => ({ value: f, label: f })),
-                  ]}
-                />
-                <div className="flex gap-1.5 items-end">
-                  <Input
-                    id="nc-yfrom"
-                    label="წელი: დან"
-                    type="number"
-                    min="1990"
-                    max="2030"
-                    value={newCompat.year_from}
-                    onChange={(e) => setNewCompat((p) => ({ ...p, year_from: e.target.value }))}
-                    placeholder="2008"
-                  />
-                  <Input
-                    id="nc-yto"
-                    label="მდე"
-                    type="number"
-                    min="1990"
-                    max="2030"
-                    value={newCompat.year_to}
-                    onChange={(e) => setNewCompat((p) => ({ ...p, year_to: e.target.value }))}
-                    placeholder="2014"
-                  />
-                </div>
+                {newCompat.model !== ALL_MODELS_SENTINEL && (
+                  <>
+                    <Select
+                      id="nc-drive"
+                      label="წამყვანი"
+                      value={newCompat.drive}
+                      onChange={(e) => setNewCompat((p) => ({ ...p, drive: e.target.value }))}
+                      options={[
+                        { value: "", label: "— ყველა —" },
+                        ...DRIVE_OPTIONS.map((d) => ({ value: d, label: d })),
+                      ]}
+                    />
+                    <Input
+                      id="nc-engine"
+                      label="ძრავი (მაგ: 2.0, 2.7)"
+                      type="text"
+                      value={newCompat.engine}
+                      onChange={(e) => setNewCompat((p) => ({ ...p, engine: e.target.value }))}
+                      placeholder="სურვილისამებრ"
+                    />
+                    <Select
+                      id="nc-fuel"
+                      label="საწვავი"
+                      value={newCompat.fuel_type}
+                      onChange={(e) => setNewCompat((p) => ({ ...p, fuel_type: e.target.value }))}
+                      options={[
+                        { value: "", label: "— ყველა —" },
+                        ...FUEL_OPTIONS.map((f) => ({ value: f, label: f })),
+                      ]}
+                    />
+                    <div className="flex gap-1.5 items-end">
+                      <Input
+                        id="nc-yfrom"
+                        label="წელი: დან"
+                        type="number"
+                        min="1990"
+                        max="2030"
+                        value={newCompat.year_from}
+                        onChange={(e) => setNewCompat((p) => ({ ...p, year_from: e.target.value }))}
+                        placeholder="2008"
+                      />
+                      <Input
+                        id="nc-yto"
+                        label="მდე"
+                        type="number"
+                        min="1990"
+                        max="2030"
+                        value={newCompat.year_to}
+                        onChange={(e) => setNewCompat((p) => ({ ...p, year_to: e.target.value }))}
+                        placeholder="2014"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <Button
                 size="sm"

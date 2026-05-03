@@ -58,6 +58,8 @@ export function getCatalogCompletion(r: ProductRow) {
   ];
 }
 
+export const ALL_MODELS_SENTINEL = "__ALL__";
+
 export const SSANGYONG_MODELS = [
   "Korando Sport",
   "Korando C",

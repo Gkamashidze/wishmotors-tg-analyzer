@@ -206,24 +206,32 @@ function CompatibilityTable({
           </thead>
           <tbody className="divide-y divide-border">
             {entries.map((e) => (
-              <tr
-                key={e.id}
-                className="hover:bg-secondary/40 transition-colors"
-              >
-                <td className="px-4 py-3 font-medium">{e.model}</td>
-                <td className="px-4 py-3 text-foreground/70 hidden sm:table-cell">
-                  {e.engine ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
-                  {e.drive ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
-                  {e.fuelType ?? "—"}
-                </td>
-                <td className="px-4 py-3 text-foreground/70 whitespace-nowrap">
-                  {yearRange(e)}
-                </td>
-              </tr>
+              e.model === "__ALL__" ? (
+                <tr key={e.id} className="hover:bg-secondary/40 transition-colors">
+                  <td className="px-4 py-3 font-medium" colSpan={5}>
+                    🌐 ყველა მოდელი
+                  </td>
+                </tr>
+              ) : (
+                <tr
+                  key={e.id}
+                  className="hover:bg-secondary/40 transition-colors"
+                >
+                  <td className="px-4 py-3 font-medium">{e.model}</td>
+                  <td className="px-4 py-3 text-foreground/70 hidden sm:table-cell">
+                    {e.engine ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
+                    {e.drive ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-foreground/70 hidden md:table-cell">
+                    {e.fuelType ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-foreground/70 whitespace-nowrap">
+                    {yearRange(e)}
+                  </td>
+                </tr>
+              )
             ))}
           </tbody>
         </table>

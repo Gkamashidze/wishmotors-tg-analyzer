@@ -34,6 +34,9 @@ def _fmt_compat(compat_entries, notes: Optional[str]) -> str:
 
     lines = []
     for c in entries:
+        if c.get("model") == "__ALL__":
+            lines.append("ყველა მოდელი")
+            continue
         parts = [c.get("model", "")]
         if c.get("drive"):
             parts.append(c["drive"])
