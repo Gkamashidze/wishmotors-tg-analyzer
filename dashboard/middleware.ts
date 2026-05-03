@@ -10,6 +10,14 @@ export const config = {
   ],
 };
 
+const ADMIN_HOST = process.env.ADMIN_HOST ?? "";
+
+function isPublicDomain(hostname: string): boolean {
+  if (!ADMIN_HOST) return false;
+  const bare = hostname.split(":")[0];
+  return bare !== ADMIN_HOST.split(":")[0] && bare !== "localhost";
+}
+
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
@@ -26,6 +34,15 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
+  const hostname = req.nextUrl.hostname;
+
+  if (isPublicDomain(hostname)) {
+    if (req.nextUrl.pathname === "/") {
+      return NextResponse.redirect(new URL("/catalog", req.url), { status: 308 });
+    }
+    return applySecurityHeaders(new NextResponse(null, { status: 404 }));
+  }
+
   const expected = process.env.DASHBOARD_BASIC_AUTH;
   const isProd = process.env.NODE_ENV === "production";
 
