@@ -27,7 +27,7 @@
 | 21 | Error Handling| Token usage (response.usage) never logged                       | 🟡      | ✅ შესრულდა     | 32b148b |
 | 22 | Error Handling| asyncpg-specific exceptions never caught separately             | 🟡      | ✅ შესრულდა     | 32b148b |
 | 23 | Error Handling| Prompt caching not enabled on system prompts                    | 🟡      | ✅ შესრულდა     | 32b148b |
-| 24 | Architecture  | wizard.py — 2,784 lines, 4 wizards in one file                  | 🟡      | ⬜ მოლოდინში     | |
+| 24 | Architecture  | wizard.py — 2,784 lines, 4 wizards in one file                  | 🟡      | ❌ დაბლოკილია   | 74 decorated handlers + shared FSM state; barcode flow serves sale+nisia. Est. 4-6h safe refactor |
 | 25 | Architecture  | search_catalog() full catalog text per call, no prompt caching  | 🟡      | ✅ შესრულდა     | 32b148b |
 | 26 | Architecture  | New AsyncAnthropic client instantiated on every API call        | 🟡      | ✅ შესრულდა     | 32b148b |
 | 27 | Database      | returns table missing indexes on product_id, sale_id            | 🟡      | ✅ შესრულდა     | 4e79b4c |
@@ -37,7 +37,7 @@
 | 31 | Testing       | formatter.py — zero tests                                       | 🟡      | ✅ შესრულდა     | 3a9915f — 72 tests |
 | 32 | Testing       | barcode/decoder.py — zero tests                                 | 🟡      | ✅ შესრულდა     | pre-existing tests fixed in 32b148b |
 | 33 | Testing       | import_excel_parser.py — zero tests                             | 🟡      | ✅ შესრულდა     | 3a9915f — 42 tests |
-| 34 | Frontend      | 73% "use client" — no SSR, waterfall fetching                   | 🟡      | ⬜ მოლოდინში     | |
+| 34 | Frontend      | 73% "use client" — no SSR, waterfall fetching                   | 🟡      | ❌ დაბლოკილია   | All page-level components use useState+useEffect+useCallback; interactive admin dashboard. Visual verification required (INACTIVE per CLAUDE.md) |
 | 35 | Frontend      | No rate limiting on /api/ai-insights, /api/generate-description | 🟡      | ✅ შესრულდა     | 740ef88 |
 | 36 | Database      | get_all_products() unbounded SELECT (database/db.py:164)        | 🟢      | ⬜ მოლოდინში     | |
 | 37 | Database      | SELECT * expenses without LIMIT (db.py:2245,2256,2456,2469,2480)| 🟢      | ⬜ მოლოდინში     | |
