@@ -184,3 +184,56 @@ async with db._pool.acquire() as conn:
 - Log format: `%(asctime)s %(levelname)s %(name)s: %(message)s`
 - Log all unhandled exceptions with full traceback before re-raising
 - For production issues: Railway logs are the first place to check
+
+---
+
+## Security Standards
+
+### Bot (Python / aiogram)
+
+**Error responses** — never expose internal details to users:
+```python
+# WRONG
+await message.answer(f"Error: {e}")
+
+# RIGHT
+logger.error(f"DB error in sales handler: {e}", exc_info=True)
+await message.answer("დაფიქსირდა შეცდომა. სცადე თავიდან.")
+```
+
+**Logging** — never log sensitive data:
+- NEVER log: BOT_TOKEN, DATABASE_URL, user message content with PII, API keys
+- Always log: operation name, error type, handler name — no raw values
+
+**Dependency security:**
+- Run `pip audit` before adding new packages
+- Check: active maintenance, no known critical CVEs
+
+### Dashboard (Next.js API routes)
+
+**Error responses** — never return `err.message` to client:
+```typescript
+// WRONG
+return NextResponse.json({ error: err.message }, { status: 500 })
+
+// RIGHT
+logger.error("DB error in /api/products:", err)
+return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+```
+
+**Security headers** — add to `next.config.ts`:
+```typescript
+headers: [{ key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Content-Security-Policy", value: "default-src 'self'" }]
+```
+
+**Rate limiting** — mandatory on AI endpoints (`/api/ai-insights`, `/api/generate-description`):
+- Max 10 requests/minute per user — use Upstash Redis or simple in-memory counter
+
+**CORS** — never wildcard in production:
+```typescript
+// next.config.ts — restrict to dashboard domain only
+```
+
+**Input validation** — validate all API route params with Zod before DB queries
