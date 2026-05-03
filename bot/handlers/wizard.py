@@ -1647,7 +1647,8 @@ async def nisia_edit_confirm(
     )
 
     if old_topic_msg and old_topic_id == config.NISIAS_TOPIC_ID:
-        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+        edit_count = await db.get_sale_edit_count(sale_id)
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text, edit_count=edit_count)
     else:
         if old_topic_msg:
             await mark_cancelled(
@@ -1976,7 +1977,8 @@ async def sale_edit_confirm(callback: CallbackQuery, state: FSMContext, db: Data
     )
 
     if old_topic_msg and old_topic_id == new_topic_id:
-        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+        edit_count = await db.get_sale_edit_count(sale_id)
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text, edit_count=edit_count)
     else:
         if old_topic_msg:
             await mark_cancelled(
@@ -2192,7 +2194,8 @@ async def expense_edit_confirm(callback: CallbackQuery, state: FSMContext, db: D
     )
 
     if old_topic_msg:
-        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text)
+        edit_count = await db.get_expense_edit_count(expense_id)
+        await mark_updated(callback.bot, config.GROUP_ID, old_topic_msg, new_topic_text, edit_count=edit_count)
     else:
         try:
             new_topic = await callback.bot.send_message(

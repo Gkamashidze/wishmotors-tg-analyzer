@@ -2828,6 +2828,21 @@ class Database:
                 if not updates and not ledger_touching:
                     return self._row(sale)
 
+                await conn.execute(
+                    """INSERT INTO sale_edits
+                       (sale_id, quantity, unit_price, payment_method,
+                        seller_type, customer_name, notes, product_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+                    sale_id,
+                    old_quantity,
+                    old_unit_price,
+                    old_pm,
+                    old.get("seller_type", "individual"),
+                    old.get("customer_name"),
+                    old.get("notes"),
+                    old_product_id,
+                )
+
                 row = sale
                 if updates:
                     values.append(sale_id)
@@ -2921,6 +2936,17 @@ class Database:
                     return None
                 old = dict(current)
 
+                await conn.execute(
+                    """INSERT INTO expense_edits
+                       (expense_id, amount, description, category, payment_method)
+                       VALUES ($1,$2,$3,$4,$5)""",
+                    expense_id,
+                    float(old["amount"]),
+                    old.get("description"),
+                    old.get("category"),
+                    old["payment_method"],
+                )
+
                 values.append(expense_id)
                 row = await conn.fetchrow(
                     f"UPDATE expenses SET {', '.join(updates)} "
@@ -2982,6 +3008,25 @@ class Database:
                     return None
                 current = dict(row)
 
+                await conn.execute(
+                    """INSERT INTO deleted_expenses
+                       (original_expense_id, amount, description, category,
+                        payment_method, is_paid, is_non_cash, vat_amount,
+                        is_vat_included, topic_id, topic_message_id)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
+                    expense_id,
+                    current["amount"],
+                    current.get("description"),
+                    current.get("category"),
+                    current["payment_method"],
+                    current.get("is_paid", True),
+                    current.get("is_non_cash", False),
+                    current.get("vat_amount", 0),
+                    current.get("is_vat_included", False),
+                    current.get("topic_id"),
+                    current.get("topic_message_id"),
+                )
+
                 label = current.get("description") or current.get("category") or f"Expense #{expense_id}"
                 await self._reverse_expense_ledger(
                     conn,
@@ -2992,6 +3037,67 @@ class Database:
                 )
                 await conn.execute("DELETE FROM expenses WHERE id = $1", expense_id)
                 return current
+
+    # ─── Edit history & change log ────────────────────────────────────────────
+
+    async def get_sale_edit_count(self, sale_id: int) -> int:
+        """Number of times a sale has been edited (rows in sale_edits)."""
+        async with self.pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT COUNT(*) FROM sale_edits WHERE sale_id = $1", sale_id
+            )
+            return int(val or 0)
+
+    async def get_expense_edit_count(self, expense_id: int) -> int:
+        """Number of times an expense has been edited (rows in expense_edits)."""
+        async with self.pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT COUNT(*) FROM expense_edits WHERE expense_id = $1", expense_id
+            )
+            return int(val or 0)
+
+    async def get_change_log(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Return the most recent deleted expenses + sale edits + expense edits.
+
+        Each row has: type, ref_id, amount, category, description, ts.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT 'deleted_expense'   AS type,
+                       original_expense_id AS ref_id,
+                       amount,
+                       category,
+                       description,
+                       deleted_at          AS ts
+                FROM deleted_expenses
+
+                UNION ALL
+
+                SELECT 'sale_edit'   AS type,
+                       sale_id       AS ref_id,
+                       unit_price    AS amount,
+                       NULL          AS category,
+                       NULL          AS description,
+                       edited_at     AS ts
+                FROM sale_edits
+
+                UNION ALL
+
+                SELECT 'expense_edit' AS type,
+                       expense_id     AS ref_id,
+                       amount,
+                       category,
+                       description,
+                       edited_at      AS ts
+                FROM expense_edits
+
+                ORDER BY ts DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+            return [dict(r) for r in rows]
 
     # ─── Topic message tracking ───────────────────────────────────────────────
 

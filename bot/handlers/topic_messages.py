@@ -132,13 +132,15 @@ async def mark_updated(
     chat_id: int,
     message_id: Optional[int],
     new_text: str,
+    edit_count: int = 0,
 ) -> bool:
     """Rewrite an existing topic post to show the edited details + banner."""
     if not message_id:
         return False
+    banner = f"✏️ <b>შეცვლილია ({edit_count}-ჯერ)</b>" if edit_count > 0 else UPDATED_BANNER
     return await _safe_edit(
         bot, chat_id, message_id,
-        f"{UPDATED_BANNER}\n\n{new_text}",
+        f"{banner}\n\n{new_text}",
     )
 
 

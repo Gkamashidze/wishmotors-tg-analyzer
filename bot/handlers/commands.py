@@ -103,6 +103,9 @@ _HELP_TEXT = """
 /transfer — სალარო ↔ ბანკი (wizard)
 /transfer 500 cash bank — სწრაფი გადარიცხვა
 
+🗑 <b>ისტორია:</b>
+/history — ბოლო 25 წაშლა/რედაქტირება
+
 🔧 <b>სისტემა:</b>
 /diagnostics — ვერ ამოცნობილი შეტყობინებები
 /help — ეს სახელმძღვანელო
@@ -1242,6 +1245,52 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
             parse_mode=_PARSE,
         )
 
+
+
+@commands_router.message(Command("history"), IsAdmin())
+async def cmd_history(message: Message, db: Database) -> None:
+    """Show the last 25 deletions and edits (sales + expenses)."""
+    if not message.from_user:
+        return
+    rows = await db.get_change_log(limit=25)
+    if not rows:
+        await message.bot.send_message(
+            chat_id=message.from_user.id,
+            text="📋 <b>ცვლილებების ისტორია ცარიელია</b>",
+            parse_mode=_PARSE,
+        )
+        return
+
+    import pytz
+    tz = pytz.timezone("Asia/Tbilisi")
+    lines: list[str] = ["📋 <b>ბოლო ცვლილებები:</b>\n"]
+    for r in rows:
+        ts = r.get("ts")
+        ts_str = ts.astimezone(tz).strftime("%d.%m %H:%M") if ts and hasattr(ts, "astimezone") else "—"
+        rtype = r.get("type", "")
+        ref = r.get("ref_id", "?")
+        if rtype == "deleted_expense":
+            amt = float(r.get("amount") or 0)
+            cat = html.escape(str(r.get("category") or "—"))
+            desc = html.escape(str(r.get("description") or ""))
+            label = f"{cat}" + (f" — {desc}" if desc else "")
+            lines.append(f"🗑 <b>ხარჯი #{ref} წაიშალა</b> — {amt:.2f}₾ | {label} | {ts_str}")
+        elif rtype == "sale_edit":
+            price = float(r.get("amount") or 0)
+            lines.append(f"✏️ <b>გაყიდვა #{ref} შეიცვალა</b> — {price:.2f}₾ | {ts_str}")
+        elif rtype == "expense_edit":
+            amt = float(r.get("amount") or 0)
+            cat = html.escape(str(r.get("category") or "—"))
+            lines.append(f"✏️ <b>ხარჯი #{ref} შეიცვალა</b> — {amt:.2f}₾ | {cat} | {ts_str}")
+
+    text = "\n".join(lines)
+    if len(text) > 4096:
+        text = text[:4050] + "\n…"
+    await message.bot.send_message(
+        chat_id=message.from_user.id,
+        text=text,
+        parse_mode=_PARSE,
+    )
 
 
 @commands_router.message(Command("deletesale"), IsAdmin())
