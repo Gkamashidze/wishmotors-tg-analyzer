@@ -1,3 +1,4 @@
+import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Middleware only runs on paths that need auth protection.
@@ -63,10 +64,8 @@ export function middleware(req: NextRequest) {
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+  const maxLen = Math.max(a.length, b.length);
+  const bufA = Buffer.from(a.padEnd(maxLen, "\0"), "utf8");
+  const bufB = Buffer.from(b.padEnd(maxLen, "\0"), "utf8");
+  return cryptoTimingSafeEqual(bufA, bufB);
 }

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import ssl as _ssl_module
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,11 +42,18 @@ class Database:
         return self._pool
 
     async def init(self) -> None:
+        # Enable SSL on Railway; skip when sslmode is already embedded in
+        # the DSN or when running locally without an SSL-enabled PostgreSQL.
+        ssl_ctx: Optional[_ssl_module.SSLContext] = None
+        if os.getenv("RAILWAY_ENVIRONMENT") and "sslmode" not in self.dsn:
+            ssl_ctx = _ssl_module.create_default_context()
+
         self._pool = await asyncpg.create_pool(
             self.dsn,
             min_size=2,
             max_size=10,
             command_timeout=30.0,
+            ssl=ssl_ctx,
         )
         async with self.pool.acquire() as conn:
             await conn.execute(CREATE_TABLES_SQL)
