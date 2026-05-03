@@ -5,6 +5,7 @@ Uses unittest.mock to patch asyncpg so no PostgreSQL instance is needed.
 
 import os
 from unittest.mock import AsyncMock, MagicMock
+import asyncpg
 import pytest
 
 # Minimal env so config loads
@@ -420,3 +421,133 @@ class TestEditProduct:
         result = await db.edit_product(1, name="ახალი სახელი")
         assert result is not None
         assert result["name"] == "ახალი სახელი"
+
+
+class TestDbErrorPaths:
+    """Covers asyncpg error propagation — UniqueViolation, pool exhaustion,
+    mid-transaction failure, and partial-stock FIFO behaviour."""
+
+    # ── UniqueViolationError ──────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_receive_batch_unique_violation_propagates(self):
+        """Concurrent INSERT race: second writer gets UniqueViolationError → propagates."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        # First fetchrow (SELECT by OEM) returns None → product not found
+        # Second fetchrow (INSERT RETURNING id) raises UniqueViolationError (race)
+        conn.fetchrow = AsyncMock(side_effect=[
+            None,
+            asyncpg.UniqueViolationError(),
+        ])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        with pytest.raises(asyncpg.UniqueViolationError):
+            await db.receive_inventory_batch(
+                name="სარკე", oem_code="12345", quantity=5, unit_cost=10.0, min_stock=2,
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_sale_unique_violation_propagates(self):
+        """If the INSERT INTO sales raises UniqueViolationError, it propagates."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+        conn.fetchrow = AsyncMock(side_effect=asyncpg.UniqueViolationError())
+        conn.fetch = AsyncMock(return_value=[])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        with pytest.raises(asyncpg.UniqueViolationError):
+            await db.create_sale(
+                product_id=1, quantity=1, unit_price=10.0,
+                payment_method="cash", seller_type="llc",
+            )
+
+    # ── Pool exhaustion ───────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_pool_exhaustion_propagates_on_get_product(self):
+        """When pool.acquire() raises TooManyConnectionsError it propagates."""
+        db = _make_db()
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        db._pool = pool
+
+        with pytest.raises(asyncpg.TooManyConnectionsError):
+            await db.get_product_by_id(1)
+
+    @pytest.mark.asyncio
+    async def test_pool_exhaustion_propagates_on_create_sale(self):
+        """Pool exhaustion during create_sale propagates — no silent data loss."""
+        db = _make_db()
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
+            __aexit__=AsyncMock(return_value=None),
+        ))
+        db._pool = pool
+
+        with pytest.raises(asyncpg.TooManyConnectionsError):
+            await db.create_sale(
+                product_id=1, quantity=1, unit_price=10.0,
+                payment_method="cash", seller_type="llc",
+            )
+
+    # ── Mid-transaction failure ───────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_create_sale_mid_transaction_execute_failure_propagates(self):
+        """If a ledger INSERT (execute) fails mid-transaction, the error propagates."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        conn.fetchrow = AsyncMock(side_effect=[
+            {"id": 1},           # INSERT sales RETURNING id
+            {"current_stock": 5}, # UPDATE products RETURNING current_stock
+        ])
+        conn.fetch = AsyncMock(return_value=[])   # no inventory batches
+        # First execute (ledger INSERT) raises
+        conn.execute = AsyncMock(side_effect=asyncpg.PostgresError())
+        db._pool = pool
+
+        with pytest.raises(asyncpg.PostgresError):
+            await db.create_sale(
+                product_id=1, quantity=1, unit_price=10.0,
+                payment_method="cash", seller_type="llc",
+            )
+
+    # ── Partial stock / FIFO negative-stock behaviour ────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_create_sale_partial_stock_incurs_partial_cogs(self):
+        """Selling 5 units when only 3 are in batches: cost covers only 3."""
+        db = _make_db()
+        pool, conn = _make_pool_mock()
+
+        sale_row = {"id": 10}
+        stock_row = {"current_stock": -2}  # stock goes negative (allowed by db)
+        conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
+        # One batch with only 3 units available
+        conn.fetch = AsyncMock(return_value=[
+            {"id": 1, "remaining_quantity": 3, "unit_cost": 10.0},
+        ])
+        conn.execute = AsyncMock()
+        db._pool = pool
+
+        sale_id, new_stock = await db.create_sale(
+            product_id=1, quantity=5, unit_price=20.0,
+            payment_method="cash", seller_type="llc",
+        )
+
+        assert sale_id == 10
+        assert new_stock == -2
+        # FIFO consumed 3 units → cost = 30.0.  COGS pair is posted because cost > 0.
+        # Executes: 1 batch UPDATE + 1 UPDATE sales.cost_amount
+        #         + 6 ledger INSERTs (net-rev pair + VAT pair + COGS pair)
+        #         + 1 vat_ledger INSERT = 9 total.
+        assert conn.execute.call_count == 9
