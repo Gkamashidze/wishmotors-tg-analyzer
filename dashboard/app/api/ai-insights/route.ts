@@ -1,8 +1,9 @@
 import "server-only";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { getProductMetrics } from "@/lib/financial-queries";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // ─── In-process cache (1-hour TTL) ───────────────────────────────────────────
 let _cache: { data: AiInsightsResponse; ts: number } | null = null;
@@ -505,7 +506,15 @@ function buildUserMessage(snapshotJson: string, label: string): string {
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const rl = checkRateLimit(`ai-insights:${getClientIp(request)}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    );
+  }
+
   if (_cache && Date.now() - _cache.ts < CACHE_TTL_MS) {
     return NextResponse.json(_cache.data);
   }

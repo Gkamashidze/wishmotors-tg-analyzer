@@ -18,25 +18,25 @@
 | 12 | Error Handling| TelegramRetryAfter only handled in deeplink.py                  | 🔴      | ✅ შესრულდა     | e77eabf |
 | 13 | Frontend      | products-table.tsx — 1,921 lines (god component)                | 🔴      | ✅ შესრულდა     | 58e8f14 — 1921→1238 + 7 modules |
 | 14 | Frontend      | No error.tsx / loading.tsx anywhere in dashboard/app            | 🔴      | ✅ შესრულდა     | 58e8f14 |
-| 15 | Security      | Raw err.message returned to clients in 15+ API routes           | 🟡      | ⬜ მოლოდინში     | |
-| 16 | Security      | Missing Content-Security-Policy header                          | 🟡      | ⬜ მოლოდინში     | |
-| 17 | Security      | Wildcard remotePatterns SSRF (next.config.ts:22)                | 🟡      | ⬜ მოლოდინში     | |
-| 18 | Security      | /api/debug/orders exposes production order rows                 | 🟡      | ⬜ მოლოდინში     | |
-| 19 | Security      | DDL endpoints: migrate-erp + migrate-currency via HTTP POST     | 🟡      | ⬜ მოლოდინში     | |
-| 20 | Error Handling| Anthropic typed exceptions not caught (RateLimitError etc.)     | 🟡      | ⬜ მოლოდინში     | |
-| 21 | Error Handling| Token usage (response.usage) never logged                       | 🟡      | ⬜ მოლოდინში     | |
-| 22 | Error Handling| asyncpg-specific exceptions never caught separately             | 🟡      | ⬜ მოლოდინში     | |
-| 23 | Error Handling| Prompt caching not enabled on system prompts                    | 🟡      | ⬜ მოლოდინში     | |
+| 15 | Security      | Raw err.message returned to clients in 15+ API routes           | 🟡      | ✅ შესრულდა     | cf64b4d |
+| 16 | Security      | Missing Content-Security-Policy header                          | 🟡      | ✅ შესრულდა     | cf64b4d |
+| 17 | Security      | Wildcard remotePatterns SSRF (next.config.ts:22)                | 🟡      | ✅ შესრულდა     | cf64b4d |
+| 18 | Security      | /api/debug/orders exposes production order rows                 | 🟡      | ✅ შესრულდა     | 5cf9f29 |
+| 19 | Security      | DDL endpoints: migrate-erp + migrate-currency via HTTP POST     | 🟡      | ✅ შესრულდა     | cf64b4d |
+| 20 | Error Handling| Anthropic typed exceptions not caught (RateLimitError etc.)     | 🟡      | ✅ შესრულდა     | 32b148b |
+| 21 | Error Handling| Token usage (response.usage) never logged                       | 🟡      | ✅ შესრულდა     | 32b148b |
+| 22 | Error Handling| asyncpg-specific exceptions never caught separately             | 🟡      | ✅ შესრულდა     | 32b148b |
+| 23 | Error Handling| Prompt caching not enabled on system prompts                    | 🟡      | ✅ შესრულდა     | 32b148b |
 | 24 | Architecture  | wizard.py — 2,784 lines, 4 wizards in one file                  | 🟡      | ⬜ მოლოდინში     | |
-| 25 | Architecture  | search_catalog() full catalog text per call, no prompt caching  | 🟡      | ⬜ მოლოდინში     | |
-| 26 | Architecture  | New AsyncAnthropic client instantiated on every API call        | 🟡      | ⬜ მოლოდინში     | |
-| 27 | Database      | returns table missing indexes on product_id, sale_id            | 🟡      | ⬜ მოლოდინში     | |
-| 28 | Database      | MIGRATE_SQL full-table UPDATEs run on every bot restart         | 🟡      | ⬜ მოლოდინში     | |
+| 25 | Architecture  | search_catalog() full catalog text per call, no prompt caching  | 🟡      | ✅ შესრულდა     | 32b148b |
+| 26 | Architecture  | New AsyncAnthropic client instantiated on every API call        | 🟡      | ✅ შესრულდა     | 32b148b |
+| 27 | Database      | returns table missing indexes on product_id, sale_id            | 🟡      | ✅ შესრულდა     | 4e79b4c |
+| 28 | Database      | MIGRATE_SQL full-table UPDATEs run on every bot restart         | 🟡      | ✅ შესრულდა     | 4e79b4c |
 | 29 | CI/CD         | No staging environment (every main push = prod deploy)          | 🟡      | ⬜ მოლოდინში     | |
 | 30 | CI/CD         | No rollback strategy / no health-check probe in railway.toml    | 🟡      | ⬜ მოლოდინში     | |
-| 31 | Testing       | formatter.py — zero tests                                       | 🟡      | ⬜ მოლოდინში     | |
-| 32 | Testing       | barcode/decoder.py — zero tests                                 | 🟡      | ⬜ მოლოდინში     | |
-| 33 | Testing       | import_excel_parser.py — zero tests                             | 🟡      | ⬜ მოლოდინში     | |
+| 31 | Testing       | formatter.py — zero tests                                       | 🟡      | ✅ შესრულდა     | 3a9915f — 72 tests |
+| 32 | Testing       | barcode/decoder.py — zero tests                                 | 🟡      | ✅ შესრულდა     | pre-existing tests fixed in 32b148b |
+| 33 | Testing       | import_excel_parser.py — zero tests                             | 🟡      | ✅ შესრულდა     | 3a9915f — 42 tests |
 | 34 | Frontend      | 73% "use client" — no SSR, waterfall fetching                   | 🟡      | ⬜ მოლოდინში     | |
 | 35 | Frontend      | No rate limiting on /api/ai-insights, /api/generate-description | 🟡      | ⬜ მოლოდინში     | |
 | 36 | Database      | get_all_products() unbounded SELECT (database/db.py:164)        | 🟢      | ⬜ მოლოდინში     | |

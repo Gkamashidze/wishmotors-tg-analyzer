@@ -2,6 +2,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { queryOne } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 type Params = Promise<{ id: string }>;
 
@@ -26,7 +27,15 @@ const SYSTEM_PROMPT = `შენ ხარ WishMotors-ის კოპირა�
 SsangYong Rexton-ის წინა ბორბლის საკისარი. ცვლის გაცვეთილ ელემენტს — ხმაური ან ვიბრაცია ბორბლის მხრიდან. OEM ზომები, პირდაპირი ჩასმა.`;
 
 
-export async function POST(_req: NextRequest, { params }: { params: Params }) {
+export async function POST(req: NextRequest, { params }: { params: Params }) {
+  const rl = checkRateLimit(`gen-desc:${getClientIp(req)}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    );
+  }
+
   const { id } = await params;
   const productId = Number(id);
   if (!Number.isFinite(productId) || productId <= 0) {
