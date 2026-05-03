@@ -33,11 +33,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  pending:    "⏳ მოლოდინშია",
   new:        "🆕 ახალია",
   processing: "⚙️ მუშავდება",
   ordered:    "📦 შეკვეთილია",
   ready:      "✅ მზადაა",
   delivered:  "🚚 მიტანილია",
+  fulfilled:  "✅ შესრულდა",
   cancelled:  "❌ გაუქმდა",
 };
 
