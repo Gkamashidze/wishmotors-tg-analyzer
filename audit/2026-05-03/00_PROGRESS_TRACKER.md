@@ -8,7 +8,7 @@
 | 2  | Security      | timingSafeEqual timing oracle (password length leak)            | 🔴      | ✅ შესრულდა     | 5cf9f29 |
 | 3  | Database      | No SSL on asyncpg pool (database/db.py:44)                      | 🔴      | ✅ შესრულდა     | 5cf9f29 |
 | 4  | Testing       | sales.py — zero tests (core revenue path)                       | 🔴      | ✅ შესრულდა     | ea332e7 — 31 tests |
-| 5  | Testing       | Dashboard — zero tests (vitest + playwright unused)             | 🔴      | ⬜ მოლოდინში     | |
+| 5  | Testing       | Dashboard — zero tests (vitest + playwright unused)             | 🔴      | ✅ შესრულდა     | f37ce35 — 53 vitest tests pass (fixed 2 pre-existing failures) |
 | 6  | Testing       | wizard.py — zero tests (primary UX flow)                        | 🔴      | ✅ შესრულდა     | df4f87d — 27 tests |
 | 7  | Testing       | financial_ai — zero tests                                       | 🔴      | ✅ შესრულდა     | already existed — 13 tests pass |
 | 8  | Testing       | DB error paths untested (UniqueViolation, pool exhaustion)      | 🔴      | ✅ შესრულდა     | 1796deb — 6 new error-path tests |
