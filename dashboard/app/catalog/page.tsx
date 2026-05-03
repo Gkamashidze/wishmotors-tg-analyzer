@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Search, ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowRight } from "lucide-react";
 import logo from "@/public/logo.jpg";
 import {
   getPublicCatalog,
@@ -368,6 +368,21 @@ function Pagination({
       className="flex items-center justify-center gap-1.5 flex-wrap"
       aria-label="გვერდები"
     >
+      {/* First page */}
+      {currentPage > 1 ? (
+        <Link
+          href={catalogUrl({ page: 1 }, base)}
+          aria-label="პირველი გვერდი"
+          className="group h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+        >
+          <ChevronsLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+        </Link>
+      ) : (
+        <span className="h-9 w-9 flex items-center justify-center rounded-lg border border-border/40 bg-background/50 text-muted-foreground/30 cursor-not-allowed select-none">
+          <ChevronsLeft className="h-4 w-4" />
+        </span>
+      )}
+
       {/* Prev arrow */}
       {currentPage > 1 ? (
         <Link
@@ -420,6 +435,21 @@ function Pagination({
       ) : (
         <span className="h-9 w-9 flex items-center justify-center rounded-lg border border-border/40 bg-background/50 text-muted-foreground/30 cursor-not-allowed select-none">
           <ChevronRight className="h-4 w-4" />
+        </span>
+      )}
+
+      {/* Last page */}
+      {currentPage < totalPages ? (
+        <Link
+          href={catalogUrl({ page: totalPages }, base)}
+          aria-label="ბოლო გვერდი"
+          className="group h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+        >
+          <ChevronsRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      ) : (
+        <span className="h-9 w-9 flex items-center justify-center rounded-lg border border-border/40 bg-background/50 text-muted-foreground/30 cursor-not-allowed select-none">
+          <ChevronsRight className="h-4 w-4" />
         </span>
       )}
     </nav>

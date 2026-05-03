@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, PackageMinus, X, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -579,9 +579,19 @@ export function ProductsTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-3">
           <button
+            onClick={() => goToPage(1)}
+            disabled={page <= 1}
+            className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
+            aria-label="პირველი გვერდი"
+          >
+            <ChevronsLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          </button>
+
+          <button
             onClick={() => goToPage(page - 1)}
             disabled={page <= 1}
             className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
+            aria-label="წინა გვერდი"
           >
             <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
           </button>
@@ -597,8 +607,18 @@ export function ProductsTable({
             onClick={() => goToPage(page + 1)}
             disabled={page >= totalPages}
             className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
+            aria-label="შემდეგი გვერდი"
           >
             <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </button>
+
+          <button
+            onClick={() => goToPage(totalPages)}
+            disabled={page >= totalPages}
+            className="group h-8 w-8 rounded-lg border border-border bg-background flex items-center justify-center transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-35 cursor-pointer"
+            aria-label="ბოლო გვერდი"
+          >
+            <ChevronsRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </button>
         </div>
       )}
