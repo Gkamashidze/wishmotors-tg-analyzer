@@ -16,9 +16,10 @@ import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, TelegramObject
+from aiogram.types import BotCommand, ErrorEvent, TelegramObject
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -226,7 +227,9 @@ async def main() -> None:
     storage: BaseStorage
     if config.REDIS_URL:
         from aiogram.fsm.storage.redis import RedisStorage  # type: ignore[import]
+        from bot.handlers import _redis as _redis_mod
         storage = RedisStorage.from_url(config.REDIS_URL)
+        _redis_mod.init(config.REDIS_URL)
         logger.info("FSM storage: Redis (state persists across restarts)")
     else:
         storage = MemoryStorage()
@@ -246,6 +249,22 @@ async def main() -> None:
     dp.include_router(period_router)
     dp.include_router(commands_router)
     dp.include_router(search_router)  # last: catches unhandled DM text as search
+
+    @dp.errors()
+    async def global_error_handler(event: ErrorEvent) -> bool:
+        exc = event.exception
+        if isinstance(exc, TelegramRetryAfter):
+            logger.warning("Rate limited by Telegram — sleeping %ss", exc.retry_after)
+            await asyncio.sleep(exc.retry_after)
+            return True
+        if isinstance(exc, TelegramBadRequest):
+            logger.warning("Telegram bad request (message likely deleted): %s", exc)
+            return True
+        if isinstance(exc, TelegramNetworkError):
+            logger.error("Telegram network error: %s", exc)
+            return True
+        logger.exception("Unhandled exception in handler: %s", exc)
+        return True
 
     tz = pytz.timezone(config.TIMEZONE)
     scheduler = AsyncIOScheduler(timezone=tz)

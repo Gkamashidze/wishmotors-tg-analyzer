@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera, Sparkles } from "lucide-react";
+import { Eye, Pencil, Trash2, Plus, ChevronLeft, ChevronRight, PackageMinus, X, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -17,333 +17,21 @@ import { PRODUCTS_PAGE_SIZE } from "@/lib/constants";
 import type { ProductMetricRow } from "@/lib/financial-queries";
 import { formatGEL, formatNumber, cn } from "@/lib/utils";
 import { GalleryManager } from "./gallery-manager";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ka-GE", {
-    year: "numeric", month: "short", day: "numeric",
-  });
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ka-GE", {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function toDatetimeLocal(iso: string): string {
-  return iso.slice(0, 16);
-}
-
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: "ხელზე 💵",
-  transfer: "დარიცხვა 🏦",
-  credit: "ნისია 📋",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "⏳ მოლოდინი",
-  completed: "✅ შესრულდა",
-};
-
-const PRIORITY_LABELS: Record<string, string> = {
-  urgent: "🔴 სასწრაფო",
-  normal: "🟡 ჩვეულებრივი",
-  low: "🟢 დაბალი",
-};
-
-// ─── Sub-transaction types ────────────────────────────────────────────────────
-
-interface ProductSale {
-  id: number;
-  quantity: number;
-  unitPrice: number;
-  paymentMethod: string;
-  customerName: string | null;
-  soldAt: string;
-  notes: string | null;
-  topicId: number | null;
-  topicMessageId: number | null;
-}
-
-interface ProductOrder {
-  id: number;
-  quantityNeeded: number;
-  status: string;
-  priority: string;
-  createdAt: string;
-  notes: string | null;
-  topicId: number | null;
-  topicMessageId: number | null;
-}
-
-interface SaleEditState {
-  quantity: string;
-  unit_price: string;
-  payment_method: string;
-  customer_name: string;
-  sold_at: string;
-  notes: string;
-}
-
-interface OrderEditState {
-  quantity_needed: string;
-  status: string;
-  priority: string;
-  notes: string;
-}
-
-// ─── Tooltip ──────────────────────────────────────────────────────────────────
-
-function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="relative group/tip inline-flex">
-      {children}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border border-border rounded shadow-sm whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-// ─── Catalog completeness ─────────────────────────────────────────────────────
-
-const CATALOG_FIELDS: { key: string; emoji: string; label: string }[] = [
-  { key: "photo",         emoji: "📷", label: "ფოტო" },
-  { key: "slug",          emoji: "🔗", label: "Slug" },
-  { key: "description",   emoji: "📝", label: "აღწერა" },
-  { key: "oem",           emoji: "🏷️",  label: "OEM კოდი" },
-  { key: "category",      emoji: "📂", label: "კატეგორია" },
-  { key: "compatibility", emoji: "🚗", label: "თავსებადობა" },
-];
-
-function getCatalogCompletion(r: ProductRow) {
-  return [
-    { ...CATALOG_FIELDS[0], done: !!r.imageUrl },
-    { ...CATALOG_FIELDS[1], done: !!r.slug },
-    { ...CATALOG_FIELDS[2], done: !!r.description },
-    { ...CATALOG_FIELDS[3], done: !!r.oemCode },
-    { ...CATALOG_FIELDS[4], done: !!r.category },
-    { ...CATALOG_FIELDS[5], done: r.compatCount > 0 },
-  ];
-}
-
-function CompletenessCell({ r }: { r: ProductRow }) {
-  const fields = getCatalogCompletion(r);
-  const score = fields.filter((f) => f.done).length;
-  const total = fields.length;
-
-  const badgeCls =
-    score === total
-      ? "bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success))] border-[hsl(var(--success)/0.3)]"
-      : score >= 4
-      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-      : "bg-destructive/10 text-destructive border-destructive/30";
-
-  return (
-    <div className="relative group/comp inline-flex justify-center">
-      <span
-        className={cn(
-          "inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full border cursor-default tabular-nums",
-          badgeCls,
-        )}
-      >
-        {score}/{total}
-      </span>
-      {/* Tooltip */}
-      <div className="absolute bottom-full right-0 mb-2 w-44 bg-popover border border-border rounded-xl shadow-lg p-3 opacity-0 group-hover/comp:opacity-100 transition-opacity pointer-events-none z-50">
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-          კატალოგის სისრულე
-        </p>
-        <div className="space-y-1">
-          {fields.map((f) => (
-            <div key={f.key} className="flex items-center gap-2">
-              <span className={cn("text-xs font-bold", f.done ? "text-[hsl(var(--success))]" : "text-destructive")}>
-                {f.done ? "✓" : "✗"}
-              </span>
-              <span className={cn("text-xs", f.done ? "text-muted-foreground line-through" : "text-foreground")}>
-                {f.emoji} {f.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Compatibility constants ──────────────────────────────────────────────────
-
-const SSANGYONG_MODELS = [
-  "Korando Sport",
-  "Korando C",
-  "Rexton",
-  "Turismo",
-  "G4 Rexton",
-  "Korando II",
-  "Musso (GRAND)",
-  "Tivoli",
-] as const;
-
-const DRIVE_OPTIONS = ["წინა", "უკანა", "4x4"] as const;
-const FUEL_OPTIONS = ["ბენზინი", "დიზელი", "ჰიბრიდი"] as const;
-
-interface NewCompatState {
-  model: string;
-  drive: string;
-  engine: string;
-  fuel_type: string;
-  year_from: string;
-  year_to: string;
-}
-
-const DEFAULT_NEW_COMPAT: NewCompatState = { model: "", drive: "", engine: "", fuel_type: "", year_from: "", year_to: "" };
-
-// ─── AI Description Button ────────────────────────────────────────────────────
-
-function AiDescriptionButton({ productId, onGenerated }: { productId: number; onGenerated: (text: string) => void }) {
-  const [loading, setLoading] = useState(false);
-
-  async function generate() {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/products/${productId}/generate-description`, { method: "POST" });
-      const data = (await res.json()) as { description?: string; error?: string };
-      if (!res.ok || !data.description) {
-        toast.error(data.error ?? "AI-მ ვერ დაწერა აღწერა");
-        return;
-      }
-      onGenerated(data.description);
-    } catch {
-      toast.error("კავშირის შეცდომა");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => void generate()}
-      disabled={loading}
-      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-    >
-      <Sparkles className="w-3 h-3" />
-      {loading ? "იწერება..." : "AI-ით დაწერა"}
-    </button>
-  );
-}
-
-// ─── Georgian → Latin transliteration (for slug suggestion) ──────────────────
-
-const GEO_LATIN: Record<string, string> = {
-  ა: "a", ბ: "b", გ: "g", დ: "d", ე: "e", ვ: "v", ზ: "z",
-  თ: "t", ი: "i", კ: "k", ლ: "l", მ: "m", ნ: "n", ო: "o",
-  პ: "p", ჟ: "zh", რ: "r", ს: "s", ტ: "t", უ: "u", ფ: "f",
-  ქ: "k", ღ: "gh", ყ: "k", შ: "sh", ჩ: "ch", ც: "ts", ძ: "dz",
-  წ: "ts", ჭ: "ch", ხ: "kh", ჯ: "j", ჰ: "h",
-};
-
-function nameToSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .split("")
-    .map((c) => GEO_LATIN[c] ?? c)
-    .join("")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 200);
-}
-
-// ─── Product edit / add state ─────────────────────────────────────────────────
-
-interface EditState {
-  name: string;
-  oem_code: string;
-  unit_price: string;
-  category: string;
-  compatibility_notes: string;
-  image_url: string;
-  item_type: string;
-  slug: string;
-  description: string;
-  is_published: boolean;
-}
-
-interface AddState {
-  name: string;
-  oem_code: string;
-  unit: string;
-  unit_price: string;
-  current_stock: string;
-  min_stock: string;
-}
-
-type WizardStep = 1 | 2 | 3 | 4;
-
-const WIZARD_STEPS: Record<WizardStep, string> = {
-  1: "დასახელება",
-  2: "OEM კოდი",
-  3: "მარაგი",
-  4: "ფასი",
-};
-
-const DEFAULT_ADD: AddState = {
-  name: "",
-  oem_code: "",
-  unit: "ცალი",
-  unit_price: "0",
-  current_stock: "0",
-  min_stock: "0",
-};
-
-function rowToEdit(r: ProductRow, isPublished: boolean): EditState {
-  return {
-    name: r.name,
-    oem_code: r.oemCode ?? "",
-    unit_price: String(r.unitPrice),
-    category: r.category ?? "",
-    compatibility_notes: r.compatibilityNotes ?? "",
-    image_url: r.imageUrl ?? "",
-    item_type: r.itemType ?? "inventory",
-    slug: r.slug ?? "",
-    description: r.description ?? "",
-    is_published: isPublished,
-  };
-}
-
-function saleToEdit(s: ProductSale): SaleEditState {
-  return {
-    quantity: String(s.quantity),
-    unit_price: String(s.unitPrice),
-    payment_method: s.paymentMethod,
-    customer_name: s.customerName ?? "",
-    sold_at: toDatetimeLocal(s.soldAt),
-    notes: s.notes ?? "",
-  };
-}
-
-function orderToEdit(o: ProductOrder): OrderEditState {
-  return {
-    quantity_needed: String(o.quantityNeeded),
-    status: o.status,
-    priority: o.priority,
-    notes: o.notes ?? "",
-  };
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-type TxTab = "info" | "sales" | "orders";
-
-const ITEM_TYPE_FILTERS = [
-  { value: "",             label: "ყველა" },
-  { value: "inventory",   label: "საქონელი" },
-  { value: "fixed_asset", label: "ძირ. საშ." },
-  { value: "consumable",  label: "სახარჯი" },
-] as const;
+import { Tooltip } from "./_tooltip";
+import { CompletenessCell } from "./_completeness-cell";
+import { AiDescriptionButton } from "./_ai-description-button";
+import { AddProductWizard } from "./_add-product-wizard";
+import { WriteoffDialog } from "./_writeoff-dialog";
+import {
+  formatDate, formatDateTime,
+  PAYMENT_LABELS, STATUS_LABELS, PRIORITY_LABELS,
+  SSANGYONG_MODELS, DRIVE_OPTIONS, FUEL_OPTIONS, DEFAULT_NEW_COMPAT,
+  nameToSlug, rowToEdit, saleToEdit, orderToEdit, ITEM_TYPE_FILTERS,
+} from "./_utils";
+import type {
+  EditState, SaleEditState, OrderEditState,
+  ProductSale, ProductOrder, NewCompatState, TxTab,
+} from "./_types";
 
 export function ProductsTable({
   rows,
@@ -393,12 +81,8 @@ export function ProductsTable({
   const [newCompat, setNewCompat] = useState<NewCompatState>(DEFAULT_NEW_COMPAT);
   const [compatAdding, setCompatAdding] = useState(false);
 
-  // Add product wizard state
+  // Add product wizard — open state only (wizard manages its own internal state)
   const [isAdding, setIsAdding] = useState(false);
-  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
-  const [addState, setAddState] = useState<AddState>(DEFAULT_ADD);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [addSaving, setAddSaving] = useState(false);
 
   // Transactions tab state
   const [txTab, setTxTab] = useState<TxTab>("info");
@@ -419,12 +103,8 @@ export function ProductsTable({
   const [subSaving, setSubSaving] = useState(false);
   const [subDeleting, setSubDeleting] = useState(false);
 
-  // Write-off state
+  // Write-off — trigger row only (WriteoffDialog manages its own internal state)
   const [writeoffRow, setWriteoffRow] = useState<ProductRow | null>(null);
-  const [writeoffQty, setWriteoffQty] = useState("1");
-  const [writeoffReason, setWriteoffReason] = useState("");
-  const [writeoffSaving, setWriteoffSaving] = useState(false);
-  const [writeoffError, setWriteoffError] = useState<string | null>(null);
 
   // ── Pagination ──────────────────────────────────────────────────────────────
 
@@ -496,85 +176,6 @@ export function ProductsTable({
 
   // rows are already filtered server-side; no client-side filtering needed
   const filtered = useMemo(() => rows, [rows]);
-
-  // ── Add product ─────────────────────────────────────────────────────────────
-
-  const openAdd = useCallback(() => {
-    setAddState(DEFAULT_ADD);
-    setAddError(null);
-    setWizardStep(1);
-    setIsAdding(true);
-  }, []);
-
-  const closeAdd = useCallback(() => {
-    setIsAdding(false);
-    setAddError(null);
-    setWizardStep(1);
-  }, []);
-
-  const wizardNext = useCallback(() => {
-    setAddError(null);
-    if (wizardStep === 1 && !addState.name.trim()) {
-      setAddError("დასახელება სავალდებულოა");
-      return;
-    }
-    if (wizardStep === 2 && addState.oem_code.trim() && !/^[A-Za-z0-9]{4,}$/.test(addState.oem_code.trim())) {
-      setAddError("OEM კოდი უნდა შეიცავდეს მინიმუმ 4 სიმბოლოს (ციფრებს ან/და ლათინურ ასოებს)");
-      return;
-    }
-    if (wizardStep < 4) setWizardStep((s) => (s + 1) as WizardStep);
-  }, [wizardStep, addState.name, addState.oem_code]);
-
-  const wizardBack = useCallback(() => {
-    setAddError(null);
-    if (wizardStep > 1) setWizardStep((s) => (s - 1) as WizardStep);
-  }, [wizardStep]);
-
-  const handleAdd = useCallback(async () => {
-    if (!addState.name.trim()) {
-      setAddError("დასახელება სავალდებულოა");
-      return;
-    }
-    if (addState.oem_code.trim() && !/^[A-Za-z0-9]{4,}$/.test(addState.oem_code.trim())) {
-      setAddError("OEM კოდი უნდა შეიცავდეს მინიმუმ 4 სიმბოლოს (ციფრებს ან/და ლათინურ ასოებს)");
-      return;
-    }
-    setAddSaving(true);
-    setAddError(null);
-    try {
-      const res = await fetch("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: addState.name.trim(),
-          oem_code: addState.oem_code.trim() || null,
-          unit: addState.unit.trim() || "ცალი",
-          unit_price: Number(addState.unit_price) || 0,
-          current_stock: Number(addState.current_stock) || 0,
-          min_stock: Number(addState.min_stock) || 0,
-        }),
-      });
-      if (res.status === 200) {
-        setAddError("ამ სახელის პროდუქტი უკვე არსებობს");
-        return;
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        setAddError(body.error ?? "შეცდომა. სცადეთ თავიდან.");
-        return;
-      }
-      closeAdd();
-      router.push("?page=1");
-      router.refresh();
-
-    } finally {
-      setAddSaving(false);
-    }
-  }, [addState, closeAdd, router]);
-
-  const setAdd = (key: keyof AddState) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setAddState((prev) => ({ ...prev, [key]: e.target.value }));
 
   // ── Product edit/delete ─────────────────────────────────────────────────────
 
@@ -815,51 +416,6 @@ export function ProductsTable({
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setEditOrderState((prev) => prev ? { ...prev, [key]: e.target.value } : prev);
 
-  // ── Write-off ───────────────────────────────────────────────────────────────
-
-  const openWriteoff = useCallback((r: ProductRow) => {
-    setWriteoffRow(r);
-    setWriteoffQty("1");
-    setWriteoffReason("");
-    setWriteoffError(null);
-  }, []);
-
-  const closeWriteoff = useCallback(() => {
-    setWriteoffRow(null);
-    setWriteoffError(null);
-  }, []);
-
-  const handleWriteoff = useCallback(async () => {
-    if (!writeoffRow) return;
-    const qty = parseInt(writeoffQty, 10);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setWriteoffError("რაოდენობა უნდა იყოს დადებითი მთელი რიცხვი");
-      return;
-    }
-    if (!writeoffReason.trim()) {
-      setWriteoffError("მიზეზის მითითება სავალდებულოა");
-      return;
-    }
-    setWriteoffSaving(true);
-    setWriteoffError(null);
-    try {
-      const res = await fetch(`/api/products/${writeoffRow.id}/writeoff`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: qty, reason: writeoffReason.trim() }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        setWriteoffError(body.error ?? "ჩამოწერა ვერ განხორციელდა. სცადეთ თავიდან.");
-        return;
-      }
-      closeWriteoff();
-      router.refresh();
-    } finally {
-      setWriteoffSaving(false);
-    }
-  }, [writeoffRow, writeoffQty, writeoffReason, closeWriteoff, router]);
-
   // ── Catalog publish toggle (table column quick-toggle) ─────────────────────
 
   const handleTogglePublish = useCallback(async (r: ProductRow) => {
@@ -897,7 +453,7 @@ export function ProductsTable({
             <p className="text-xs text-muted-foreground">
               {formatNumber(filtered.length)} / {formatNumber(total)} პროდუქტი
             </p>
-            <Button size="sm" onClick={openAdd} className="h-9 cursor-pointer gap-1.5">
+            <Button size="sm" onClick={() => setIsAdding(true)} className="h-9 cursor-pointer gap-1.5">
               <Plus className="h-4 w-4" />
               პროდუქტის დამატება
             </Button>
@@ -1000,7 +556,7 @@ export function ProductsTable({
                           </Button>
                         </Tooltip>
                         <Tooltip label="ჩამოწერა">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => openWriteoff(r)} aria-label="ჩამოწერა">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400 cursor-pointer" onClick={() => setWriteoffRow(r)} aria-label="ჩამოწერა">
                             <PackageMinus className="h-3.5 w-3.5" />
                           </Button>
                         </Tooltip>
@@ -1048,158 +604,11 @@ export function ProductsTable({
       )}
 
       {/* ── Add Product Wizard ───────────────────────────────────────────────── */}
-      <Dialog open={isAdding} onClose={closeAdd} title="ახალი პროდუქტის დამატება">
-        <div className="space-y-4">
-          {/* Progress bar */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              {([1, 2, 3, 4] as WizardStep[]).map((s) => (
-                <span
-                  key={s}
-                  className={cn(
-                    "font-medium transition-colors",
-                    s === wizardStep ? "text-primary" :
-                    s < wizardStep ? "text-[hsl(var(--success))]" : ""
-                  )}
-                >
-                  {WIZARD_STEPS[s]}
-                </span>
-              ))}
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-300"
-                style={{ width: `${(wizardStep / 4) * 100}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground text-right">
-              ნაბიჯი {wizardStep} / 4
-            </p>
-          </div>
-
-          {/* Step 1 — Product name */}
-          {wizardStep === 1 && (
-            <div className="space-y-2 min-h-[80px]">
-              <p className="text-sm font-medium">პროდუქტის სახელი რა არის?</p>
-              <Input
-                id="add-name"
-                label="დასახელება *"
-                type="text"
-                value={addState.name}
-                onChange={setAdd("name")}
-                placeholder="მაგ: ზეთის ფილტრი, მარჯვენა სარკე..."
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && wizardNext()}
-              />
-            </div>
-          )}
-
-          {/* Step 2 — OEM code */}
-          {wizardStep === 2 && (
-            <div className="space-y-2 min-h-[80px]">
-              <p className="text-sm font-medium">OEM კოდი გაქვთ? <span className="text-muted-foreground font-normal">(სურვილისამებრ)</span></p>
-              <Input
-                id="add-oem"
-                label="OEM კოდი"
-                type="text"
-                value={addState.oem_code}
-                onChange={setAdd("oem_code")}
-                placeholder="მაგ: 8390132500 ან გამოტოვეთ"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && wizardNext()}
-              />
-            </div>
-          )}
-
-          {/* Step 3 — Stock & unit */}
-          {wizardStep === 3 && (
-            <div className="space-y-2 min-h-[80px]">
-              <p className="text-sm font-medium">ამჟამად რამდენია მარაგში?</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  id="add-stock"
-                  label="რაოდენობა"
-                  type="number"
-                  min="0"
-                  value={addState.current_stock}
-                  onChange={setAdd("current_stock")}
-                  autoFocus
-                />
-                <Input
-                  id="add-unit"
-                  label="ერთეული"
-                  type="text"
-                  value={addState.unit}
-                  onChange={setAdd("unit")}
-                  placeholder="ცალი"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Step 4 — Price & min stock + summary */}
-          {wizardStep === 4 && (
-            <div className="space-y-3 min-h-[80px]">
-              <p className="text-sm font-medium">ფასი და მინიმალური მარაგი</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  id="add-price"
-                  label="ერთ. ფასი (₾)"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={addState.unit_price}
-                  onChange={setAdd("unit_price")}
-                  autoFocus
-                />
-                <Input
-                  id="add-min"
-                  label="მინ. მარაგი"
-                  type="number"
-                  min="0"
-                  value={addState.min_stock}
-                  onChange={setAdd("min_stock")}
-                />
-              </div>
-              {/* Summary */}
-              <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-1 text-sm">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">შეჯამება</p>
-                <div className="flex justify-between"><span className="text-muted-foreground">სახელი</span><span className="font-medium">{addState.name}</span></div>
-                {addState.oem_code && <div className="flex justify-between"><span className="text-muted-foreground">OEM</span><span className="font-mono text-xs">{addState.oem_code}</span></div>}
-                <div className="flex justify-between"><span className="text-muted-foreground">მარაგი</span><span>{addState.current_stock} {addState.unit}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">ფასი</span><span>{Number(addState.unit_price).toFixed(2)}₾</span></div>
-              </div>
-            </div>
-          )}
-
-          {addError && (
-            <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-              {addError}
-            </p>
-          )}
-
-          {/* Navigation */}
-          <div className="flex justify-between gap-2 pt-1">
-            <Button
-              variant="outline"
-              onClick={wizardStep === 1 ? closeAdd : wizardBack}
-              disabled={addSaving}
-              className="cursor-pointer"
-            >
-              {wizardStep === 1 ? "გაუქმება" : "← უკან"}
-            </Button>
-            {wizardStep < 4 ? (
-              <Button onClick={wizardNext} className="cursor-pointer">
-                შემდეგი →
-              </Button>
-            ) : (
-              <Button onClick={handleAdd} disabled={addSaving} className="cursor-pointer">
-                {addSaving ? "ემატება..." : "✓ დამატება"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Dialog>
+      <AddProductWizard
+        open={isAdding}
+        onClose={() => setIsAdding(false)}
+        onAdded={() => { router.push("?page=1"); router.refresh(); }}
+      />
 
       {/* ── View Modal ──────────────────────────────────────────────────────── */}
       <Dialog
@@ -1819,103 +1228,11 @@ export function ProductsTable({
       />
 
       {/* ── Write-off Modal ──────────────────────────────────────────────────── */}
-      <Dialog
-        open={!!writeoffRow}
-        onClose={closeWriteoff}
-        title="ინვენტარის ჩამოწერა"
-      >
-        {writeoffRow && (() => {
-          const qty = parseInt(writeoffQty, 10);
-          const validQty = Number.isFinite(qty) && qty > 0;
-          const totalLoss = validQty ? qty * writeoffRow.unitPrice : 0;
-          return (
-            <div className="space-y-4">
-              {/* Product info */}
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 space-y-1 text-sm">
-                <p className="font-semibold text-amber-800 dark:text-amber-300">
-                  {writeoffRow.name}
-                </p>
-                {writeoffRow.oemCode && (
-                  <p className="font-mono text-xs text-amber-600 dark:text-amber-400">
-                    {writeoffRow.oemCode}
-                  </p>
-                )}
-                <p className="text-xs text-amber-700 dark:text-amber-400">
-                  მიმდინარე მარაგი:{" "}
-                  <span className="font-semibold">{formatNumber(writeoffRow.currentStock)} {writeoffRow.unit}</span>
-                </p>
-              </div>
-
-              {/* Quantity */}
-              <Input
-                id="writeoff-qty"
-                label="ჩამოსაწერი რაოდენობა *"
-                type="number"
-                min="1"
-                step="1"
-                value={writeoffQty}
-                onChange={(e) => { setWriteoffQty(e.target.value); setWriteoffError(null); }}
-                autoFocus
-              />
-
-              {/* Reason */}
-              <Input
-                id="writeoff-reason"
-                label="მიზეზი *"
-                type="text"
-                value={writeoffReason}
-                onChange={(e) => { setWriteoffReason(e.target.value); setWriteoffError(null); }}
-                placeholder="მაგ: დაზიანებული, ფიზიკური ნარჩენი, დაკარგული..."
-              />
-
-              {/* Financial preview */}
-              {validQty && (
-                <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 space-y-1.5 text-sm">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    ფინანსური ზემოქმედება
-                  </p>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ერთ. ღირებულება</span>
-                    <span className="tabular-nums">{formatGEL(writeoffRow.unitPrice)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ჩამოსაწერი რ-ბა</span>
-                    <span className="tabular-nums">{qty} {writeoffRow.unit}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-border pt-1.5 mt-1.5">
-                    <span className="font-medium text-destructive">სულ ზარალი</span>
-                    <span className="font-semibold tabular-nums text-destructive">
-                      -{formatGEL(totalLoss)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground pt-0.5">
-                    ჩამოწერა დაფიქსირდება P&amp;L-ში არანაღდ ხარჯად (ბალანსზე გავლენა: 0)
-                  </p>
-                </div>
-              )}
-
-              {writeoffError && (
-                <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-                  {writeoffError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 pt-1">
-                <Button variant="outline" onClick={closeWriteoff} disabled={writeoffSaving} className="cursor-pointer">
-                  გაუქმება
-                </Button>
-                <Button
-                  onClick={handleWriteoff}
-                  disabled={writeoffSaving}
-                  className="cursor-pointer bg-amber-600 hover:bg-amber-700 text-white"
-                >
-                  {writeoffSaving ? "მიმდინარეობს..." : "ჩამოწერა"}
-                </Button>
-              </div>
-            </div>
-          );
-        })()}
-      </Dialog>
+      <WriteoffDialog
+        writeoffRow={writeoffRow}
+        onClose={() => setWriteoffRow(null)}
+        onDone={() => { router.refresh(); }}
+      />
     </div>
   );
 }

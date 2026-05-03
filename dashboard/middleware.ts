@@ -1,3 +1,4 @@
+import { timingSafeEqual as cryptoTimingSafeEqual } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Middleware only runs on paths that need auth protection.
@@ -8,6 +9,14 @@ export const config = {
     "/((?!catalog|about|delivery|track|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt|icons|api/public|_next/static|_next/image|favicon\\.ico|healthz|.*\\.(?:jpg|jpeg|png|webp|svg|gif|ico|css|js|woff|woff2|ttf|otf|map)$).*)",
   ],
 };
+
+const ADMIN_HOST = process.env.ADMIN_HOST ?? "";
+
+function isPublicDomain(hostname: string): boolean {
+  if (!ADMIN_HOST) return false;
+  const bare = hostname.split(":")[0];
+  return bare !== ADMIN_HOST.split(":")[0] && bare !== "localhost";
+}
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -25,6 +34,15 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
+  const hostname = req.nextUrl.hostname;
+
+  if (isPublicDomain(hostname)) {
+    if (req.nextUrl.pathname === "/") {
+      return NextResponse.redirect(new URL("/catalog", req.url), { status: 308 });
+    }
+    return applySecurityHeaders(new NextResponse(null, { status: 404 }));
+  }
+
   const expected = process.env.DASHBOARD_BASIC_AUTH;
   const isProd = process.env.NODE_ENV === "production";
 
@@ -63,10 +81,8 @@ export function middleware(req: NextRequest) {
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+  const maxLen = Math.max(a.length, b.length);
+  const bufA = Buffer.from(a.padEnd(maxLen, "\0"), "utf8");
+  const bufB = Buffer.from(b.padEnd(maxLen, "\0"), "utf8");
+  return cryptoTimingSafeEqual(bufA, bufB);
 }

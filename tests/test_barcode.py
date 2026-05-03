@@ -28,36 +28,41 @@ def setup_function():
     _bc_cache.clear()
 
 
-def test_bc_set_and_get():
-    _bc_set(1, oem="ABC123", name_ka="სარკე", name_en="Mirror", status="ready")
-    entry = _bc_get(1)
+@pytest.mark.asyncio
+async def test_bc_set_and_get():
+    await _bc_set(1, oem="ABC123", name_ka="სარკე", name_en="Mirror", status="ready")
+    entry = await _bc_get(1)
     assert entry is not None
     assert entry["oem"] == "ABC123"
     assert entry["status"] == "ready"
 
 
-def test_bc_get_expired():
+@pytest.mark.asyncio
+async def test_bc_get_expired():
     _bc_cache[2] = {"oem": "X", "status": "ready", "expires": time.monotonic() - 1}
-    assert _bc_get(2) is None
+    assert await _bc_get(2) is None
     assert 2 not in _bc_cache
 
 
-def test_bc_consume_ready():
-    _bc_set(3, oem="OEM001", name_ka="სარკე", name_en="Mirror", status="ready")
-    entry = bc_consume(3)
+@pytest.mark.asyncio
+async def test_bc_consume_ready():
+    await _bc_set(3, oem="OEM001", name_ka="სარკე", name_en="Mirror", status="ready")
+    entry = await bc_consume(3)
     assert entry is not None
     assert entry["oem"] == "OEM001"
-    assert _bc_get(3) is None  # consumed
+    assert await _bc_get(3) is None  # consumed
 
 
-def test_bc_consume_not_ready():
-    _bc_set(4, oem="OEM002", name_ka="", name_en="", status="confirming")
-    assert bc_consume(4) is None
-    assert _bc_get(4) is not None  # not removed
+@pytest.mark.asyncio
+async def test_bc_consume_not_ready():
+    await _bc_set(4, oem="OEM002", name_ka="", name_en="", status="confirming")
+    assert await bc_consume(4) is None
+    assert await _bc_get(4) is not None  # not removed
 
 
-def test_bc_consume_missing():
-    assert bc_consume(999) is None
+@pytest.mark.asyncio
+async def test_bc_consume_missing():
+    assert await bc_consume(999) is None
 
 
 # ─── decode_barcode ───────────────────────────────────────────────────────────

@@ -126,7 +126,7 @@ async def cmd_stock(message: Message, db: Database) -> None:
 
 @commands_router.message(Command("report"), IsAdmin())
 async def cmd_report(message: Message, db: Database) -> None:
-    if message.from_user and is_rate_limited(message.from_user.id, "report", min_interval=10.0):
+    if message.from_user and await is_rate_limited(message.from_user.id, "report", min_interval=10.0):
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
@@ -1186,7 +1186,7 @@ async def paid_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 @commands_router.message(Command("diagnostics"), IsAdmin())
 async def cmd_diagnostics(message: Message, db: Database) -> None:
     """Show recent parse failures individually with full detail."""
-    if message.from_user and is_rate_limited(message.from_user.id, "diagnostics", min_interval=10.0):
+    if message.from_user and await is_rate_limited(message.from_user.id, "diagnostics", min_interval=10.0):
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
@@ -1247,7 +1247,7 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
 @commands_router.message(Command("deletesale"), IsAdmin())
 async def cmd_deletesale(message: Message, db: Database) -> None:
     """Delete a sale by ID and restore stock. Usage: /deletesale ID"""
-    if message.from_user and is_rate_limited(message.from_user.id, "deletesale"):
+    if message.from_user and await is_rate_limited(message.from_user.id, "deletesale"):
         await message.bot.send_message(  # type: ignore[union-attr]
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 2 წამი დაიცადე.",
