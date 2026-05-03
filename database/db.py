@@ -48,7 +48,11 @@ class Database:
         # the DSN or when running locally without an SSL-enabled PostgreSQL.
         ssl_ctx: Optional[_ssl_module.SSLContext] = None
         if os.getenv("RAILWAY_ENVIRONMENT") and "sslmode" not in self.dsn:
+            # Railway uses a self-signed certificate chain; disable cert
+            # verification while keeping the encrypted connection.
             ssl_ctx = _ssl_module.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = _ssl_module.CERT_NONE
 
         self._pool = await asyncpg.create_pool(
             self.dsn,
