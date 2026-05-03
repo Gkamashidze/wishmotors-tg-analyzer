@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Optional, Union
 
@@ -5,6 +6,9 @@ from aiogram.filters import Filter
 from aiogram.types import CallbackQuery, Message
 
 import config
+from bot.handlers import _redis as _redis_mod
+
+logger = logging.getLogger(__name__)
 
 
 class InTopic(Filter):
@@ -38,20 +42,26 @@ class IsAdmin(Filter):
 
 
 # ─── Simple per-user rate limiter ────────────────────────────────────────────
-# Tracks the last call timestamp per (user_id, command) pair.
+# Redis-backed when available; falls back to in-process dict.
 # Default: max 1 call per 2 seconds per user per command.
 
 _last_called: dict[str, float] = {}
+_RL_KEY = "wishmotors:rate_limit:{}:{}"
 
 
-def is_rate_limited(user_id: int, command: str, min_interval: float = 2.0) -> bool:
-    """Return True if the user called this command too recently.
+async def is_rate_limited(user_id: int, command: str, min_interval: float = 2.0) -> bool:
+    """Return True if the user called this command too recently."""
+    r = _redis_mod.get()
+    if r is not None:
+        try:
+            key = _RL_KEY.format(user_id, command)
+            ttl = int(min_interval) or 1
+            # SET NX EX: succeeds only on first call within the window
+            set_result = await r.set(key, 1, nx=True, ex=ttl)  # type: ignore[attr-defined]
+            return set_result is None  # None means key existed → rate limited
+        except Exception as exc:
+            logger.warning("Redis rate_limit check failed, using memory: %s", exc)
 
-    Args:
-        user_id: Telegram user ID.
-        command: Command name (e.g. 'deletesale').
-        min_interval: Minimum seconds between calls (default 2s).
-    """
     key = f"{user_id}:{command}"
     now = time.monotonic()
     last = _last_called.get(key, 0.0)

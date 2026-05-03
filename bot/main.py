@@ -227,7 +227,9 @@ async def main() -> None:
     storage: BaseStorage
     if config.REDIS_URL:
         from aiogram.fsm.storage.redis import RedisStorage  # type: ignore[import]
+        from bot.handlers import _redis as _redis_mod
         storage = RedisStorage.from_url(config.REDIS_URL)
+        _redis_mod.init(config.REDIS_URL)
         logger.info("FSM storage: Redis (state persists across restarts)")
     else:
         storage = MemoryStorage()

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import time
 from io import BytesIO
@@ -36,24 +37,26 @@ from aiogram.types import (
 import config
 from bot.barcode.decoder import decode_barcode, extract_part_info, extract_from_label
 from bot.handlers import InTopic, IsAdmin
+from bot.handlers import _redis as _redis_mod
 
 logger = logging.getLogger(__name__)
 barcode_router = Router(name="barcode")
 
 _PARSE = ParseMode.HTML
-_BC_TTL = 60.0  # seconds a pending scan stays alive
+_BC_TTL = 60  # seconds a pending scan stays alive
+_BC_KEY = "wishmotors:barcode:pending:{}"
 
 
-# ─── Per-user OEM cache ───────────────────────────────────────────────────────
+# ─── Per-user OEM cache (in-process fallback) ─────────────────────────────────
 # value keys: oem, name_ka, name_en, status ("confirming"|"awaiting_name"|"ready"), expires
 _bc_cache: dict[int, dict] = {}
 
 
-def _bc_set(user_id: int, **kwargs: object) -> None:
+def _bc_set_memory(user_id: int, **kwargs: object) -> None:
     _bc_cache[user_id] = {"expires": time.monotonic() + _BC_TTL, **kwargs}
 
 
-def _bc_get(user_id: int) -> Optional[dict]:
+def _bc_get_memory(user_id: int) -> Optional[dict]:
     entry = _bc_cache.get(user_id)
     if entry and time.monotonic() < entry["expires"]:
         return entry
@@ -61,9 +64,45 @@ def _bc_get(user_id: int) -> Optional[dict]:
     return None
 
 
-def bc_consume(user_id: int) -> Optional[dict]:
+async def _bc_set(user_id: int, **kwargs: object) -> None:
+    r = _redis_mod.get()
+    if r is not None:
+        try:
+            payload = {k: v for k, v in kwargs.items()}
+            await r.setex(_BC_KEY.format(user_id), _BC_TTL, json.dumps(payload))  # type: ignore[attr-defined]
+            return
+        except Exception as exc:
+            logger.warning("Redis bc_set failed, using memory: %s", exc)
+    _bc_set_memory(user_id, **kwargs)
+
+
+async def _bc_get(user_id: int) -> Optional[dict]:
+    r = _redis_mod.get()
+    if r is not None:
+        try:
+            raw = await r.get(_BC_KEY.format(user_id))  # type: ignore[attr-defined]
+            return json.loads(raw) if raw else None
+        except Exception as exc:
+            logger.warning("Redis bc_get failed, using memory: %s", exc)
+    return _bc_get_memory(user_id)
+
+
+async def bc_consume(user_id: int) -> Optional[dict]:
     """Return and delete the ready cache entry, or None if missing/expired/not-ready."""
-    entry = _bc_get(user_id)
+    r = _redis_mod.get()
+    if r is not None:
+        try:
+            key = _BC_KEY.format(user_id)
+            raw = await r.get(key)  # type: ignore[attr-defined]
+            if raw:
+                entry = json.loads(raw)
+                if entry.get("status") == "ready":
+                    await r.delete(key)  # type: ignore[attr-defined]
+                    return entry
+            return None
+        except Exception as exc:
+            logger.warning("Redis bc_consume failed, using memory: %s", exc)
+    entry = _bc_get_memory(user_id)
     if entry and entry.get("status") == "ready":
         _bc_cache.pop(user_id, None)
         return entry
@@ -91,7 +130,7 @@ class _PendingManualName(BaseFilter):
     async def __call__(self, message: Message) -> bool:
         if not message.from_user:
             return False
-        entry = _bc_get(message.from_user.id)
+        entry = await _bc_get(message.from_user.id)
         return bool(entry and entry.get("status") == "awaiting_name")
 
 
@@ -152,7 +191,7 @@ async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
         name = _fmt_name(name_ka, name_en)
 
         if name:
-            _bc_set(user_id, oem=oem, name_ka=name_ka, name_en=name_en, status="confirming")
+            await _bc_set(user_id, oem=oem, name_ka=name_ka, name_en=name_en, status="confirming")
             await bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -166,7 +205,7 @@ async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
             )
         else:
             # OEM found but name extraction failed — skip confirmation
-            _bc_set(user_id, oem=oem, name_ka="", name_en="", status="ready")
+            await _bc_set(user_id, oem=oem, name_ka="", name_en="", status="ready")
             await bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -214,12 +253,12 @@ async def handle_sales_document(message: Message, bot: Bot) -> None:
 async def cb_bc_yes(callback: CallbackQuery) -> None:
     assert isinstance(callback.message, Message)
     user_id = callback.from_user.id
-    entry = _bc_get(user_id)
+    entry = await _bc_get(user_id)
     if not entry:
         await callback.answer("⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True)
         return
 
-    _bc_set(user_id, oem=entry["oem"], name_ka=entry["name_ka"], name_en=entry["name_en"], status="ready")
+    await _bc_set(user_id, oem=entry["oem"], name_ka=entry["name_ka"], name_en=entry["name_en"], status="ready")
     name = _fmt_name(entry["name_ka"], entry["name_en"])
     name_line = f"\n🔤 {html.escape(name)}" if name else ""
 
@@ -235,12 +274,12 @@ async def cb_bc_yes(callback: CallbackQuery) -> None:
 async def cb_bc_manual(callback: CallbackQuery) -> None:
     assert isinstance(callback.message, Message)
     user_id = callback.from_user.id
-    entry = _bc_get(user_id)
+    entry = await _bc_get(user_id)
     if not entry:
         await callback.answer("⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True)
         return
 
-    _bc_set(user_id, oem=entry["oem"], name_ka="", name_en="", status="awaiting_name")
+    await _bc_set(user_id, oem=entry["oem"], name_ka="", name_en="", status="awaiting_name")
     await callback.message.edit_text(
         "✏️ ჩაწერე პროდუქტის <b>დასახელება</b>:",
         parse_mode=_PARSE,
@@ -258,7 +297,7 @@ async def cb_bc_manual(callback: CallbackQuery) -> None:
 )
 async def handle_bc_manual_name(message: Message) -> None:
     user_id = message.from_user.id
-    entry = _bc_get(user_id)
+    entry = await _bc_get(user_id)
     if not entry or entry.get("status") != "awaiting_name":
         return
 
@@ -267,7 +306,7 @@ async def handle_bc_manual_name(message: Message) -> None:
         await message.answer("⚠️ დასახელება ცარიელია. ჩაწერე სახელი.")
         return
 
-    _bc_set(user_id, oem=entry["oem"], name_ka=name, name_en="", status="ready")
+    await _bc_set(user_id, oem=entry["oem"], name_ka=name, name_en="", status="ready")
     await message.answer(
         f"✅ <b>OEM: <code>{html.escape(entry['oem'])}</code></b>\n"
         f"🔤 <b>{html.escape(name)}</b>\n\n"
