@@ -37,7 +37,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
         category            = $8,
         compatibility_notes = $9,
         image_url           = $10,
-        item_type           = COALESCE($11, item_type)
+        item_type           = COALESCE($11, item_type),
+        recommended_price   = NULL
       WHERE id = $1`,
       [rowId, name, oem_code ?? null, current_stock, min_stock, unit_price, unit,
        category ?? null, compatibility_notes ?? null, image_url ?? null, safeItemType],
