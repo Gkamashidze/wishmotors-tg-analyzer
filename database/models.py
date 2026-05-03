@@ -738,6 +738,54 @@ CREATE TABLE IF NOT EXISTS lost_searches (
 );
 CREATE INDEX IF NOT EXISTS idx_lost_searches_created ON lost_searches(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_lost_searches_query   ON lost_searches(LOWER(query));
+
+-- Permanent archive of deleted expenses (no expiry).
+CREATE TABLE IF NOT EXISTS deleted_expenses (
+    id                  SERIAL PRIMARY KEY,
+    original_expense_id INTEGER,
+    amount              NUMERIC(12,2) NOT NULL,
+    description         TEXT,
+    category            TEXT,
+    payment_method      TEXT NOT NULL DEFAULT 'cash',
+    is_paid             BOOLEAN NOT NULL DEFAULT TRUE,
+    is_non_cash         BOOLEAN NOT NULL DEFAULT FALSE,
+    vat_amount          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    is_vat_included     BOOLEAN NOT NULL DEFAULT FALSE,
+    topic_id            INTEGER,
+    topic_message_id    INTEGER,
+    deleted_at          TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_deleted_expenses_deleted_at ON deleted_expenses(deleted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deleted_expenses_original   ON deleted_expenses(original_expense_id);
+
+-- Before-snapshot stored on every sale edit (old values, inside transaction).
+CREATE TABLE IF NOT EXISTS sale_edits (
+    id              SERIAL PRIMARY KEY,
+    sale_id         INTEGER NOT NULL,
+    quantity        INTEGER NOT NULL,
+    unit_price      NUMERIC(12,2) NOT NULL,
+    payment_method  TEXT NOT NULL,
+    seller_type     TEXT NOT NULL DEFAULT 'individual',
+    customer_name   TEXT,
+    notes           TEXT,
+    product_id      INTEGER,
+    edited_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sale_edits_sale_id   ON sale_edits(sale_id);
+CREATE INDEX IF NOT EXISTS idx_sale_edits_edited_at ON sale_edits(edited_at DESC);
+
+-- Before-snapshot stored on every expense edit (old values, inside transaction).
+CREATE TABLE IF NOT EXISTS expense_edits (
+    id              SERIAL PRIMARY KEY,
+    expense_id      INTEGER NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,
+    description     TEXT,
+    category        TEXT,
+    payment_method  TEXT NOT NULL DEFAULT 'cash',
+    edited_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_expense_edits_expense_id ON expense_edits(expense_id);
+CREATE INDEX IF NOT EXISTS idx_expense_edits_edited_at  ON expense_edits(edited_at DESC);
 """
 
 
@@ -922,6 +970,45 @@ class PersonalOrderRow(TypedDict):
     items: List[PersonalOrderItemRow]
     telegram_chat_id: Optional[int]
     telegram_message_id: Optional[int]
+
+
+class DeletedExpenseRow(TypedDict):
+    id: int
+    original_expense_id: Optional[int]
+    amount: float
+    description: Optional[str]
+    category: Optional[str]
+    payment_method: str
+    is_paid: bool
+    is_non_cash: bool
+    vat_amount: float
+    is_vat_included: bool
+    topic_id: Optional[int]
+    topic_message_id: Optional[int]
+    deleted_at: object  # datetime
+
+
+class SaleEditRow(TypedDict):
+    id: int
+    sale_id: int
+    quantity: int
+    unit_price: float
+    payment_method: str
+    seller_type: str
+    customer_name: Optional[str]
+    notes: Optional[str]
+    product_id: Optional[int]
+    edited_at: object  # datetime
+
+
+class ExpenseEditRow(TypedDict):
+    id: int
+    expense_id: int
+    amount: float
+    description: Optional[str]
+    category: Optional[str]
+    payment_method: str
+    edited_at: object  # datetime
 
 
 @dataclass

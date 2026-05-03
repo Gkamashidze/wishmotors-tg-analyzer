@@ -13,7 +13,7 @@ try:
     _Redis = _redis_asyncio.Redis
 except ImportError:  # pragma: no cover
     _redis_asyncio = None  # type: ignore[assignment]
-    _Redis = None  # type: ignore[assignment]
+    _Redis = None  # type: ignore[assignment,misc]
 
 _client: Optional[object] = None
 

@@ -105,7 +105,7 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         # If the message has no product identifier (e.g. "2ც 45₾"), check for a
         # pending barcode scan and inject its OEM code + name.
         from bot.handlers.barcode import bc_consume
-        bc = bc_consume(user_id) if not raw else None
+        bc = (await bc_consume(user_id)) if not raw else None
         if bc:
             raw = bc["oem"]
 
