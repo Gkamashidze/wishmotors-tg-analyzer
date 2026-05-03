@@ -33,6 +33,8 @@ class Database:
         self.tz = pytz.timezone(timezone)
         self._pool: Optional[asyncpg.Pool] = None  # type: ignore[type-arg]
         self.audit: Optional[AuditLogger] = None
+        # Strong references prevent GC from collecting tasks before they complete.
+        self._audit_tasks: set = set()
 
     @property
     def pool(self) -> asyncpg.Pool:  # type: ignore[type-arg]
@@ -107,9 +109,11 @@ class Database:
         if self.audit is None:
             return
         try:
-            asyncio.get_running_loop().create_task(
+            task = asyncio.get_running_loop().create_task(
                 self.audit.log_safe(event_type, payload, reference_id)
             )
+            self._audit_tasks.add(task)
+            task.add_done_callback(self._audit_tasks.discard)
         except RuntimeError:
             pass
 

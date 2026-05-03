@@ -12,6 +12,9 @@ _MODEL = "claude-haiku-4-5-20251001"
 _MAX_TOKENS = 512
 _TIMEOUT = 15.0
 
+# Strong references prevent GC from collecting log tasks before completion.
+_log_tasks: set = set()
+
 _SYSTEM = """\
 შენ ხარ ავტო სათადარიგო ნაწილების მაღაზიის ძიების ასისტენტი (SsangYong).
 მომხმარებელი გეძლევა სათადარიგო ნაწილების კატალოგი და კლიენტის მოთხოვნა.
@@ -68,9 +71,11 @@ def _build_catalog_text(products: List[dict]) -> str:
 def _fire_and_forget_log(db: Any, query: str) -> None:
     """Schedule a lost-search log write without blocking the caller."""
     try:
-        asyncio.get_running_loop().create_task(
+        task = asyncio.get_running_loop().create_task(
             db.log_lost_search(query.strip(), "bot_search")
         )
+        _log_tasks.add(task)
+        task.add_done_callback(_log_tasks.discard)
     except Exception:
         pass
 
