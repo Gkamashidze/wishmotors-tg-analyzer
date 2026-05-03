@@ -2,59 +2,67 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  test:
-    name: Lint, Type-check & Test
+  bot-tests:
+    name: Bot — Python tests + lint
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      # Dummy values — tests use mocks; DB tests use the postgres service
-      BOT_TOKEN: "0000000000:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-      GROUP_ID: "-1000000000001"
-      SALES_TOPIC_ID: "1"
-      ORDERS_TOPIC_ID: "2"
-      EXPENSES_TOPIC_ID: "3"
-      STOCK_TOPIC_ID: "4"
-      ADMIN_IDS: "12345678"
-      DATABASE_URL: "postgresql://test:test@localhost:5432/test"
-      RAILWAY_ENVIRONMENT: "test"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
+          cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Lint with ruff
-        run: ruff check .
+      - name: Ruff lint
+        run: python -m ruff check .
 
-      - name: Type-check with mypy
-        run: mypy bot/ database/ config.py --ignore-missing-imports --no-strict-optional
+      - name: Mypy
+        run: python -m mypy bot/ database/ config.py --ignore-missing-imports --no-strict-optional
 
-      - name: Run tests
-        run: pytest tests/ -v --tb=short
+      - name: Pytest
+        env:
+          BOT_TOKEN: "test"
+          GROUP_ID: "1"
+          SALES_TOPIC_ID: "2"
+          ORDERS_TOPIC_ID: "3"
+          EXPENSES_TOPIC_ID: "4"
+          STOCK_TOPIC_ID: "5"
+          NISIAS_TOPIC_ID: "6"
+          DATABASE_URL: "postgresql://x:x@localhost/test"
+          ADMIN_IDS: "12345"
+          TIMEZONE: "Asia/Tbilisi"
+        run: python -m pytest tests/ -q
+
+  dashboard-tests:
+    name: Dashboard — TypeScript + vitest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Vitest
+        run: npx vitest run

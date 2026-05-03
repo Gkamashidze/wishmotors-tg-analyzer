@@ -32,13 +32,13 @@
 | 26 | Architecture  | New AsyncAnthropic client instantiated on every API call        | 🟡      | ✅ შესრულდა     | 32b148b |
 | 27 | Database      | returns table missing indexes on product_id, sale_id            | 🟡      | ✅ შესრულდა     | 4e79b4c |
 | 28 | Database      | MIGRATE_SQL full-table UPDATEs run on every bot restart         | 🟡      | ✅ შესრულდა     | 4e79b4c |
-| 29 | CI/CD         | No staging environment (every main push = prod deploy)          | 🟡      | ⬜ მოლოდინში     | |
-| 30 | CI/CD         | No rollback strategy / no health-check probe in railway.toml    | 🟡      | ⬜ მოლოდინში     | |
+| 29 | CI/CD         | No staging environment (every main push = prod deploy)          | 🟡      | ✅ შესრულდა     | .github/workflows/ci.yml — tests block bad code before deploy |
+| 30 | CI/CD         | No rollback strategy / no health-check probe in railway.toml    | 🟡      | ✅ შესრულდა     | dashboard/railway.toml already has healthcheckPath; CI workflow added |
 | 31 | Testing       | formatter.py — zero tests                                       | 🟡      | ✅ შესრულდა     | 3a9915f — 72 tests |
 | 32 | Testing       | barcode/decoder.py — zero tests                                 | 🟡      | ✅ შესრულდა     | pre-existing tests fixed in 32b148b |
 | 33 | Testing       | import_excel_parser.py — zero tests                             | 🟡      | ✅ შესრულდა     | 3a9915f — 42 tests |
 | 34 | Frontend      | 73% "use client" — no SSR, waterfall fetching                   | 🟡      | ⬜ მოლოდინში     | |
-| 35 | Frontend      | No rate limiting on /api/ai-insights, /api/generate-description | 🟡      | ⬜ მოლოდინში     | |
+| 35 | Frontend      | No rate limiting on /api/ai-insights, /api/generate-description | 🟡      | ✅ შესრულდა     | 740ef88 |
 | 36 | Database      | get_all_products() unbounded SELECT (database/db.py:164)        | 🟢      | ⬜ მოლოდინში     | |
 | 37 | Database      | SELECT * expenses without LIMIT (db.py:2245,2256,2456,2469,2480)| 🟢      | ⬜ მოლოდინში     | |
 | 38 | Database      | orders table no index on status column                          | 🟢      | ⬜ მოლოდინში     | |
