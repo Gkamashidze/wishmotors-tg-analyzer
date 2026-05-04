@@ -93,11 +93,32 @@ python -m bot.main
 >
 > სვეტი **ერთეული** (5) — სავალდებულო არ არის. თუ ცარიელია, ნაგულისხმევი მნიშვნელობა არის `ცალი`.
 
-**ბრძანებები:**
-- `/report` — კვირის ანგარიში
-- `/stock` — საწყობის მდგომარეობა
-- `/addproduct სახელი OEM მარაგი ფასი` — პროდუქტის დამატება
-- `/help` — დახმარება
+**ბრძანებები (ყველა admin-only):**
+
+| ბრძანება | აღწერა |
+|----------|--------|
+| `/help` | ბრძანებების სია |
+| `/report` | კვირის სრული ანგარიში (AI ანალიზით) |
+| `/report_period` | მომხმარებლის მიერ მითითებული პერიოდის ანგარიში |
+| `/stock` | საწყობის მდგომარეობა |
+| `/cash` | ნაღდი ფული (ხელზე + ბანკი) |
+| `/deposit` | ბანკში შეტანის ჩაწერა |
+| `/transfer` | ნაღდის გადარიცხვა |
+| `/orders` | მოლოდინში მყოფი შეკვეთების სია |
+| `/completeorder` | შეკვეთის დასრულება |
+| `/addorder` | ახალი შეკვეთის დამატება (ოსტატი) |
+| `/addproduct` | ახალი პროდუქტის დამატება (ოსტატი) |
+| `/editproduct` | არსებული პროდუქტის რედაქტირება |
+| `/import` | Excel-იდან ინვენტარის მასობრივი შემოტანა |
+| `/new` | ახალი გაყიდვის ოსტატი (შტრიხკოდი) |
+| `/nisias` | ნისიების / კრედიტების მართვა |
+| `/paid` | ხარჯის / ნისიის გადახდილად მოხნიშვნა |
+| `/history` | გაყიდვების ისტორია |
+| `/deletesale` | გაყიდვის გაუქმება |
+| `/checksales` | გაყიდვების მონაცემების შემოწმება |
+| `/diagnostics` | სისტემის დიაგნოსტიკა |
+| `/po` | პირადი შეკვეთების სია |
+| `/addpo` | პირადი შეკვეთის დამატება |
 
 ---
 
@@ -192,20 +213,41 @@ Schema and indexes are created automatically on first run.
 wishmotors-tg-analyzer/
 ├── bot/
 │   ├── handlers/
-│   │   ├── __init__.py       # InTopic filter
-│   │   ├── sales.py          # Sales + stock topic handlers
-│   │   ├── orders.py         # Orders + expenses topic handlers
-│   │   └── commands.py       # /report /stock /addproduct /help
+│   │   ├── __init__.py                 # InTopic filter + rate limiter
+│   │   ├── sales.py                    # Sales topic + stock updates
+│   │   ├── orders.py                   # Orders + expenses topics
+│   │   ├── commands.py                 # All /command handlers (18 commands)
+│   │   ├── wizard.py                   # Multi-step wizards (sale, nisia, barcode)
+│   │   ├── barcode.py                  # Barcode photo scanning flow
+│   │   ├── addorder.py                 # /addorder wizard
+│   │   ├── deeplink.py                 # Deep-link callback handlers
+│   │   ├── search.py                   # Product search handler
+│   │   ├── topic_messages.py           # Catch-all topic message router
+│   │   ├── period_report.py            # /report_period wizard
+│   │   └── personal_orders_handler.py  # /po /addpo personal orders
 │   ├── parsers/
-│   │   └── message_parser.py # Georgian text → structured data
+│   │   ├── message_parser.py           # Georgian text → structured data
+│   │   └── import_excel_parser.py      # Excel import row parser
 │   ├── reports/
-│   │   └── formatter.py      # HTML report builders
-│   └── main.py               # Bot entry point + scheduler
+│   │   └── formatter.py                # HTML report builders
+│   ├── financial_ai/
+│   │   └── analyzer.py                 # Anthropic-powered financial analysis
+│   ├── search_ai/
+│   │   └── catalog_search.py           # AI product search
+│   ├── barcode/
+│   │   └── decoder.py                  # zxing barcode detection
+│   └── main.py                         # Bot entry point + APScheduler
+├── dashboard/                           # Next.js admin dashboard
+│   ├── app/api/                         # REST API routes (57 endpoints)
+│   └── app/                             # Pages (catalog, accounting, etc.)
 ├── database/
-│   ├── models.py             # SQL schema + dataclasses
-│   └── db.py                 # Async database layer
-├── config.py                 # Environment variable loader
-├── requirements.txt
-├── .env.example
-└── .gitignore
+│   ├── models.py                        # SQL schema + TypedDicts + dataclasses
+│   ├── db.py                            # Async database layer (asyncpg pool)
+│   └── audit_log.py                     # Audit trail writer
+├── tests/                               # pytest test suite (391 tests)
+├── config.py                            # Env var loader (fail-fast)
+├── requirements.txt                     # Production dependencies
+├── requirements-dev.txt                 # Dev/test dependencies
+├── .env.example                         # All required env vars documented
+└── .github/workflows/ci.yml             # CI: ruff + mypy + pytest + vitest
 ```

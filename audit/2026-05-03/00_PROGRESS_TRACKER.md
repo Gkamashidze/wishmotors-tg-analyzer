@@ -39,13 +39,13 @@
 | 33 | Testing       | import_excel_parser.py — zero tests                             | 🟡      | ✅ შესრულდა     | 3a9915f — 42 tests |
 | 34 | Frontend      | 73% "use client" — no SSR, waterfall fetching                   | 🟡      | ❌ დაბლოკილია   | All page-level components use useState+useEffect+useCallback; interactive admin dashboard. Visual verification required (INACTIVE per CLAUDE.md) |
 | 35 | Frontend      | No rate limiting on /api/ai-insights, /api/generate-description | 🟡      | ✅ შესრულდა     | 740ef88 |
-| 36 | Database      | get_all_products() unbounded SELECT (database/db.py:164)        | 🟢      | ⬜ მოლოდინში     | |
-| 37 | Database      | SELECT * expenses without LIMIT (db.py:2245,2256,2456,2469,2480)| 🟢      | ⬜ მოლოდინში     | |
-| 38 | Database      | orders table no index on status column                          | 🟢      | ⬜ მოლოდინში     | |
-| 39 | Database      | ILIKE with unescaped % and _ wildcards (db.py:135,253)          | 🟢      | ⬜ მოლოდინში     | |
-| 40 | Code Quality  | database/db.py god object — 3,375 lines, 113 methods            | 🟢      | ⬜ მოლოდინში     | long-term |
+| 36 | Database      | get_all_products() unbounded SELECT (database/db.py:164)        | 🟢      | ✅ შესრულდა     | c1ce53a — LIMIT 5000 |
+| 37 | Database      | SELECT * expenses without LIMIT (db.py:2245,2256,2456,2469,2480)| 🟢      | ✅ შესრულდა     | c1ce53a — LIMIT 500 on unbounded queries |
+| 38 | Database      | orders table no index on status column                          | 🟢      | ✅ შესრულდა     | c1ce53a — idx_orders_status in MIGRATE_SQL |
+| 39 | Database      | ILIKE with unescaped % and _ wildcards (db.py:135,253)          | 🟢      | ✅ შესრულდა     | c1ce53a — _ilike_escape() helper + ESCAPE '\\' |
+| 40 | Code Quality  | database/db.py god object — 3,375 lines, 113 methods            | 🟢      | ❌ გადაიდო      | long-term; Phase 4 — domain repositories |
 | 41 | Code Quality  | datetime.utcnow() deprecated (database/db.py:871)               | 🟢      | ✅ შესრულდა     | f135227 |
-| 42 | Code Quality  | assert isinstance() used as type guard in wizard.py             | 🟢      | ⬜ მოლოდინში     | |
+| 42 | Code Quality  | assert isinstance() used as type guard in wizard.py             | 🟢      | ✅ შესრულდა     | c1ce53a — 52x early return |
 | 43 | Documentation | .env.example missing 4 vars (REDIS_URL, DASHBOARD_URL, etc.)    | 🟢      | ✅ შესრულდა     | f135227 |
 | 44 | Documentation | README lists 3/11 handlers, 50% of commands undocumented        | 🟢      | ⬜ მოლოდინში     | |
 | 45 | Documentation | RAILWAY_ENVIRONMENT guard blocks local dev, not in README       | 🟢      | ✅ შესრულდა     | f135227 — .env.example-ში |
