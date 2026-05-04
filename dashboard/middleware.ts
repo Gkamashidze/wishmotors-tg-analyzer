@@ -9,7 +9,7 @@ export const config = {
   ],
 };
 
-const ADMIN_HOST = process.env.ADMIN_HOST ?? "";
+const ADMIN_HOST = process.env.ADMIN_HOST || "admin.wishmotors.ge";
 
 function isPublicDomain(hostname: string): boolean {
   if (!ADMIN_HOST) return false;
