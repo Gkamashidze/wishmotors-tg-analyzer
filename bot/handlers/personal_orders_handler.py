@@ -592,9 +592,9 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
         )
     except Exception:
         logger.exception("Failed to create personal order")
-        await cb.message.edit_text(
+        await cb.message.edit_text(  # type: ignore[union-attr]
             "❌ შეცდომა შენახვისას. სცადე ხელახლა.", parse_mode=_PARSE
-        )  # type: ignore[union-attr]
+        )
         return
 
     link = _tracking_link(order["tracking_token"])

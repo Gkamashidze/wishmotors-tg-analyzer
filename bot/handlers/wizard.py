@@ -1545,8 +1545,7 @@ def _edit_target_chat(callback: CallbackQuery) -> int:
     When the edit was triggered from a group topic, route the wizard into
     the admin's DM so the topic stays clean and input flows privately.
     """
-    if not isinstance(callback.message, Message):
-        return
+    assert isinstance(callback.message, Message)
     assert callback.from_user is not None
     if callback.message.chat.type == ChatType.PRIVATE:
         return callback.message.chat.id
