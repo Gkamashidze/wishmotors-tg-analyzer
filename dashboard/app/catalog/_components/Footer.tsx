@@ -49,11 +49,11 @@ function SocialPill({ href, label, sublabel, icon }: SocialPillProps) {
         {icon}
       </span>
       <span className="flex flex-col leading-tight">
-        <span className="text-sm font-medium text-white/80 group-hover:text-white transition-colors duration-200">
+        <span className="text-sm font-medium text-white group-hover:text-white transition-colors duration-200">
           {label}
         </span>
         {sublabel && (
-          <span className="text-[11px] text-white/35 group-hover:text-white/55 transition-colors duration-200">
+          <span className="text-[11px] text-white/60 group-hover:text-white/80 transition-colors duration-200">
             {sublabel}
           </span>
         )}
@@ -125,7 +125,7 @@ export default function Footer() {
           {hasContact && (
             <div className="space-y-3">
               <h3 className="font-semibold text-sm text-white/90">დაგვიკავშირდით</h3>
-              <div className="space-y-2 text-sm text-white/55">
+              <div className="space-y-2 text-sm text-white/75">
                 {telHref && (
                   <p>
                     <a href={telHref} className="hover:text-[#29abe2] transition-colors">
@@ -161,7 +161,7 @@ export default function Footer() {
           {hasAddress && (
             <div className="space-y-3">
               <h3 className="font-semibold text-sm text-white/90">მისამართი</h3>
-              <div className="space-y-2 text-sm text-white/55">
+              <div className="space-y-2 text-sm text-white/75">
                 {address && <p>{address}</p>}
                 {hours   && <p>{hours}</p>}
                 {mapsUrl && (
@@ -177,7 +177,7 @@ export default function Footer() {
 
           <div className="space-y-3">
             <h3 className="font-semibold text-sm text-white/90">სწრაფი ბმულები</h3>
-            <div className="space-y-2 text-sm text-white/55">
+            <div className="space-y-2 text-sm text-white/75">
               <p>
                 <Link href="/catalog" className="hover:text-[#29abe2] transition-colors">
                   კატალოგი
@@ -210,7 +210,7 @@ export default function Footer() {
             />
 
             <div className="mt-8 flex flex-col items-center gap-5">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-white/25">
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-white/50">
                 გამოგვყევი სოც. ქსელებში
               </p>
               <div className="flex flex-wrap justify-center gap-3">
@@ -223,7 +223,7 @@ export default function Footer() {
         )}
 
         {/* ── Copyright strip ── */}
-        <div className="mt-8 pt-6 border-t border-white/[0.07] text-xs text-white/25 text-center">
+        <div className="mt-8 pt-6 border-t border-white/[0.07] text-xs text-white/50 text-center">
           © {new Date().getFullYear()} WishMotors. ყველა უფლება დაცულია.
         </div>
       </div>
