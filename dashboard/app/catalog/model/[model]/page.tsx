@@ -109,8 +109,9 @@ export default async function ModelLandingPage({ params }: { params: Params }) {
             </svg>
             <span className="hidden sm:inline">კატალოგი</span>
           </Link>
-          <Link href="/catalog" className="shrink-0">
-            <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
+          <Link href="/catalog" className="shrink-0 flex items-center gap-2.5">
+            <Image src={logo} alt="WishMotors" height={48} className="h-12 w-auto" unoptimized />
+            <span className="font-bold text-base text-[#1b2b5e]">WishMotors</span>
           </Link>
         </div>
       </header>

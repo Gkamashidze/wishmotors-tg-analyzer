@@ -510,8 +510,8 @@ export default async function CatalogPage({ searchParams }: PageProps) {
             className="shrink-0 flex items-center gap-2.5"
             aria-label="WishMotors კატალოგი"
           >
-            <Image src={logo} alt="WishMotors" height={36} className="h-9 w-auto" unoptimized />
-            <span className="hidden sm:block font-semibold text-sm text-[#1b2b5e]">WishMotors</span>
+            <Image src={logo} alt="WishMotors" height={48} className="h-12 w-auto" unoptimized />
+            <span className="font-bold text-base text-[#1b2b5e]">WishMotors</span>
           </Link>
           <div className="flex-1 max-w-lg">
             <SearchBar defaultValue={currentSearch} />
