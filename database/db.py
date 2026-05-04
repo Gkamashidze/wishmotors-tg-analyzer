@@ -27,6 +27,11 @@ from database.models import (
 logger = logging.getLogger(__name__)
 
 
+def _ilike_escape(s: str) -> str:
+    """Escape ILIKE wildcards so user input is treated as a literal string."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class Database:
     def __init__(self, dsn: str, timezone: str = "Asia/Tbilisi") -> None:
         self.dsn = dsn
@@ -149,15 +154,16 @@ class Database:
         """Find a product whose OEM code ends with the given digits (e.g. '8500')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM products WHERE oem_code ILIKE $1",
-                f"%{partial.strip()}",
+                "SELECT * FROM products WHERE oem_code ILIKE $1 ESCAPE '\\'",
+                f"%{_ilike_escape(partial.strip())}",
             )
             return self._row(row)  # type: ignore[return-value]
 
     async def get_product_by_name(self, name: str) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM products WHERE name ILIKE $1", f"%{name.strip()}%"
+                "SELECT * FROM products WHERE name ILIKE $1 ESCAPE '\\'",
+                f"%{_ilike_escape(name.strip())}%",
             )
             return self._row(row)  # type: ignore[return-value]
 
@@ -186,7 +192,7 @@ class Database:
 
     async def get_all_products(self) -> List[ProductRow]:
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM products ORDER BY name")
+            rows = await conn.fetch("SELECT * FROM products ORDER BY name LIMIT 5000")
             return self._rows(rows)  # type: ignore[return-value]
 
     async def get_catalog_for_search(self) -> List[dict]:
@@ -2496,7 +2502,8 @@ class Database:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
                    WHERE is_paid = FALSE
-                   ORDER BY created_at DESC""",
+                   ORDER BY created_at DESC
+                   LIMIT 500""",
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2746,7 +2753,8 @@ class Database:
             rows = await conn.fetch(
                 """SELECT * FROM expenses
                    WHERE is_paid = FALSE
-                   ORDER BY created_at DESC""",
+                   ORDER BY created_at DESC
+                   LIMIT 500""",
             )
             return self._rows(rows)  # type: ignore[return-value]
 

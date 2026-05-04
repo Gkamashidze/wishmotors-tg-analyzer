@@ -816,12 +816,17 @@ CREATE INDEX IF NOT EXISTS idx_expense_edits_edited_at  ON expense_edits(edited_
 CREATE INDEX IF NOT EXISTS idx_returns_product_id ON returns(product_id);
 CREATE INDEX IF NOT EXISTS idx_returns_sale_id    ON returns(sale_id) WHERE sale_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_returns_returned_at ON returns(returned_at DESC);
+
+-- ─── #38: Missing index on orders.status ───────────────────────────────────────
+-- get_pending_orders() filters WHERE status = 'pending' — seq scan on large tables.
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 """
 
 
 # ─── TypedDict — type-safe dict shapes returned by db.py ─────────────────────
 # These let handlers use typed access (e.g. product["id"]) with IDE support
 # and mypy validation, without requiring a full ORM migration.
+
 
 class ClientRow(TypedDict):
     id: int  # Telegram user ID
@@ -856,11 +861,11 @@ class SaleRow(TypedDict):
     quantity: int
     unit_price: float
     payment_method: str
-    seller_type: str   # 'llc' | 'individual' — which entity is SELLING
-    buyer_type: str    # 'retail' | 'business' — who is BUYING
+    seller_type: str  # 'llc' | 'individual' — which entity is SELLING
+    buyer_type: str  # 'retail' | 'business' — who is BUYING
     customer_name: Optional[str]
-    client_name: Optional[str]    # debtor name extracted from ვალი keyword
-    payment_status: str           # 'paid' | 'debt' | 'unpaid'
+    client_name: Optional[str]  # debtor name extracted from ვალი keyword
+    payment_status: str  # 'paid' | 'debt' | 'unpaid'
     sold_at: object  # datetime
     notes: Optional[str]
     receipt_printed: bool
@@ -868,9 +873,9 @@ class SaleRow(TypedDict):
     topic_message_id: Optional[int]
     vat_amount: float
     is_vat_included: bool
-    output_vat: float   # 18% VAT extracted from VAT-inclusive total: total - total/1.18
+    output_vat: float  # 18% VAT extracted from VAT-inclusive total: total - total/1.18
     cost_amount: float  # COGS snapshot (WAC at time of sale); used for reversals
-    cogs: float         # Explicit COGS alias: quantity × unit_cost
+    cogs: float  # Explicit COGS alias: quantity × unit_cost
     # Joined fields (present in report queries)
     product_name: Optional[str]
     oem_code: Optional[str]
@@ -959,6 +964,7 @@ class ImportHistoryRow(TypedDict):
 
 
 # ─── Dataclasses (kept for backwards compatibility and future use) ────────────
+
 
 @dataclass
 class Product:

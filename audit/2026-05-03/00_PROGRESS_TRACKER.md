@@ -44,10 +44,10 @@
 | 38 | Database      | orders table no index on status column                          | 🟢      | ⬜ მოლოდინში     | |
 | 39 | Database      | ILIKE with unescaped % and _ wildcards (db.py:135,253)          | 🟢      | ⬜ მოლოდინში     | |
 | 40 | Code Quality  | database/db.py god object — 3,375 lines, 113 methods            | 🟢      | ⬜ მოლოდინში     | long-term |
-| 41 | Code Quality  | datetime.utcnow() deprecated (database/db.py:871)               | 🟢      | ⬜ მოლოდინში     | |
+| 41 | Code Quality  | datetime.utcnow() deprecated (database/db.py:871)               | 🟢      | ✅ შესრულდა     | f135227 |
 | 42 | Code Quality  | assert isinstance() used as type guard in wizard.py             | 🟢      | ⬜ მოლოდინში     | |
-| 43 | Documentation | .env.example missing 4 vars (REDIS_URL, DASHBOARD_URL, etc.)    | 🟢      | ⬜ მოლოდინში     | |
+| 43 | Documentation | .env.example missing 4 vars (REDIS_URL, DASHBOARD_URL, etc.)    | 🟢      | ✅ შესრულდა     | f135227 |
 | 44 | Documentation | README lists 3/11 handlers, 50% of commands undocumented        | 🟢      | ⬜ მოლოდინში     | |
-| 45 | Documentation | RAILWAY_ENVIRONMENT guard blocks local dev, not in README       | 🟢      | ⬜ მოლოდინში     | |
-| 46 | Git           | debug commits reach main (SHA 912a3d1, 97e0f50)                 | 🟢      | ⬜ მოლოდინში     | |
-| 47 | CI/CD         | ruff format --check not in CI                                   | 🟢      | ⬜ მოლოდინში     | |
+| 45 | Documentation | RAILWAY_ENVIRONMENT guard blocks local dev, not in README       | 🟢      | ✅ შესრულდა     | f135227 — .env.example-ში |
+| 46 | Git           | debug commits reach main (SHA 912a3d1, 97e0f50)                 | 🟢      | ❌ გადაიდო      | git history immutable — pre-commit hook recommendation only |
+| 47 | CI/CD         | ruff format --check not in CI                                   | 🟢      | ✅ შესრულდა     | f135227 |
