@@ -647,7 +647,11 @@ async def nisia_oem_input(message: Message, state: FSMContext, db: Database) -> 
 )
 async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) -> None:
     """Barcode photo sent at the OEM step — decode + Vision name extraction."""
-    from bot.barcode.decoder import decode_barcode, extract_from_label, extract_part_info
+    from bot.barcode.decoder import (
+        decode_barcode,
+        extract_from_label,
+        extract_part_info,
+    )
 
     assert message.bot is not None
     photo = message.photo[-1]
@@ -663,7 +667,9 @@ async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) ->
     current_state = await state.get_state()
     wizard = "sale" if "SaleWizard" in (current_state or "") else "nisia"
     new_name_state = (
-        SaleWizard.new_product_name if wizard == "sale" else NisiaWizard.new_product_name
+        SaleWizard.new_product_name
+        if wizard == "sale"
+        else NisiaWizard.new_product_name
     )
     step = "2" if wizard == "sale" else "3"
 
@@ -673,7 +679,9 @@ async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) ->
             "📷 შტრიხკოდი ვერ წაიკითხა. ეტიკეტი AI-ით მუშავდება...",
             parse_mode=_PARSE,
         )
-        oem_vision, name_ka_vision, name_en_vision = await extract_from_label(image_bytes)
+        oem_vision, name_ka_vision, name_en_vision = await extract_from_label(
+            image_bytes
+        )
 
         if not oem_vision and not name_ka_vision and not name_en_vision:
             await message.answer(
@@ -712,7 +720,9 @@ async def wizard_oem_photo(message: Message, state: FSMContext, db: Database) ->
 
         if name_ka_vision or name_en_vision:
             disp_ka = name_ka_vision or name_en_vision
-            disp_en = f" ({name_en_vision})" if name_en_vision and name_ka_vision else ""
+            disp_en = (
+                f" ({name_en_vision})" if name_en_vision and name_ka_vision else ""
+            )
             oem_line = f"OEM: <code>{_e(oem_vision)}</code>\n" if oem_vision else ""
             await message.answer(
                 f"{oem_line}🔤 ეტიკეტიდან: <b>{_e(disp_ka)}{_e(disp_en)}</b>\n\n"
@@ -2806,14 +2816,18 @@ async def _handle_product_selected(
             # Name already captured from search step — skip asking again
             await state.update_data(product_id=None, is_freeform=True)
             if entered_oem:
-                new_id = await db.create_product(name=existing_name, oem_code=entered_oem)
+                new_id = await db.create_product(
+                    name=existing_name, oem_code=entered_oem
+                )
                 await state.update_data(product_id=new_id, is_freeform=False)
                 await callback.message.edit_text(
                     f"✅ <b>{_e(existing_name)}</b> ბაზაში დაემატა!\n"
                     f"OEM: <code>{_e(entered_oem)}</code>",
                     parse_mode=_PARSE,
                 )
-                await _goto_quantity(callback.message, state, wizard, existing_name, send=True)
+                await _goto_quantity(
+                    callback.message, state, wizard, existing_name, send=True
+                )
             else:
                 price_state = (
                     SaleWizard.new_product_price
