@@ -33,7 +33,9 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 }
 
 export function middleware(req: NextRequest) {
-  const hostname = req.nextUrl.hostname;
+  const hostname =
+    req.headers.get("x-forwarded-host")?.split(":")[0] ??
+    req.nextUrl.hostname;
 
   if (isPublicDomain(hostname)) {
     if (req.nextUrl.pathname === "/") {
