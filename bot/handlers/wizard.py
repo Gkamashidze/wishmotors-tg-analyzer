@@ -26,6 +26,7 @@ from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -1378,8 +1379,14 @@ async def sale_edit_start(
         )
         return
 
-    await state.set_state(SaleEditWizard.field)
-    await state.set_data({"edit_sale_id": sale_id})
+    assert callback.from_user is not None
+    active_state = (
+        _dm_fsm(state, callback.from_user.id)
+        if target_chat_id != callback.message.chat.id
+        else state
+    )
+    await active_state.set_state(SaleEditWizard.field)
+    await active_state.set_data({"edit_sale_id": sale_id})
 
     qty = sale["quantity"]
     price = float(sale["unit_price"])
@@ -1500,8 +1507,13 @@ async def _start_nisia_edit(
     seller = sale.get("seller_type", "individual")
     seller_label = "🏢 შპს" if seller == "llc" else "👤 ფზ პირი"
 
-    await state.set_state(NisiaEditWizard.field)
-    await state.set_data({"edit_sale_id": sale_id})
+    active_state = (
+        _dm_fsm(state, target_chat_id)
+        if target_chat_id is not None and target_chat_id != msg.chat.id
+        else state
+    )
+    await active_state.set_state(NisiaEditWizard.field)
+    await active_state.set_data({"edit_sale_id": sale_id})
 
     text = (
         f"✏️ <b>ნისია #{sale_id} — რედაქტირება</b>\n\n"
@@ -1539,6 +1551,23 @@ def _edit_target_chat(callback: CallbackQuery) -> int:
     if callback.message.chat.type == ChatType.PRIVATE:
         return callback.message.chat.id
     return callback.from_user.id
+
+
+def _dm_fsm(state: FSMContext, user_id: int) -> FSMContext:
+    """Return an FSMContext bound to the user's private DM chat.
+
+    Needed when an edit wizard is triggered from a group topic: aiogram
+    resolves FSM state per (chat_id, user_id), so state set in the group
+    context is invisible when the user later presses buttons in DM.
+    """
+    return FSMContext(
+        storage=state.storage,
+        key=StorageKey(
+            bot_id=state.key.bot_id,
+            chat_id=user_id,
+            user_id=user_id,
+        ),
+    )
 
 
 @wizard_router.callback_query(F.data.startswith("edit:nisia:"), IsAdmin())
@@ -2420,9 +2449,6 @@ async def expense_edit_start(
         await callback.answer(f"⚠️ #{expense_id} ვერ მოიძებნა.", show_alert=True)
         return
 
-    await state.set_state(ExpenseEditWizard.field)
-    await state.set_data({"edit_expense_id": expense_id})
-
     amt = float(exp["amount"])
     desc = exp.get("description") or "—"
     cat = exp.get("category") or "სხვა"
@@ -2442,6 +2468,14 @@ async def expense_edit_start(
     )
 
     target_chat_id = _edit_target_chat(callback)
+    assert callback.from_user is not None
+    active_state = (
+        _dm_fsm(state, callback.from_user.id)
+        if target_chat_id != callback.message.chat.id
+        else state
+    )
+    await active_state.set_state(ExpenseEditWizard.field)
+    await active_state.set_data({"edit_expense_id": expense_id})
     await callback.bot.send_message(
         chat_id=target_chat_id,
         text=text,
