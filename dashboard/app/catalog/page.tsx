@@ -260,8 +260,8 @@ function ProductCard({ product }: { product: PublicProductItem }) {
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState({ model, engine, year }: { model?: string; engine?: string; year?: string }) {
-  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
   const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
+  const fbPage  = process.env.NEXT_PUBLIC_FACEBOOK_PAGE ?? "wishmotorsgeo";
 
   const isVehicleSearch = Boolean(model);
 
@@ -271,10 +271,8 @@ function EmptyState({ model, engine, year }: { model?: string; engine?: string; 
     waText = `გამარჯობა! მინდა ნაწილი: SsangYong ${parts.join(", ")}`;
   }
 
-  const waHref = waPhone
-    ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}`
-    : null;
-  const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
+  const waHref        = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : null;
+  const messengerHref = `https://m.me/${fbPage}`;
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
@@ -298,30 +296,26 @@ function EmptyState({ model, engine, year }: { model?: string; engine?: string; 
           </>
         )}
       </div>
-      {(waHref || tgHref) && (
-        <div className="flex gap-3">
-          {waHref && (
-            <a
-              href={waHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:bg-[#22c55e] transition-colors"
-            >
-              WhatsApp
-            </a>
-          )}
-          {tgHref && (
-            <a
-              href={tgHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0088cc] text-white text-sm font-medium hover:bg-[#0077b3] transition-colors"
-            >
-              Telegram
-            </a>
-          )}
-        </div>
-      )}
+      <div className="flex gap-3">
+        {waHref && (
+          <a
+            href={waHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#25D366] text-white text-sm font-medium hover:bg-[#22c55e] transition-colors"
+          >
+            WhatsApp
+          </a>
+        )}
+        <a
+          href={messengerHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0866FF] text-white text-sm font-medium hover:bg-[#0755d4] transition-colors"
+        >
+          Messenger
+        </a>
+      </div>
     </div>
   );
 }

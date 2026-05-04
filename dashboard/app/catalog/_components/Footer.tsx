@@ -67,7 +67,7 @@ function SocialPill({ href, label, sublabel, icon }: SocialPillProps) {
 export default function Footer() {
   const phone      = process.env.NEXT_PUBLIC_CONTACT_PHONE;
   const waPhone    = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
-  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const fbPage     = process.env.NEXT_PUBLIC_FACEBOOK_PAGE ?? "wishmotorsgeo";
   const email      = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
   const address    = process.env.NEXT_PUBLIC_BUSINESS_ADDRESS;
   const hours      = process.env.NEXT_PUBLIC_BUSINESS_HOURS;
@@ -79,11 +79,11 @@ export default function Footer() {
   const tiktokUrl  = process.env.NEXT_PUBLIC_TIKTOK_URL;
   const igUrl      = process.env.NEXT_PUBLIC_INSTAGRAM_URL;
 
-  const waHref  = waPhone    ? `https://wa.me/${waPhone}` : null;
-  const tgHref  = tgUsername ? `https://t.me/${tgUsername}` : null;
-  const telHref = phone      ? `tel:${phone.replace(/\s/g, "")}` : null;
+  const waHref        = waPhone ? `https://wa.me/${waPhone}` : null;
+  const messengerHref = `https://m.me/${fbPage}`;
+  const telHref       = phone   ? `tel:${phone.replace(/\s/g, "")}` : null;
 
-  const hasContact = !!(phone || waHref || tgHref || email);
+  const hasContact = !!(phone || waHref || messengerHref || email);
   const hasAddress = !!(address || hours || mapsUrl);
 
   const socialLinks: SocialPillProps[] = [
@@ -141,13 +141,11 @@ export default function Footer() {
                     </a>
                   </p>
                 )}
-                {tgHref && (
-                  <p>
-                    <a href={tgHref} target="_blank" rel="noopener noreferrer" className="hover:text-[#29abe2] transition-colors">
-                      Telegram
-                    </a>
-                  </p>
-                )}
+                <p>
+                  <a href={messengerHref} target="_blank" rel="noopener noreferrer" className="hover:text-[#29abe2] transition-colors">
+                    Messenger
+                  </a>
+                </p>
                 {email && (
                   <p>
                     <a href={`mailto:${email}`} className="hover:text-[#29abe2] transition-colors">

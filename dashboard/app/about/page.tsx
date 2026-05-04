@@ -6,16 +6,16 @@ import { getPublicProductsInStockCount } from "@/lib/queries";
 export default async function AboutPage() {
   const phone = process.env.NEXT_PUBLIC_CONTACT_PHONE;
   const waPhone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE;
-  const tgUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const fbPage  = process.env.NEXT_PUBLIC_FACEBOOK_PAGE ?? "wishmotorsgeo";
   const yearsInBusiness = process.env.NEXT_PUBLIC_YEARS_IN_BUSINESS ?? "1";
   const happyCustomers = process.env.NEXT_PUBLIC_HAPPY_CUSTOMERS ?? "500+";
   const mapsEmbed = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED;
 
   const productsInStock = await getPublicProductsInStockCount().catch(() => 0);
 
-  const waHref = waPhone ? `https://wa.me/${waPhone}` : null;
-  const tgHref = tgUsername ? `https://t.me/${tgUsername}` : null;
-  const telHref = phone ? `tel:${phone.replace(/\s/g, "")}` : null;
+  const waHref        = waPhone ? `https://wa.me/${waPhone}` : null;
+  const messengerHref = `https://m.me/${fbPage}`;
+  const telHref       = phone ? `tel:${phone.replace(/\s/g, "")}` : null;
 
   const btnBase =
     "flex items-center justify-center gap-2.5 rounded-xl py-4 px-5 font-semibold text-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
@@ -163,19 +163,19 @@ export default async function AboutPage() {
               WhatsApp
             </a>
 
-            {/* Telegram */}
+            {/* Facebook Messenger */}
             <a
-              href={tgHref ?? "#"}
-              target={tgHref ? "_blank" : undefined}
+              href={messengerHref}
+              target="_blank"
               rel="noopener noreferrer"
-              aria-label="Telegram-ით დაკავშირება"
+              aria-label="Facebook Messenger-ით დაკავშირება"
               className={`${btnBase} text-white`}
-              style={{ backgroundColor: "#229ED9" }}
+              style={{ backgroundColor: "#0866FF" }}
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current shrink-0" aria-hidden="true">
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z" />
+                <path d="M12 0C5.373 0 0 5.163 0 11.535c0 3.625 1.797 6.86 4.608 8.986V24l4.207-2.312A13.08 13.08 0 0012 22.07c6.627 0 12-5.163 12-11.535C24 5.163 18.627 0 12 0zm1.194 15.533-3.048-3.25-5.95 3.25 6.548-6.953 3.12 3.25 5.878-3.25-6.548 6.953z" />
               </svg>
-              Telegram
+              Messenger
             </a>
 
             {/* Phone */}
