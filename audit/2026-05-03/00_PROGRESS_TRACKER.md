@@ -47,7 +47,7 @@
 | 41 | Code Quality  | datetime.utcnow() deprecated (database/db.py:871)               | 🟢      | ✅ შესრულდა     | f135227 |
 | 42 | Code Quality  | assert isinstance() used as type guard in wizard.py             | 🟢      | ✅ შესრულდა     | c1ce53a — 52x early return |
 | 43 | Documentation | .env.example missing 4 vars (REDIS_URL, DASHBOARD_URL, etc.)    | 🟢      | ✅ შესრულდა     | f135227 |
-| 44 | Documentation | README lists 3/11 handlers, 50% of commands undocumented        | 🟢      | ⬜ მოლოდინში     | |
+| 44 | Documentation | README lists 3/11 handlers, 50% of commands undocumented        | 🟢      | ✅ შესრულდა     | a59e90b — 22 commands + full project tree |
 | 45 | Documentation | RAILWAY_ENVIRONMENT guard blocks local dev, not in README       | 🟢      | ✅ შესრულდა     | f135227 — .env.example-ში |
 | 46 | Git           | debug commits reach main (SHA 912a3d1, 97e0f50)                 | 🟢      | ❌ გადაიდო      | git history immutable — pre-commit hook recommendation only |
 | 47 | CI/CD         | ruff format --check not in CI                                   | 🟢      | ✅ შესრულდა     | f135227 |
