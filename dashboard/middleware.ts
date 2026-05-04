@@ -71,12 +71,13 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  return applySecurityHeaders(
-    new NextResponse("Authentication required", {
-      status: 401,
-      headers: { "WWW-Authenticate": 'Basic realm="wishmotors-dashboard"' },
-    }),
-  );
+  const res401 = new NextResponse("Authentication required", {
+    status: 401,
+    headers: { "WWW-Authenticate": 'Basic realm="wishmotors-dashboard"' },
+  });
+  res401.headers.set("X-Debug-Hostname", hostname);
+  res401.headers.set("X-Debug-AdminHost", ADMIN_HOST || "EMPTY");
+  return applySecurityHeaders(res401);
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
