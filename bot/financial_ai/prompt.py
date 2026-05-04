@@ -104,7 +104,11 @@ _FEWSHOT_INPUT = {
         "low_pending": 0,
         "oldest_pending_days": 11,
         "top_pending_products": [
-            {"name": "წინა ბამპერი Opel Astra", "qty_needed": 2, "max_priority": "urgent"},
+            {
+                "name": "წინა ბამპერი Opel Astra",
+                "qty_needed": 2,
+                "max_priority": "urgent",
+            },
         ],
     },
 }

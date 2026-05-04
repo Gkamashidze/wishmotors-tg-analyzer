@@ -14,6 +14,7 @@ Flow:
 
 Cache: module-level dict keyed by Telegram user_id (TTL: 60s).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -111,11 +112,16 @@ async def bc_consume(user_id: int) -> Optional[dict]:
 
 # ─── Keyboard / display helpers ───────────────────────────────────────────────
 
+
 def _confirm_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ კი, ასე", callback_data="bc:yes"),
-        InlineKeyboardButton(text="✎ ხელით", callback_data="bc:manual"),
-    ]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ კი, ასე", callback_data="bc:yes"),
+                InlineKeyboardButton(text="✎ ხელით", callback_data="bc:manual"),
+            ]
+        ]
+    )
 
 
 def _fmt_name(name_ka: str, name_en: str) -> str:
@@ -126,6 +132,7 @@ def _fmt_name(name_ka: str, name_en: str) -> str:
 
 # ─── Filter: user is waiting to type a manual product name ────────────────────
 
+
 class _PendingManualName(BaseFilter):
     async def __call__(self, message: Message) -> bool:
         if not message.from_user:
@@ -135,6 +142,7 @@ class _PendingManualName(BaseFilter):
 
 
 # ─── Shared processing logic ──────────────────────────────────────────────────
+
 
 async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
     """Download image, run barcode scan + Claude fallback, DM the user."""
@@ -191,7 +199,9 @@ async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
         name = _fmt_name(name_ka, name_en)
 
         if name:
-            await _bc_set(user_id, oem=oem, name_ka=name_ka, name_en=name_en, status="confirming")
+            await _bc_set(
+                user_id, oem=oem, name_ka=name_ka, name_en=name_en, status="confirming"
+            )
             await bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -216,7 +226,9 @@ async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
             )
 
     except Exception as exc:
-        logger.error("Barcode processing error for user %s: %s", user_id, exc, exc_info=True)
+        logger.error(
+            "Barcode processing error for user %s: %s", user_id, exc, exc_info=True
+        )
         await bot.send_message(
             chat_id=user_id,
             text="❌ შეცდომა მოხდა. სცადე ხელახლა.",
@@ -225,6 +237,7 @@ async def _process_image(message: Message, bot: Bot, file_id: str) -> None:
 
 
 # ─── Photo handler (Telegram compresses these) ────────────────────────────────
+
 
 @barcode_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.photo)
 async def handle_sales_photo(message: Message, bot: Bot) -> None:
@@ -235,6 +248,7 @@ async def handle_sales_photo(message: Message, bot: Bot) -> None:
 
 
 # ─── Document handler (uncompressed — recommended for barcodes) ───────────────
+
 
 @barcode_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.document)
 async def handle_sales_document(message: Message, bot: Bot) -> None:
@@ -249,16 +263,25 @@ async def handle_sales_document(message: Message, bot: Bot) -> None:
 
 # ─── Confirmation callbacks ────────────────────────────────────────────────────
 
+
 @barcode_router.callback_query(F.data == "bc:yes", IsAdmin())
 async def cb_bc_yes(callback: CallbackQuery) -> None:
     assert isinstance(callback.message, Message)
     user_id = callback.from_user.id
     entry = await _bc_get(user_id)
     if not entry:
-        await callback.answer("⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True)
+        await callback.answer(
+            "⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True
+        )
         return
 
-    await _bc_set(user_id, oem=entry["oem"], name_ka=entry["name_ka"], name_en=entry["name_en"], status="ready")
+    await _bc_set(
+        user_id,
+        oem=entry["oem"],
+        name_ka=entry["name_ka"],
+        name_en=entry["name_en"],
+        status="ready",
+    )
     name = _fmt_name(entry["name_ka"], entry["name_en"])
     name_line = f"\n🔤 {html.escape(name)}" if name else ""
 
@@ -276,10 +299,14 @@ async def cb_bc_manual(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     entry = await _bc_get(user_id)
     if not entry:
-        await callback.answer("⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True)
+        await callback.answer(
+            "⏰ სესია ამოიწურა. ფოტო ხელახლა გაგზავნე.", show_alert=True
+        )
         return
 
-    await _bc_set(user_id, oem=entry["oem"], name_ka="", name_en="", status="awaiting_name")
+    await _bc_set(
+        user_id, oem=entry["oem"], name_ka="", name_en="", status="awaiting_name"
+    )
     await callback.message.edit_text(
         "✏️ ჩაწერე პროდუქტის <b>დასახელება</b>:",
         parse_mode=_PARSE,
@@ -288,6 +315,7 @@ async def cb_bc_manual(callback: CallbackQuery) -> None:
 
 
 # ─── Manual name capture (DM only, fires only when awaiting_name) ─────────────
+
 
 @barcode_router.message(
     _PendingManualName(),

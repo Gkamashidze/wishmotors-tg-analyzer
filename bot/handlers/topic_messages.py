@@ -23,7 +23,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 logger = logging.getLogger(__name__)
 
 CANCELLED_BANNER = "❌ <b>ეს ტრანზაქცია გაუქმებულია</b>"
-UPDATED_BANNER   = "✏️ <b>შეცვლილია</b>"
+UPDATED_BANNER = "✏️ <b>შეცვლილია</b>"
 
 # Telegram caps message text at 4096 chars; leave headroom for banner.
 _MAX_LEN = 4000
@@ -33,6 +33,7 @@ _MAX_LEN = 4000
 # Compact Edit/Delete (+Complete) keyboards attached to bot confirmation posts
 # in group topics so admins can fully manage transactions from the group
 # without touching DM-only commands.
+
 
 def _kb(*rows: list[InlineKeyboardButton]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=list(rows))
@@ -45,24 +46,30 @@ def _btn(text: str, data: str) -> InlineKeyboardButton:
 def topic_sale_kb(sale_id: int) -> InlineKeyboardMarkup:
     """Edit/Delete keyboard for a sale topic post."""
     return _kb(
-        [_btn("✏️ რედაქტირება", f"edit:sale:{sale_id}"),
-         _btn("❌ წაშლა",        f"ds:{sale_id}")],
+        [
+            _btn("✏️ რედაქტირება", f"edit:sale:{sale_id}"),
+            _btn("❌ წაშლა", f"ds:{sale_id}"),
+        ],
     )
 
 
 def topic_nisia_kb(sale_id: int) -> InlineKeyboardMarkup:
     """Edit/Delete keyboard for a nisia (credit sale) topic post."""
     return _kb(
-        [_btn("✏️ რედაქტირება", f"edit:nisia:{sale_id}"),
-         _btn("❌ წაშლა",        f"ds:{sale_id}")],
+        [
+            _btn("✏️ რედაქტირება", f"edit:nisia:{sale_id}"),
+            _btn("❌ წაშლა", f"ds:{sale_id}"),
+        ],
     )
 
 
 def topic_expense_kb(expense_id: int) -> InlineKeyboardMarkup:
     """Edit/Delete keyboard for an expense topic post."""
     return _kb(
-        [_btn("✏️ რედაქტირება", f"edit:exp:{expense_id}"),
-         _btn("❌ წაშლა",        f"de:{expense_id}")],
+        [
+            _btn("✏️ რედაქტირება", f"edit:exp:{expense_id}"),
+            _btn("❌ წაშლა", f"de:{expense_id}"),
+        ],
     )
 
 
@@ -98,10 +105,13 @@ async def _safe_edit(
         if "message to edit not found" in msg or "message can't be edited" in msg:
             logger.info(
                 "Topic message %d not editable (stale/deleted): %s",
-                message_id, exc,
+                message_id,
+                exc,
             )
             return False
-        logger.warning("TelegramBadRequest editing topic message %d: %s", message_id, exc)
+        logger.warning(
+            "TelegramBadRequest editing topic message %d: %s", message_id, exc
+        )
         return False
     except Exception as exc:
         logger.warning("Unexpected error editing topic message %d: %s", message_id, exc)
@@ -122,7 +132,9 @@ async def mark_cancelled(
     if not message_id:
         return False
     return await _safe_edit(
-        bot, chat_id, message_id,
+        bot,
+        chat_id,
+        message_id,
         f"{CANCELLED_BANNER}\n\n{original_text}",
     )
 
@@ -137,9 +149,13 @@ async def mark_updated(
     """Rewrite an existing topic post to show the edited details + banner."""
     if not message_id:
         return False
-    banner = f"✏️ <b>შეცვლილია ({edit_count}-ჯერ)</b>" if edit_count > 0 else UPDATED_BANNER
+    banner = (
+        f"✏️ <b>შეცვლილია ({edit_count}-ჯერ)</b>" if edit_count > 0 else UPDATED_BANNER
+    )
     return await _safe_edit(
-        bot, chat_id, message_id,
+        bot,
+        chat_id,
+        message_id,
         f"{banner}\n\n{new_text}",
     )
 

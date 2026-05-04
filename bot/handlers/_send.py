@@ -1,4 +1,5 @@
 """Safe Telegram send helpers with TelegramRetryAfter retry logic."""
+
 import asyncio
 import logging
 from typing import Any, Optional
@@ -27,7 +28,9 @@ async def safe_reply(
                 logger.warning("Rate limited on reply — sleeping %ss", exc.retry_after)
                 await asyncio.sleep(exc.retry_after)
             else:
-                logger.error("Rate limit exceeded after %d retries, dropping reply", _MAX_RETRIES)
+                logger.error(
+                    "Rate limit exceeded after %d retries, dropping reply", _MAX_RETRIES
+                )
                 raise
 
 
@@ -47,5 +50,8 @@ async def safe_answer(
                 logger.warning("Rate limited on answer — sleeping %ss", exc.retry_after)
                 await asyncio.sleep(exc.retry_after)
             else:
-                logger.error("Rate limit exceeded after %d retries, dropping answer", _MAX_RETRIES)
+                logger.error(
+                    "Rate limit exceeded after %d retries, dropping answer",
+                    _MAX_RETRIES,
+                )
                 raise

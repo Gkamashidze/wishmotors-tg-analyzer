@@ -53,6 +53,7 @@ async def run() -> None:
     ssl_ctx: object = None
     if "railway" in DATABASE_URL or os.environ.get("PGSSL") == "true":
         import ssl
+
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -72,10 +73,19 @@ async def run() -> None:
         # Verify final state
         print("\n── Verification ──")
         checks = [
-            ("quantity_needed IS NULL", "SELECT COUNT(*) FROM orders WHERE quantity_needed IS NULL"),
-            ("oem_code IS NULL",        "SELECT COUNT(*) FROM orders WHERE oem_code IS NULL"),
-            ("part_name IS NULL",       "SELECT COUNT(*) FROM orders WHERE part_name IS NULL"),
-            ("priority not in (urgent,low)", "SELECT COUNT(*) FROM orders WHERE priority NOT IN ('urgent','low')"),
+            (
+                "quantity_needed IS NULL",
+                "SELECT COUNT(*) FROM orders WHERE quantity_needed IS NULL",
+            ),
+            ("oem_code IS NULL", "SELECT COUNT(*) FROM orders WHERE oem_code IS NULL"),
+            (
+                "part_name IS NULL",
+                "SELECT COUNT(*) FROM orders WHERE part_name IS NULL",
+            ),
+            (
+                "priority not in (urgent,low)",
+                "SELECT COUNT(*) FROM orders WHERE priority NOT IN ('urgent','low')",
+            ),
         ]
         all_ok = True
         for desc, sql in checks:

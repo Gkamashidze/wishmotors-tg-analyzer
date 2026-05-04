@@ -1,4 +1,5 @@
 """Tests for barcode decoder and barcode cache helpers."""
+
 from __future__ import annotations
 
 import os
@@ -24,6 +25,7 @@ from bot.handlers.barcode import _bc_cache, _bc_get, _bc_set, bc_consume  # noqa
 
 
 # ─── Cache helpers ────────────────────────────────────────────────────────────
+
 
 def setup_function():
     _bc_cache.clear()
@@ -69,6 +71,7 @@ async def test_bc_consume_missing():
 
 
 # ─── decode_barcode ───────────────────────────────────────────────────────────
+
 
 def _make_sys_modules_patch(zxing_results=None, zxing_side_effect=None):
     """Build sys.modules patches for zxingcpp and PIL needed by decode_barcode."""
@@ -151,6 +154,7 @@ def test_decode_barcode_exception_returns_none():
 
 # ─── extract_part_info ────────────────────────────────────────────────────────
 
+
 def _make_anthropic_module(response_text=None, side_effect=None):
     """Return a mock anthropic module for patching sys.modules."""
     mock_client = MagicMock()
@@ -231,22 +235,27 @@ async def test_extract_part_info_empty_response():
 
 # ─── _detect_media_type ───────────────────────────────────────────────────────
 
+
 def test_detect_media_type_jpeg():
     from bot.barcode.decoder import _detect_media_type
+
     assert _detect_media_type(b"\xff\xd8\xff" + b"\x00" * 10) == "image/jpeg"
 
 
 def test_detect_media_type_png():
     from bot.barcode.decoder import _detect_media_type
+
     assert _detect_media_type(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10) == "image/png"
 
 
 def test_detect_media_type_webp():
     from bot.barcode.decoder import _detect_media_type
+
     assert _detect_media_type(b"RIFF\x00\x00\x00\x00WEBP" + b"\x00") == "image/webp"
 
 
 # ─── extract_from_label ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_extract_from_label_success():

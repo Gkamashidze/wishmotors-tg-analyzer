@@ -52,7 +52,11 @@ ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
 
 # When True, the bot is operating as LLC-only (ფ.პ seller option hidden in UI).
 # Set FZ_ENTITY_ENABLED=false to disable ფ.პ mode entirely once migration is complete.
-FZ_ENTITY_ENABLED: bool = os.getenv("FZ_ENTITY_ENABLED", "true").lower() not in ("false", "0", "no")
+FZ_ENTITY_ENABLED: bool = os.getenv("FZ_ENTITY_ENABLED", "true").lower() not in (
+    "false",
+    "0",
+    "no",
+)
 
 # Base URL of the dashboard (used to build personal order tracking links).
 # Example: DASHBOARD_URL=https://dashboard.yoursite.railway.app

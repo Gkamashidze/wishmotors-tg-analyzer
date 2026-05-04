@@ -49,27 +49,28 @@ from bot.parsers.message_parser import (  # noqa: E402
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-PHONE    = os.getenv("TELEGRAM_PHONE", "")
+PHONE = os.getenv("TELEGRAM_PHONE", "")
 GROUP_ID = int(os.getenv("GROUP_ID", "0"))
 
 TOPICS = {
-    "sales":    int(os.getenv("SALES_TOPIC_ID", "0")),
-    "orders":   int(os.getenv("ORDERS_TOPIC_ID", "0")),
+    "sales": int(os.getenv("SALES_TOPIC_ID", "0")),
+    "orders": int(os.getenv("ORDERS_TOPIC_ID", "0")),
     "expenses": int(os.getenv("EXPENSES_TOPIC_ID", "0")),
 }
 
 PARSERS = {
-    "sales":    parse_sale_message,
-    "orders":   parse_order_message,
+    "sales": parse_sale_message,
+    "orders": parse_order_message,
     "expenses": parse_expense_message,
 }
 
-LIMIT = 500   # messages per topic (increase if needed)
+LIMIT = 500  # messages per topic (increase if needed)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _validate_config() -> None:
     missing = []
@@ -94,7 +95,7 @@ def _validate_config() -> None:
 
 def _print_topic_report(topic: str, parsed: int, missed: int, counter: Counter) -> None:
     total = parsed + missed
-    pct   = (parsed / total * 100) if total else 0
+    pct = (parsed / total * 100) if total else 0
 
     print(f"\n{'━' * 60}")
     print(f"  📂 {topic.upper()} topic")
@@ -118,23 +119,24 @@ def _print_topic_report(topic: str, parsed: int, missed: int, counter: Counter) 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
+
 async def audit(client: TelegramClient) -> None:
     print(f"\n🔍 ჯგუფის წაკითხვა (ID: {GROUP_ID}) ...")
 
     # Resolve entity once
     group = await client.get_entity(GROUP_ID)
 
-    grand_parsed  = 0
-    grand_missed  = 0
+    grand_parsed = 0
+    grand_missed = 0
     grand_counter: Counter = Counter()
 
     for topic_name, thread_id in TOPICS.items():
         if not thread_id:
             continue
 
-        parser    = PARSERS[topic_name]
-        parsed    = 0
-        missed    = 0
+        parser = PARSERS[topic_name]
+        parsed = 0
+        missed = 0
         missed_c: Counter = Counter()
 
         print(f"\n⏳ {topic_name} topic-ის წაკითხვა (ბოლო {LIMIT} შეტყობინება)...")
@@ -159,13 +161,13 @@ async def audit(client: TelegramClient) -> None:
 
         _print_topic_report(topic_name, parsed, missed, missed_c)
 
-        grand_parsed  += parsed
-        grand_missed  += missed
+        grand_parsed += parsed
+        grand_missed += missed
         grand_counter += missed_c
 
     # Summary
     grand_total = grand_parsed + grand_missed
-    grand_pct   = (grand_parsed / grand_total * 100) if grand_total else 0
+    grand_pct = (grand_parsed / grand_total * 100) if grand_total else 0
 
     print(f"\n{'━' * 60}")
     print("  📊 ᲡᲣᲚ — ყველა topic")

@@ -3,6 +3,7 @@
 Initialized from main.py when REDIS_URL is configured.
 Handlers gracefully fall back to in-process dicts when Redis is unavailable.
 """
+
 import logging
 from typing import Optional
 
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import redis.asyncio as _redis_asyncio  # type: ignore[import-untyped]
+
     _Redis = _redis_asyncio.Redis
 except ImportError:  # pragma: no cover
     _redis_asyncio = None  # type: ignore[assignment]

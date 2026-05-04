@@ -1,4 +1,5 @@
 """DM product search handler — admin types any text, bot searches the catalog via AI."""
+
 import json
 import logging
 from typing import Optional
@@ -73,7 +74,9 @@ def _format_results(matches: list[dict], query: str, total_checked: int) -> str:
         if stock <= 0:
             stock_str += " ⚠️ ამოიწურა"
 
-        cost_str = _fmt_price(p.get("unit_cost")) if p.get("unit_cost") is not None else "—"
+        cost_str = (
+            _fmt_price(p.get("unit_cost")) if p.get("unit_cost") is not None else "—"
+        )
         block = (
             f"{divider}\n"
             f"📦 <b>{p['name']}</b>\n"

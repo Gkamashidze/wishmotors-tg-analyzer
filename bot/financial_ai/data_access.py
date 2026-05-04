@@ -141,9 +141,9 @@ class ProductMetrics:
     oem_code: Optional[str]
     revenue_gel: float
     cogs_gel: float
-    roi_pct: float            # (gross_profit / cogs) * 100
+    roi_pct: float  # (gross_profit / cogs) * 100
     inventory_value_gel: float
-    turnover_ratio: float     # cogs / inventory_value; 0 when no inventory
+    turnover_ratio: float  # cogs / inventory_value; 0 when no inventory
 
 
 @dataclass(frozen=True)
@@ -188,7 +188,9 @@ class FinancialSnapshot:
                 asdict(self.advanced_metrics) if self.advanced_metrics else None
             ),
             "top_products_by_profit": [asdict(p) for p in self.top_products_by_profit],
-            "top_products_by_velocity": [asdict(p) for p in self.top_products_by_velocity],
+            "top_products_by_velocity": [
+                asdict(p) for p in self.top_products_by_velocity
+            ],
             "restock_alerts": [asdict(p) for p in self.restock_alerts],
             "ledger_top_accounts": [asdict(p) for p in self.ledger_top_accounts],
             "wac_top_products": [asdict(p) for p in self.wac_top_products],
@@ -663,9 +665,7 @@ class FinancialDataReader:
         LIMIT $1
     """
 
-    async def get_orders_pipeline(
-        self, limit: int = _DEFAULT_TOP_N
-    ) -> OrdersPipeline:
+    async def get_orders_pipeline(self, limit: int = _DEFAULT_TOP_N) -> OrdersPipeline:
         """Snapshot of the pending orders queue.
 
         Helps the AI recommend follow-up actions: "6 urgent orders pending
@@ -683,7 +683,9 @@ class FinancialDataReader:
         oldest_days: Optional[int]
         if oldest_at is not None:
             # asyncpg returns tz-aware datetime; use aware "now" to subtract
-            now_aware = datetime.now(oldest_at.tzinfo) if oldest_at.tzinfo else datetime.now()
+            now_aware = (
+                datetime.now(oldest_at.tzinfo) if oldest_at.tzinfo else datetime.now()
+            )
             oldest_days = max(0, (now_aware - oldest_at).days)
         else:
             oldest_days = None
@@ -848,9 +850,7 @@ class FinancialDataReader:
             key=lambda x: x.turnover_ratio,
             reverse=True,
         )[:5]
-        top_by_roi = sorted(
-            product_metrics, key=lambda x: x.roi_pct, reverse=True
-        )[:5]
+        top_by_roi = sorted(product_metrics, key=lambda x: x.roi_pct, reverse=True)[:5]
 
         return AdvancedMetrics(
             inventory_turnover_ratio=turnover,
@@ -890,7 +890,9 @@ class FinancialDataReader:
         )
         wac = await self.get_wac_per_product(limit=top_n)
         orders = await self.get_orders_pipeline(limit=top_n)
-        advanced = await self.get_advanced_metrics(period_start, period_end, top_n=top_n)
+        advanced = await self.get_advanced_metrics(
+            period_start, period_end, top_n=top_n
+        )
 
         return FinancialSnapshot(
             overview=overview,

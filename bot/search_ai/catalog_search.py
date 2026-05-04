@@ -1,4 +1,5 @@
 """AI-powered product search using the full catalog + Claude."""
+
 import asyncio
 import json
 import logging
@@ -27,10 +28,14 @@ def _get_client() -> Optional[Any]:
     if _client is None:
         try:
             from anthropic import AsyncAnthropic
+
             _client = AsyncAnthropic(api_key=api_key, timeout=_TIMEOUT)
         except ImportError:
-            logger.warning("`anthropic` package not installed — catalog search unavailable.")
+            logger.warning(
+                "`anthropic` package not installed — catalog search unavailable."
+            )
     return _client
+
 
 _SYSTEM = """\
 შენ ხარ ავტო სათადარიგო ნაწილების მაღაზიის ძიების ასისტენტი (SsangYong).
@@ -121,10 +126,17 @@ async def search_catalog(
 
     try:
         from anthropic import APIConnectionError, APITimeoutError, RateLimitError
+
         response = await client.messages.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
-            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=[
+                {
+                    "type": "text",
+                    "text": _SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[{"role": "user", "content": user_message}],
         )
         usage = response.usage

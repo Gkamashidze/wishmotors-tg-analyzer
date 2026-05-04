@@ -43,7 +43,10 @@ def _get_client(api_key: str) -> Any:
     global _anthropic_client
     if _anthropic_client is None:
         from anthropic import AsyncAnthropic
-        _anthropic_client = AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS)
+
+        _anthropic_client = AsyncAnthropic(
+            api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS
+        )
     return _anthropic_client
 
 
@@ -125,14 +128,22 @@ async def generate_weekly_advice(
         return None
 
     client = _get_client(api_key)
-    messages = build_messages(snapshot.to_dict(), _format_period_label(period_start, period_end))
+    messages = build_messages(
+        snapshot.to_dict(), _format_period_label(period_start, period_end)
+    )
 
     try:
         response = await client.messages.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
-            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=messages,
         )
         usage = response.usage

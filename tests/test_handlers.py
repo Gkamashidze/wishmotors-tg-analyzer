@@ -72,6 +72,7 @@ def _sent_text(msg: MagicMock, call_index: int = 0) -> str:
 
 # ─── handle_order_message ──────────────────────────────────────────────────────
 
+
 class TestHandleOrderMessage:
     async def test_parse_failure_logs_and_does_not_create_order(self):
         """Expense-format text in orders topic → parse failure logged, no order."""
@@ -114,10 +115,13 @@ class TestHandleOrderMessage:
 
 # ─── handle_expense_message ───────────────────────────────────────────────────
 
+
 class TestHandleExpenseMessage:
     async def test_parse_failure_logs_and_does_not_create_expense(self):
         """Text with no price or currency in expenses topic → parse failure logged."""
-        msg = _msg("სარკე 1ც")  # order format — no currency symbol → None from parse_expense_message
+        msg = _msg(
+            "სარკე 1ც"
+        )  # order format — no currency symbol → None from parse_expense_message
         db = _db()
         await handle_expense_message(msg, db)
         db.log_parse_failure.assert_called_once()
@@ -148,6 +152,7 @@ class TestHandleExpenseMessage:
 
 # ─── cmd_deletesale ───────────────────────────────────────────────────────────
 
+
 class TestCmdDeleteSale:
     @patch("bot.handlers.commands.is_rate_limited", return_value=False)
     async def test_missing_id_sends_usage_hint(self, _rl):
@@ -166,7 +171,12 @@ class TestCmdDeleteSale:
 
     @patch("bot.handlers.commands.is_rate_limited", return_value=False)
     async def test_found_sale_sends_confirmation_with_total(self, _rl):
-        deleted = {"product_id": None, "quantity": 2, "unit_price": 30.0, "notes": "სარკე"}
+        deleted = {
+            "product_id": None,
+            "quantity": 2,
+            "unit_price": 30.0,
+            "notes": "სარკე",
+        }
         msg = _msg("/deletesale 5")
         db = _db(delete_sale=AsyncMock(return_value=deleted))
         await cmd_deletesale(msg, db)
@@ -203,6 +213,7 @@ class TestCmdDeleteSale:
 # ─── cmd_addproduct ───────────────────────────────────────────────────────────
 # cmd_addproduct is now a wizard entry: it clears FSM state and asks for
 # the product name as step 1/5.  All inline-arg tests are replaced accordingly.
+
 
 def _async_state() -> AsyncMock:
     """Build a minimal FSMContext mock where every method is awaitable."""
@@ -241,6 +252,7 @@ class TestCmdAddProduct:
 # ─── cmd_editproduct ──────────────────────────────────────────────────────────
 # cmd_editproduct is now a wizard entry: it clears FSM state and asks for
 # an OEM/name search term as step 1.
+
 
 class TestCmdEditProduct:
     async def test_clears_state_and_asks_for_oem(self):

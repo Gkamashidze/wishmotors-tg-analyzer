@@ -1,4 +1,5 @@
 """Tests for bot/handlers/sales.py — pure helpers and handler paths."""
+
 from __future__ import annotations
 
 import os
@@ -31,6 +32,7 @@ from bot.handlers.sales import (  # noqa: E402
 
 
 # ─── _parse_backdate ──────────────────────────────────────────────────────────
+
 
 class TestParseBackdate:
     def test_none_returns_none(self):
@@ -93,6 +95,7 @@ class TestParseBackdate:
 
 # ─── _delete_keyboard ─────────────────────────────────────────────────────────
 
+
 class TestDeleteKeyboard:
     def test_single_button_callback_data(self):
         kb = _delete_keyboard(42)
@@ -122,6 +125,7 @@ class TestDeleteKeyboard:
 
 # ─── _parse_import_payment ────────────────────────────────────────────────────
 
+
 class TestParseImportPayment:
     def test_cash_default(self):
         assert _parse_import_payment("ნაღდი") == "cash"
@@ -146,6 +150,7 @@ class TestParseImportPayment:
 
 
 # ─── _parse_import_date ───────────────────────────────────────────────────────
+
 
 class TestParseImportDate:
     _TZ = pytz.timezone("Asia/Tbilisi")
@@ -174,6 +179,7 @@ class TestParseImportDate:
 
 
 # ─── handle_sales_text ────────────────────────────────────────────────────────
+
 
 def _make_message(text: str, user_id: int = 12345) -> MagicMock:
     msg = MagicMock()
@@ -205,8 +211,12 @@ def _make_product(
     min_stock: int = 5,
 ) -> dict:
     return {
-        "id": product_id, "name": name, "oem_code": oem,
-        "current_stock": stock, "min_stock": min_stock, "unit_price": 30.0,
+        "id": product_id,
+        "name": name,
+        "oem_code": oem,
+        "current_stock": stock,
+        "min_stock": min_stock,
+        "unit_price": 30.0,
     }
 
 
@@ -217,9 +227,15 @@ class TestHandleSalesText:
         msg = _make_message("gibberish text nobody")
         db = _make_db()
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=None), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None), \
-             patch("bot.handlers.barcode.bc_consume", new_callable=AsyncMock, return_value=None):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=None),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+            patch(
+                "bot.handlers.barcode.bc_consume",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
             await handle_sales_text(msg, db)
 
         db.log_parse_failure.assert_awaited_once()
@@ -246,8 +262,10 @@ class TestHandleSalesText:
         parsed.is_debt = False
         parsed.is_return = False
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=parsed), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=parsed),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+        ):
             await handle_sales_text(msg, db)
 
         db.create_sale.assert_awaited_once()
@@ -274,10 +292,16 @@ class TestHandleSalesText:
         parsed.is_return = False
         parsed.is_split_payment = False
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=parsed), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None), \
-             patch("bot.handlers.barcode.bc_consume", new_callable=AsyncMock, return_value=None), \
-             patch("bot.handlers.sales.format_sale_confirmation", return_value="OK"):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=parsed),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+            patch(
+                "bot.handlers.barcode.bc_consume",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("bot.handlers.sales.format_sale_confirmation", return_value="OK"),
+        ):
             await handle_sales_text(msg, db)
 
         db.create_sale.assert_awaited_once()
@@ -292,9 +316,15 @@ class TestHandleSalesText:
         parsed.raw_product = "99999"
         parsed.is_return = True
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=parsed), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None), \
-             patch("bot.handlers.barcode.bc_consume", new_callable=AsyncMock, return_value=None):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=parsed),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+            patch(
+                "bot.handlers.barcode.bc_consume",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
             await handle_sales_text(msg, db)
 
         msg.bot.send_message.assert_called_once()
@@ -313,9 +343,15 @@ class TestHandleSalesText:
         parsed.raw_product = "12345"
         parsed.is_return = False
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=parsed), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None), \
-             patch("bot.handlers.barcode.bc_consume", new_callable=AsyncMock, return_value=None):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=parsed),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+            patch(
+                "bot.handlers.barcode.bc_consume",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
             await handle_sales_text(msg, db)
 
         # Must send an error DM, not crash
@@ -344,10 +380,12 @@ class TestHandleSalesText:
         parsed.is_debt = False
         parsed.is_return = False
 
-        with patch("bot.handlers.sales.parse_sale_message", return_value=parsed), \
-             patch("bot.handlers.sales.parse_dual_sale_message", return_value=None), \
-             patch("bot.handlers.sales.format_sale_confirmation", return_value="OK"), \
-             patch("bot.handlers.sales.format_topic_sale", return_value="OK"):
+        with (
+            patch("bot.handlers.sales.parse_sale_message", return_value=parsed),
+            patch("bot.handlers.sales.parse_dual_sale_message", return_value=None),
+            patch("bot.handlers.sales.format_sale_confirmation", return_value="OK"),
+            patch("bot.handlers.sales.format_topic_sale", return_value="OK"),
+        ):
             await handle_sales_text(msg, db)
 
         db.create_order.assert_awaited_once()

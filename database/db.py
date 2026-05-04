@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import ssl as _ssl_module
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -75,7 +75,14 @@ class Database:
             )
             col_names = [c["column_name"] for c in cols]
             logger.info("orders table columns after migrations: %s", col_names)
-            required = {"product_id", "quantity_needed", "priority", "notes", "oem_code", "part_name"}
+            required = {
+                "product_id",
+                "quantity_needed",
+                "priority",
+                "notes",
+                "oem_code",
+                "part_name",
+            }
             missing = required - set(col_names)
             if missing:
                 logger.error(
@@ -133,7 +140,8 @@ class Database:
     async def get_product_by_oem(self, oem_code: str) -> Optional[ProductRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM products WHERE UPPER(oem_code) = $1", oem_code.strip().upper()
+                "SELECT * FROM products WHERE UPPER(oem_code) = $1",
+                oem_code.strip().upper(),
             )
             return self._row(row)  # type: ignore[return-value]
 
@@ -169,9 +177,9 @@ class Database:
                    WHERE oem_code ILIKE $1 OR name ILIKE $1
                    ORDER BY _rank, name
                    LIMIT $4""",
-                f"%{q}%",   # $1 contains
-                q,          # $2 exact
-                f"%{q}",    # $3 ends-with (suffix — last 4/6 digits)
+                f"%{q}%",  # $1 contains
+                q,  # $2 exact
+                f"%{q}",  # $3 ends-with (suffix — last 4/6 digits)
                 limit,
             )
             return self._rows(rows)  # type: ignore[return-value]
@@ -239,7 +247,11 @@ class Database:
                 """INSERT INTO products (name, oem_code, current_stock, min_stock, unit_price)
                    VALUES ($1, $2, $3, $4, $5)
                    RETURNING id""",
-                name, oem_code or None, stock, min_stock, price,
+                name,
+                oem_code or None,
+                stock,
+                min_stock,
+                price,
             )
             return row["id"]
 
@@ -261,7 +273,11 @@ class Database:
                        ON CONFLICT (oem_code)
                        DO UPDATE SET current_stock = $3, unit_price = $5
                        RETURNING id""",
-                    name, oem_code, stock, min_stock, price,
+                    name,
+                    oem_code,
+                    stock,
+                    min_stock,
+                    price,
                 )
                 return row["id"]
 
@@ -272,7 +288,9 @@ class Database:
             if existing:
                 await conn.execute(
                     "UPDATE products SET current_stock = $1, unit_price = $2 WHERE id = $3",
-                    stock, price, existing["id"],
+                    stock,
+                    price,
+                    existing["id"],
                 )
                 return existing["id"]
 
@@ -280,13 +298,15 @@ class Database:
                 """INSERT INTO products (name, oem_code, current_stock, min_stock, unit_price)
                    VALUES ($1, $2, $3, $4, $5)
                    RETURNING id""",
-                name, None, stock, min_stock, price,
+                name,
+                None,
+                stock,
+                min_stock,
+                price,
             )
             return row["id"]
 
-    async def upsert_products_bulk(
-        self, rows: list[dict]
-    ) -> tuple[int, int]:
+    async def upsert_products_bulk(self, rows: list[dict]) -> tuple[int, int]:
         """Bulk upsert products from Excel import.
 
         Each dict must have: name, oem_code, current_stock, unit.
@@ -309,7 +329,10 @@ class Database:
                              RETURNING (xmax = 0) AS inserted
                            )
                            SELECT inserted FROM upsert""",
-                        row["name"], oem, row["current_stock"], row["unit"],
+                        row["name"],
+                        oem,
+                        row["current_stock"],
+                        row["unit"],
                     )
                     if result:
                         added += 1
@@ -320,7 +343,9 @@ class Database:
                         """INSERT INTO products (name, current_stock, unit)
                            VALUES ($1, $2, $3)
                            ON CONFLICT DO NOTHING""",
-                        row["name"], row["current_stock"], row["unit"],
+                        row["name"],
+                        row["current_stock"],
+                        row["unit"],
                     )
                     added += 1
         return added, updated
@@ -334,7 +359,8 @@ class Database:
                    SET current_stock = GREATEST(current_stock + $1, 0)
                    WHERE id = $2
                    RETURNING current_stock""",
-                delta, product_id,
+                delta,
+                product_id,
             )
             return row["current_stock"] if row else 0
 
@@ -353,15 +379,15 @@ class Database:
     #   7400 — Operating expenses (საოპერაციო ხარჯი)     — expense
     #   7500 — Inventory write-off / shortage (საწყობის ნაკლი) — expense
 
-    ACCOUNT_CASH              = "1100"
-    ACCOUNT_BANK              = "1200"
-    ACCOUNT_AR                = "1400"   # legacy ფ.პ ნისია — kept for migration compat
-    ACCOUNT_RETAIL_AR         = "1410 1" # LLC retail ნისია (საცალო მოთხოვნები)
-    ACCOUNT_INVENTORY         = "1610"
-    ACCOUNT_ACCOUNTS_PAYABLE  = "3110"
-    ACCOUNT_VAT_PAYABLE       = "3330"
-    ACCOUNT_REVENUE           = "6100"
-    ACCOUNT_COGS              = "7100"
+    ACCOUNT_CASH = "1100"
+    ACCOUNT_BANK = "1200"
+    ACCOUNT_AR = "1400"  # legacy ფ.პ ნისია — kept for migration compat
+    ACCOUNT_RETAIL_AR = "1410 1"  # LLC retail ნისია (საცალო მოთხოვნები)
+    ACCOUNT_INVENTORY = "1610"
+    ACCOUNT_ACCOUNTS_PAYABLE = "3110"
+    ACCOUNT_VAT_PAYABLE = "3330"
+    ACCOUNT_REVENUE = "6100"
+    ACCOUNT_COGS = "7100"
     ACCOUNT_OPERATING_EXPENSE = "7400"
     ACCOUNT_INVENTORY_WRITEOFF = "7500"
 
@@ -407,7 +433,8 @@ class Database:
             """INSERT INTO chart_of_accounts (code, name, type, description, parent_id)
                VALUES ($1, $2, 'asset', $3, $4)
                ON CONFLICT (code) DO NOTHING""",
-            code, name,
+            code,
+            name,
             f"მოთხოვნები მყიდველ-მეწარმეზე: {name}",
             parent["id"] if parent else None,
         )
@@ -420,7 +447,8 @@ class Database:
             name = sale.get("client_name") or sale.get("customer_name")
             if name:
                 row = await conn.fetchrow(
-                    "SELECT account_number FROM business_customers WHERE name = $1", name
+                    "SELECT account_number FROM business_customers WHERE name = $1",
+                    name,
                 )
                 if row:
                     return f"1410 {row['account_number']}"
@@ -451,19 +479,23 @@ class Database:
             """INSERT INTO ledger (account_code, debit_amount, credit_amount,
                                    description, reference_id)
                VALUES ($1, $2, 0, $3, $4)""",
-            debit_account, amt, description, reference_id,
+            debit_account,
+            amt,
+            description,
+            reference_id,
         )
         await conn.execute(
             """INSERT INTO ledger (account_code, debit_amount, credit_amount,
                                    description, reference_id)
                VALUES ($1, 0, $2, $3, $4)""",
-            credit_account, amt, description, reference_id,
+            credit_account,
+            amt,
+            description,
+            reference_id,
         )
 
     @staticmethod
-    async def _consume_inventory_fifo(
-        conn: Any, product_id: int, qty: int
-    ) -> float:
+    async def _consume_inventory_fifo(conn: Any, product_id: int, qty: int) -> float:
         """Reduce remaining_quantity on active batches (oldest first, FIFO).
 
         Returns the total cost consumed (qty × WAC at time of call), which is
@@ -489,17 +521,16 @@ class Database:
         if not batches:
             return 0.0
 
-        total_qty  = sum(float(b["remaining_quantity"]) for b in batches)
+        total_qty = sum(float(b["remaining_quantity"]) for b in batches)
         total_cost = sum(
-            float(b["remaining_quantity"]) * float(b["unit_cost"])
-            for b in batches
+            float(b["remaining_quantity"]) * float(b["unit_cost"]) for b in batches
         )
         if total_qty <= 0:
             return 0.0
 
-        wac     = total_cost / total_qty
+        wac = total_cost / total_qty
         consume = min(float(qty), total_qty)
-        cost    = round(consume * wac, 2)
+        cost = round(consume * wac, 2)
 
         remaining_to_take = consume
         for batch in batches:
@@ -510,7 +541,8 @@ class Database:
             new_remaining = have - take
             await conn.execute(
                 "UPDATE inventory_batches SET remaining_quantity = $1 WHERE id = $2",
-                new_remaining, batch["id"],
+                new_remaining,
+                batch["id"],
             )
             remaining_to_take -= take
 
@@ -518,7 +550,10 @@ class Database:
 
     @staticmethod
     async def _restore_inventory_batch(
-        conn: Any, product_id: int, qty: int, cost_amount: float,
+        conn: Any,
+        product_id: int,
+        qty: int,
+        cost_amount: float,
         note: str,
     ) -> None:
         """Add stock back as a new batch — used when a sale is reversed.
@@ -537,7 +572,10 @@ class Database:
             """INSERT INTO inventory_batches
                    (product_id, quantity, remaining_quantity, unit_cost, notes)
                VALUES ($1, $2, $2, $3, $4)""",
-            product_id, qty, unit_cost, note,
+            product_id,
+            qty,
+            unit_cost,
+            note,
         )
 
     @classmethod
@@ -567,7 +605,9 @@ class Database:
             return  # ფ.პ sales do not enter formal accounting
 
         reference = f"sale:{sale_id}"
-        debit_account = cls._payment_account(payment_method, buyer_type, business_account)
+        debit_account = cls._payment_account(
+            payment_method, buyer_type, business_account
+        )
 
         if output_vat > 0:
             net_revenue = round(revenue - output_vat, 2)
@@ -629,7 +669,9 @@ class Database:
             return  # nothing was posted originally
 
         reference = f"sale:{sale_id}"
-        credit_account = cls._payment_account(payment_method, buyer_type, business_account)
+        credit_account = cls._payment_account(
+            payment_method, buyer_type, business_account
+        )
 
         if output_vat > 0:
             net_revenue = round(revenue - output_vat, 2)
@@ -809,7 +851,9 @@ class Database:
         clean_oem = oem_code.strip().upper() if oem_code else None
 
         if not clean_oem:
-            raise ValueError("oem_code სავალდებულოა — იდენტიფიკაცია მხოლოდ OEM-ით ხდება")
+            raise ValueError(
+                "oem_code სავალდებულოა — იდენტიფიკაცია მხოლოდ OEM-ით ხდება"
+            )
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -820,13 +864,16 @@ class Database:
                     "SELECT id FROM products WHERE oem_code = $1",
                     clean_oem,
                 )
-                clean_unit = unit.strip() if unit else 'ცალი'
+                clean_unit = unit.strip() if unit else "ცალი"
 
                 if existing:
                     product_id = existing["id"]
                     await conn.execute(
                         "UPDATE products SET name = $1, unit_price = $2, unit = $3 WHERE id = $4",
-                        name, unit_cost, clean_unit, product_id,
+                        name,
+                        unit_cost,
+                        clean_unit,
+                        product_id,
                     )
                 else:
                     if received_at is not None:
@@ -835,7 +882,12 @@ class Database:
                                    (name, oem_code, current_stock, min_stock, unit_price, unit, created_at)
                                VALUES ($1, $2, 0, $3, $4, $5, $6)
                                RETURNING id""",
-                            name, clean_oem, min_stock, unit_cost, clean_unit, received_at,
+                            name,
+                            clean_oem,
+                            min_stock,
+                            unit_cost,
+                            clean_unit,
+                            received_at,
                         )
                     else:
                         row = await conn.fetchrow(
@@ -843,7 +895,11 @@ class Database:
                                    (name, oem_code, current_stock, min_stock, unit_price, unit)
                                VALUES ($1, $2, 0, $3, $4, $5)
                                RETURNING id""",
-                            name, clean_oem, min_stock, unit_cost, clean_unit,
+                            name,
+                            clean_oem,
+                            min_stock,
+                            unit_cost,
+                            clean_unit,
                         )
                     product_id = row["id"]
                     was_created = True
@@ -853,7 +909,8 @@ class Database:
                        SET current_stock = current_stock + $1
                        WHERE id = $2
                        RETURNING current_stock""",
-                    int(quantity), product_id,
+                    int(quantity),
+                    product_id,
                 )
                 new_stock = int(stock_row["current_stock"]) if stock_row else 0
 
@@ -864,8 +921,13 @@ class Database:
                                 unit_cost, received_at, supplier, reference, notes)
                            VALUES ($1, $2, $2, $3, $4, $5, $6, $7)
                            RETURNING id""",
-                        product_id, quantity, unit_cost, received_at,
-                        supplier, reference, notes,
+                        product_id,
+                        quantity,
+                        unit_cost,
+                        received_at,
+                        supplier,
+                        reference,
+                        notes,
                     )
                 else:
                     batch_row = await conn.fetchrow(
@@ -874,31 +936,42 @@ class Database:
                                 unit_cost, supplier, reference, notes)
                            VALUES ($1, $2, $2, $3, $4, $5, $6)
                            RETURNING id""",
-                        product_id, quantity, unit_cost,
-                        supplier, reference, notes,
+                        product_id,
+                        quantity,
+                        unit_cost,
+                        supplier,
+                        reference,
+                        notes,
                     )
                 batch_id = batch_row["id"]
 
                 # Double-entry ledger posting: inventory ↑ (debit), AP ↑ (credit).
                 ledger_ref = reference or f"batch:{batch_id}"
-                ledger_desc = (
-                    f"Inventory receipt — {name}"
-                    + (f" (OEM {clean_oem})" if clean_oem else "")
+                ledger_desc = f"Inventory receipt — {name}" + (
+                    f" (OEM {clean_oem})" if clean_oem else ""
                 )
-                ledger_date = received_at or datetime.utcnow()
+                ledger_date = received_at or datetime.now(timezone.utc)
                 await conn.execute(
                     """INSERT INTO ledger
                            (transaction_date, account_code, debit_amount, credit_amount,
                             description, reference_id)
                        VALUES ($1, $2, $3, 0, $4, $5)""",
-                    ledger_date, self.ACCOUNT_INVENTORY, total_cost, ledger_desc, ledger_ref,
+                    ledger_date,
+                    self.ACCOUNT_INVENTORY,
+                    total_cost,
+                    ledger_desc,
+                    ledger_ref,
                 )
                 await conn.execute(
                     """INSERT INTO ledger
                            (transaction_date, account_code, debit_amount, credit_amount,
                             description, reference_id)
                        VALUES ($1, $2, 0, $3, $4, $5)""",
-                    ledger_date, self.ACCOUNT_ACCOUNTS_PAYABLE, total_cost, ledger_desc, ledger_ref,
+                    ledger_date,
+                    self.ACCOUNT_ACCOUNTS_PAYABLE,
+                    total_cost,
+                    ledger_desc,
+                    ledger_ref,
                 )
 
                 # WAC is computed inside the same transaction so the caller sees
@@ -968,8 +1041,11 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 # Resolve business customer account before INSERT (inside transaction)
-                if (seller_type == "llc" and buyer_type == "business"
-                        and payment_method == "credit"):
+                if (
+                    seller_type == "llc"
+                    and buyer_type == "business"
+                    and payment_method == "credit"
+                ):
                     name = client_name or customer_name
                     if name:
                         business_account = await self._get_or_create_business_customer(
@@ -984,10 +1060,19 @@ class Database:
                             client_name, payment_status)
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                        RETURNING id""",
-                    product_id, quantity, unit_price, payment_method,
-                    seller_type, buyer_type, customer_name or None, notes,
-                    round(vat_amount, 2), is_vat_included, output_vat,
-                    client_name or None, payment_status,
+                    product_id,
+                    quantity,
+                    unit_price,
+                    payment_method,
+                    seller_type,
+                    buyer_type,
+                    customer_name or None,
+                    notes,
+                    round(vat_amount, 2),
+                    is_vat_included,
+                    output_vat,
+                    client_name or None,
+                    payment_status,
                 )
                 sale_id = row["id"]
 
@@ -999,22 +1084,25 @@ class Database:
                            SET current_stock = current_stock - $1
                            WHERE id = $2
                            RETURNING current_stock""",
-                        quantity, product_id,
+                        quantity,
+                        product_id,
                     )
                     new_stock = stock_row["current_stock"] if stock_row else 0
                     cost_amount = await self._consume_inventory_fifo(
-                        conn, product_id, quantity,
+                        conn,
+                        product_id,
+                        quantity,
                     )
                     if cost_amount > 0:
                         await conn.execute(
                             "UPDATE sales SET cost_amount = $1, cogs = $1 WHERE id = $2",
-                            cost_amount, sale_id,
+                            cost_amount,
+                            sale_id,
                         )
 
                 label = client_name or customer_name
                 description = (
-                    f"Sale #{sale_id} — {label}"
-                    if label else f"Sale #{sale_id}"
+                    f"Sale #{sale_id} — {label}" if label else f"Sale #{sale_id}"
                 )
                 await self._post_sale_ledger(
                     conn,
@@ -1033,28 +1121,33 @@ class Database:
                     await conn.execute(
                         """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
                            VALUES ('sales_vat', $1, $2)""",
-                        -output_vat, f"sale:{sale_id}",
+                        -output_vat,
+                        f"sale:{sale_id}",
                     )
 
-        self._audit("sale_created", {
-            "sale_id": sale_id,
-            "product_id": product_id,
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "revenue": revenue,
-            "cost_amount": cost_amount,
-            "payment_method": payment_method,
-            "payment_status": payment_status,
-            "seller_type": seller_type,
-            "buyer_type": buyer_type,
-            "customer_name": customer_name,
-            "client_name": client_name,
-            "notes": notes,
-            "new_stock": new_stock,
-            "vat_amount": round(vat_amount, 2),
-            "is_vat_included": is_vat_included,
-            "output_vat": output_vat,
-        }, reference_id=f"sale:{sale_id}")
+        self._audit(
+            "sale_created",
+            {
+                "sale_id": sale_id,
+                "product_id": product_id,
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "revenue": revenue,
+                "cost_amount": cost_amount,
+                "payment_method": payment_method,
+                "payment_status": payment_status,
+                "seller_type": seller_type,
+                "buyer_type": buyer_type,
+                "customer_name": customer_name,
+                "client_name": client_name,
+                "notes": notes,
+                "new_stock": new_stock,
+                "vat_amount": round(vat_amount, 2),
+                "is_vat_included": is_vat_included,
+                "output_vat": output_vat,
+            },
+            reference_id=f"sale:{sale_id}",
+        )
         return sale_id, new_stock
 
     async def delete_sale(self, sale_id: int) -> Optional[SaleRow]:
@@ -1072,7 +1165,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 sale = await conn.fetchrow(
-                    "SELECT * FROM sales WHERE id = $1 FOR UPDATE", sale_id,
+                    "SELECT * FROM sales WHERE id = $1 FOR UPDATE",
+                    sale_id,
                 )
                 if not sale:
                     return None
@@ -1091,10 +1185,14 @@ class Database:
                         """UPDATE products
                            SET current_stock = current_stock + $1
                            WHERE id = $2""",
-                        qty, product_id,
+                        qty,
+                        product_id,
                     )
                     await self._restore_inventory_batch(
-                        conn, product_id, qty, cost_amount,
+                        conn,
+                        product_id,
+                        qty,
+                        cost_amount,
                         note=f"Reversal of sale #{sale_id}",
                     )
 
@@ -1104,7 +1202,9 @@ class Database:
 
                 business_account: Optional[str] = None
                 if seller_type == "llc" and buyer_type == "business" and pm == "credit":
-                    business_account = await self._get_ar_account_for_sale(conn, sale_dict)
+                    business_account = await self._get_ar_account_for_sale(
+                        conn, sale_dict
+                    )
 
                 await self._reverse_sale_ledger(
                     conn,
@@ -1124,7 +1224,8 @@ class Database:
                     await conn.execute(
                         """INSERT INTO vat_ledger (transaction_type, amount, reference_id)
                            VALUES ('sales_vat', $1, $2)""",
-                        output_vat, f"reversal:sale:{sale_id}",
+                        output_vat,
+                        f"reversal:sale:{sale_id}",
                     )
 
                 await conn.execute("DELETE FROM sales WHERE id = $1", sale_id)
@@ -1158,10 +1259,15 @@ class Database:
                 amount = round(float(sale["unit_price"]) * int(sale["quantity"]), 2)
                 await conn.execute(
                     "UPDATE sales SET payment_method = $1, payment_status = 'paid' WHERE id = $2",
-                    payment_method, sale_id,
+                    payment_method,
+                    sale_id,
                 )
                 if sale_dict.get("seller_type") == "llc":
-                    label = sale["client_name"] or sale["customer_name"] or f"Sale #{sale_id}"
+                    label = (
+                        sale["client_name"]
+                        or sale["customer_name"]
+                        or f"Sale #{sale_id}"
+                    )
                     ar_account = await self._get_ar_account_for_sale(conn, sale_dict)
                     await self._post_settlement_ledger(
                         conn,
@@ -1171,15 +1277,21 @@ class Database:
                         description=f"Nisia payment #{sale_id} — {label}",
                         ar_account=ar_account,
                     )
-        self._audit("nisia_paid", {
-            "sale_id": sale_id,
-            "payment_method": payment_method,
-            "amount": amount,
-            "customer_name": sale["customer_name"],
-        }, reference_id=f"payment:{sale_id}")
+        self._audit(
+            "nisia_paid",
+            {
+                "sale_id": sale_id,
+                "payment_method": payment_method,
+                "amount": amount,
+                "customer_name": sale["customer_name"],
+            },
+            reference_id=f"payment:{sale_id}",
+        )
         return True
 
-    async def mark_customer_sales_paid(self, customer_name: str, payment_method: str) -> int:
+    async def mark_customer_sales_paid(
+        self, customer_name: str, payment_method: str
+    ) -> int:
         """Mark all credit sales for a customer as paid + post AR settlement for LLC sales.
 
         ფ.პ sales: payment_method updated, no ledger entry.
@@ -1208,14 +1320,17 @@ class Database:
                     if r["seller_type"] == "llc":
                         llc_total += row_total
                         if llc_ar_account is None:
-                            llc_ar_account = await self._get_ar_account_for_sale(conn, dict(r))
+                            llc_ar_account = await self._get_ar_account_for_sale(
+                                conn, dict(r)
+                            )
 
                 result = await conn.execute(
                     """UPDATE sales
                        SET payment_method = $1, payment_status = 'paid'
                        WHERE payment_method = 'credit'
                          AND (customer_name = $2 OR client_name = $2)""",
-                    payment_method, customer_name,
+                    payment_method,
+                    customer_name,
                 )
                 if llc_total > 0 and llc_ar_account:
                     stamp = self._now().strftime("%Y%m%d%H%M%S")
@@ -1235,7 +1350,8 @@ class Database:
             result = await conn.execute(
                 """UPDATE sales SET customer_name = $1
                    WHERE customer_name = $2""",
-                new_name, old_name,
+                new_name,
+                old_name,
             )
             return int(result.split()[-1])
 
@@ -1291,18 +1407,23 @@ class Database:
                         if is_llc:
                             applied_llc += sale_total
                             if llc_ar_account is None:
-                                llc_ar_account = await self._get_ar_account_for_sale(conn, dict(row))
+                                llc_ar_account = await self._get_ar_account_for_sale(
+                                    conn, dict(row)
+                                )
                     else:
                         new_total = sale_total - remaining_payment
                         new_price = new_total / row["quantity"]
                         await conn.execute(
                             "UPDATE sales SET unit_price = $1 WHERE id = $2",
-                            new_price, row["id"],
+                            new_price,
+                            row["id"],
                         )
                         if is_llc:
                             applied_llc += remaining_payment
                             if llc_ar_account is None:
-                                llc_ar_account = await self._get_ar_account_for_sale(conn, dict(row))
+                                llc_ar_account = await self._get_ar_account_for_sale(
+                                    conn, dict(row)
+                                )
                         applied += remaining_payment
                         remaining_payment = 0.0
                         break
@@ -1431,8 +1552,13 @@ class Database:
                             refund_method, exchange_product_id, notes)
                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                        RETURNING id""",
-                    sale_id, product_id, qty, refund_amount,
-                    refund_method, exchange_product_id, notes,
+                    sale_id,
+                    product_id,
+                    qty,
+                    refund_amount,
+                    refund_method,
+                    exchange_product_id,
+                    notes,
                 )
                 return_id = row["id"]
 
@@ -1441,7 +1567,8 @@ class Database:
                        SET current_stock = current_stock + $1
                        WHERE id = $2
                        RETURNING current_stock""",
-                    qty, product_id,
+                    qty,
+                    product_id,
                 )
                 new_stock = stock_row["current_stock"] if stock_row else 0
 
@@ -1469,8 +1596,12 @@ class Database:
                         )
 
                 await self._restore_inventory_batch(
-                    conn, product_id, qty, cogs_portion,
-                    note=f"Return #{return_id}" + (f" (sale #{sale_id})" if sale_id else ""),
+                    conn,
+                    product_id,
+                    qty,
+                    cogs_portion,
+                    note=f"Return #{return_id}"
+                    + (f" (sale #{sale_id})" if sale_id else ""),
                 )
 
                 reference = f"return:{return_id}"
@@ -1534,7 +1665,9 @@ class Database:
                        ON CONFLICT (id) DO UPDATE
                          SET full_name = COALESCE(EXCLUDED.full_name, clients.full_name),
                              username  = COALESCE(EXCLUDED.username,  clients.username)""",
-                    telegram_id, full_name or None, username or None,
+                    telegram_id,
+                    full_name or None,
+                    username or None,
                 )
                 row = await conn.fetchrow(
                     """INSERT INTO catalog_orders
@@ -1542,15 +1675,25 @@ class Database:
                             client_id, client_name, client_username, notes)
                        VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8)
                        RETURNING id""",
-                    product_id, product_name, oem_code, price,
-                    telegram_id, full_name, username, notes,
+                    product_id,
+                    product_name,
+                    oem_code,
+                    price,
+                    telegram_id,
+                    full_name,
+                    username,
+                    notes,
                 )
         order_id: int = row["id"]
-        self._audit("catalog_order_created", {
-            "catalog_order_id": order_id,
-            "product_id": product_id,
-            "client_id": telegram_id,
-        }, reference_id=f"catalog_order:{order_id}")
+        self._audit(
+            "catalog_order_created",
+            {
+                "catalog_order_id": order_id,
+                "product_id": product_id,
+                "client_id": telegram_id,
+            },
+            reference_id=f"catalog_order:{order_id}",
+        )
         return order_id
 
     async def upsert_client(
@@ -1572,7 +1715,9 @@ class Database:
                    ON CONFLICT (id) DO UPDATE
                      SET full_name = COALESCE(EXCLUDED.full_name, clients.full_name),
                          username  = COALESCE(EXCLUDED.username,  clients.username)""",
-                telegram_id, full_name or None, username or None,
+                telegram_id,
+                full_name or None,
+                username or None,
             )
 
     # ─── Orders ───────────────────────────────────────────────────────────────
@@ -1595,21 +1740,31 @@ class Database:
                         client_id, quantity_ordered)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                    RETURNING id""",
-                product_id, quantity_needed, priority, notes, oem_code, part_name,
-                client_id, quantity_ordered,
+                product_id,
+                quantity_needed,
+                priority,
+                notes,
+                oem_code,
+                part_name,
+                client_id,
+                quantity_ordered,
             )
             order_id: int = row["id"]
-        self._audit("order_created", {
-            "order_id": order_id,
-            "product_id": product_id,
-            "quantity_needed": quantity_needed,
-            "quantity_ordered": quantity_ordered,
-            "priority": priority,
-            "notes": notes,
-            "oem_code": oem_code,
-            "part_name": part_name,
-            "client_id": client_id,
-        }, reference_id=f"order:{order_id}")
+        self._audit(
+            "order_created",
+            {
+                "order_id": order_id,
+                "product_id": product_id,
+                "quantity_needed": quantity_needed,
+                "quantity_ordered": quantity_ordered,
+                "priority": priority,
+                "notes": notes,
+                "oem_code": oem_code,
+                "part_name": part_name,
+                "client_id": client_id,
+            },
+            reference_id=f"order:{order_id}",
+        )
         return order_id
 
     async def update_order_quantity_ordered(
@@ -1621,14 +1776,19 @@ class Database:
         async with self.pool.acquire() as conn:
             result = await conn.execute(
                 "UPDATE orders SET quantity_ordered = $1 WHERE id = $2",
-                quantity_ordered, order_id,
+                quantity_ordered,
+                order_id,
             )
         updated = result == "UPDATE 1"
         if updated:
-            self._audit("order_quantity_ordered_updated", {
-                "order_id": order_id,
-                "quantity_ordered": quantity_ordered,
-            }, reference_id=f"order:{order_id}")
+            self._audit(
+                "order_quantity_ordered_updated",
+                {
+                    "order_id": order_id,
+                    "quantity_ordered": quantity_ordered,
+                },
+                reference_id=f"order:{order_id}",
+            )
         return updated
 
     async def match_orders_on_receipt(
@@ -1668,11 +1828,15 @@ class Database:
                     fulfilled.append(dict(row))
 
         for o in fulfilled:
-            self._audit("order_auto_fulfilled_on_receipt", {
-                "order_id": o["id"],
-                "product_id": product_id,
-                "received_qty": received_qty,
-            }, reference_id=f"order:{o['id']}")
+            self._audit(
+                "order_auto_fulfilled_on_receipt",
+                {
+                    "order_id": o["id"],
+                    "product_id": product_id,
+                    "received_qty": received_qty,
+                },
+                reference_id=f"order:{o['id']}",
+            )
 
         return fulfilled
 
@@ -1686,10 +1850,13 @@ class Database:
                 order_ids,
             )
         count = int(result.split()[-1]) if result else 0
-        self._audit("orders_deleted_by_wizard", {
-            "order_ids": order_ids,
-            "count": count,
-        })
+        self._audit(
+            "orders_deleted_by_wizard",
+            {
+                "order_ids": order_ids,
+                "count": count,
+            },
+        )
         return count
 
     async def has_active_order_for_product(self, product_id: int) -> bool:
@@ -1736,8 +1903,7 @@ class Database:
         # Ensure every distinct client_id exists in the clients table before the
         # bulk INSERT so the FK constraint is never violated.
         distinct_client_ids: set = {
-            item["client_id"] for item in items
-            if item.get("client_id") is not None
+            item["client_id"] for item in items if item.get("client_id") is not None
         }
         for cid in distinct_client_ids:
             await self.upsert_client(int(cid))
@@ -1755,7 +1921,9 @@ class Database:
                         logger.error(
                             "create_orders_bulk: row %d — quantity_needed key missing! "
                             "item keys=%s item=%r",
-                            idx, list(item.keys()), item,
+                            idx,
+                            list(item.keys()),
+                            item,
                         )
                         raise ValueError(
                             f"Row {idx}: quantity_needed is missing — item keys: {list(item.keys())}"
@@ -1771,8 +1939,13 @@ class Database:
                         "create_orders_bulk: row %d — product_id=%r(%s) "
                         "quantity_needed=%d priority=%r oem_code=%r client_id=%r part_name=%r",
                         idx,
-                        product_id, type(product_id).__name__,
-                        quantity_needed, priority, oem_code, client_id, part_name,
+                        product_id,
+                        type(product_id).__name__,
+                        quantity_needed,
+                        priority,
+                        oem_code,
+                        client_id,
+                        part_name,
                     )
 
                     try:
@@ -1797,20 +1970,30 @@ class Database:
                             "oem_code=%r client_id=%r part_name=%r | "
                             "error_type=%s | error=%s",
                             idx,
-                            product_id, type(product_id).__name__,
-                            quantity_needed, priority, oem_code, client_id, part_name,
-                            type(exc).__name__, exc,
+                            product_id,
+                            type(product_id).__name__,
+                            quantity_needed,
+                            priority,
+                            oem_code,
+                            client_id,
+                            part_name,
+                            type(exc).__name__,
+                            exc,
                             exc_info=True,
                         )
                         raise
                     ids.append(row["id"])
 
         logger.info("create_orders_bulk: success — inserted IDs: %s", ids)
-        self._audit("orders_bulk_created", {
-            "order_ids": ids,
-            "items": items,
-            "count": len(ids),
-        }, reference_id=f"bulk_order:{ids[0]}..{ids[-1]}" if ids else None)
+        self._audit(
+            "orders_bulk_created",
+            {
+                "order_ids": ids,
+                "items": items,
+                "count": len(ids),
+            },
+            reference_id=f"bulk_order:{ids[0]}..{ids[-1]}" if ids else None,
+        )
         return ids
 
     async def get_pending_orders(self) -> List[OrderRow]:
@@ -1869,7 +2052,9 @@ class Database:
                 """UPDATE orders
                    SET topic_id = $1, topic_message_id = $2
                    WHERE id = ANY($3::int[])""",
-                topic_id, topic_message_id, list(order_ids),
+                topic_id,
+                topic_message_id,
+                list(order_ids),
             )
 
     async def complete_orders_by_topic_message(
@@ -1893,7 +2078,8 @@ class Database:
                          AND o.topic_message_id = $2
                          AND o.status = 'pending'
                        RETURNING o.id""",
-                    topic_id, topic_message_id,
+                    topic_id,
+                    topic_message_id,
                 )
                 if not rows:
                     return []
@@ -1931,7 +2117,8 @@ class Database:
                        ELSE 2
                      END,
                      o.id""",
-                topic_id, topic_message_id,
+                topic_id,
+                topic_message_id,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -1945,14 +2132,18 @@ class Database:
             result = await conn.execute(
                 """DELETE FROM orders
                    WHERE topic_id = $1 AND topic_message_id = $2""",
-                topic_id, topic_message_id,
+                topic_id,
+                topic_message_id,
             )
         count = int((result or "DELETE 0").split()[-1])
-        self._audit("orders_deleted_by_topic_message", {
-            "topic_id": topic_id,
-            "topic_message_id": topic_message_id,
-            "deleted_count": count,
-        })
+        self._audit(
+            "orders_deleted_by_topic_message",
+            {
+                "topic_id": topic_id,
+                "topic_message_id": topic_message_id,
+                "deleted_count": count,
+            },
+        )
         return count
 
     async def update_order_quantity(
@@ -1965,14 +2156,19 @@ class Database:
             result = await conn.execute(
                 """UPDATE orders SET quantity_needed = $1
                    WHERE id = $2 AND status = 'pending'""",
-                new_quantity, order_id,
+                new_quantity,
+                order_id,
             )
         updated = result == "UPDATE 1"
         if updated:
-            self._audit("order_quantity_updated", {
-                "order_id": order_id,
-                "new_quantity": new_quantity,
-            }, reference_id=f"order:{order_id}")
+            self._audit(
+                "order_quantity_updated",
+                {
+                    "order_id": order_id,
+                    "new_quantity": new_quantity,
+                },
+                reference_id=f"order:{order_id}",
+            )
         return updated
 
     _VALID_ORDER_STATUSES = frozenset(
@@ -1986,14 +2182,19 @@ class Database:
         async with self.pool.acquire() as conn:
             result = await conn.execute(
                 "UPDATE orders SET status = $1 WHERE id = $2",
-                status, order_id,
+                status,
+                order_id,
             )
         updated = result == "UPDATE 1"
         if updated:
-            self._audit("order_status_updated", {
-                "order_id": order_id,
-                "status": status,
-            }, reference_id=f"order:{order_id}")
+            self._audit(
+                "order_status_updated",
+                {
+                    "order_id": order_id,
+                    "status": status,
+                },
+                reference_id=f"order:{order_id}",
+            )
         return updated
 
     async def get_order_by_id(self, order_id: int) -> Optional[Dict[str, Any]]:
@@ -2040,8 +2241,14 @@ class Database:
                            (amount, description, category, payment_method,
                             vat_amount, is_vat_included, is_paid, is_non_cash)
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id""",
-                    amount, description, category, payment_method,
-                    round(vat_amount, 2), is_vat_included, is_paid, is_non_cash,
+                    amount,
+                    description,
+                    category,
+                    payment_method,
+                    round(vat_amount, 2),
+                    is_vat_included,
+                    is_paid,
+                    is_non_cash,
                 )
                 expense_id = row["id"]
                 label = description or category or f"Expense #{expense_id}"
@@ -2052,17 +2259,21 @@ class Database:
                     amount=amt,
                     description=f"Expense #{expense_id} — {label}",
                 )
-        self._audit("expense_created", {
-            "expense_id": expense_id,
-            "amount": amt,
-            "description": description,
-            "category": category,
-            "payment_method": payment_method,
-            "vat_amount": round(vat_amount, 2),
-            "is_vat_included": is_vat_included,
-            "is_paid": is_paid,
-            "is_non_cash": is_non_cash,
-        }, reference_id=f"expense:{expense_id}")
+        self._audit(
+            "expense_created",
+            {
+                "expense_id": expense_id,
+                "amount": amt,
+                "description": description,
+                "category": category,
+                "payment_method": payment_method,
+                "vat_amount": round(vat_amount, 2),
+                "is_vat_included": is_vat_included,
+                "is_paid": is_paid,
+                "is_non_cash": is_non_cash,
+            },
+            reference_id=f"expense:{expense_id}",
+        )
         return expense_id
 
     async def create_inventory_shortage_expense(
@@ -2113,12 +2324,15 @@ class Database:
                     for batch in batches:
                         if remaining_to_remove <= 0:
                             break
-                        can_take = min(float(batch["remaining_quantity"]), remaining_to_remove)
+                        can_take = min(
+                            float(batch["remaining_quantity"]), remaining_to_remove
+                        )
                         await conn.execute(
                             """UPDATE inventory_batches
                                SET remaining_quantity = remaining_quantity - $1
                                WHERE id = $2""",
-                            can_take, batch["id"],
+                            can_take,
+                            batch["id"],
                         )
                         remaining_to_remove -= can_take
 
@@ -2127,7 +2341,8 @@ class Database:
                     """UPDATE products
                        SET current_stock = current_stock - $1
                        WHERE id = $2 RETURNING current_stock""",
-                    int(shortage_qty), product_id,
+                    int(shortage_qty),
+                    product_id,
                 )
                 new_stock = int(stock_row["current_stock"]) if stock_row else 0
 
@@ -2154,16 +2369,20 @@ class Database:
                                (transaction_date, account_code, debit_amount, credit_amount,
                                 description, reference_id)
                            VALUES (NOW(), $1, $2, 0, $3, $4)""",
-                        self.ACCOUNT_INVENTORY_WRITEOFF, loss_value,
-                        f"Inventory shortage — {name} (OEM {oem_code})", ref,
+                        self.ACCOUNT_INVENTORY_WRITEOFF,
+                        loss_value,
+                        f"Inventory shortage — {name} (OEM {oem_code})",
+                        ref,
                     )
                     await conn.execute(
                         """INSERT INTO ledger
                                (transaction_date, account_code, debit_amount, credit_amount,
                                 description, reference_id)
                            VALUES (NOW(), $1, 0, $2, $3, $4)""",
-                        self.ACCOUNT_INVENTORY, loss_value,
-                        f"Inventory shortage — {name} (OEM {oem_code})", ref,
+                        self.ACCOUNT_INVENTORY,
+                        loss_value,
+                        f"Inventory shortage — {name} (OEM {oem_code})",
+                        ref,
                     )
 
         result = {
@@ -2224,7 +2443,8 @@ class Database:
                     """UPDATE products
                        SET current_stock = current_stock + $1
                        WHERE id = $2 RETURNING current_stock""",
-                    int(overage_qty), product_id,
+                    int(overage_qty),
+                    product_id,
                 )
                 new_stock = int(stock_row["current_stock"]) if stock_row else 0
 
@@ -2234,16 +2454,20 @@ class Database:
                                (transaction_date, account_code, debit_amount, credit_amount,
                                 description, reference_id)
                            VALUES (NOW(), $1, $2, 0, $3, $4)""",
-                        self.ACCOUNT_INVENTORY, overage_value,
-                        f"Inventory overage — {name} (OEM {oem_code})", ref,
+                        self.ACCOUNT_INVENTORY,
+                        overage_value,
+                        f"Inventory overage — {name} (OEM {oem_code})",
+                        ref,
                     )
                     await conn.execute(
                         """INSERT INTO ledger
                                (transaction_date, account_code, debit_amount, credit_amount,
                                 description, reference_id)
                            VALUES (NOW(), $1, 0, $2, $3, $4)""",
-                        self.ACCOUNT_INVENTORY_WRITEOFF, overage_value,
-                        f"Inventory overage — {name} (OEM {oem_code})", ref,
+                        self.ACCOUNT_INVENTORY_WRITEOFF,
+                        overage_value,
+                        f"Inventory overage — {name} (OEM {oem_code})",
+                        ref,
                     )
 
         result = {
@@ -2278,12 +2502,15 @@ class Database:
 
     # ─── Cash on hand ────────────────────────────────────────────────────────
 
-    async def create_cash_deposit(self, amount: float, note: Optional[str] = None) -> int:
+    async def create_cash_deposit(
+        self, amount: float, note: Optional[str] = None
+    ) -> int:
         """Record cash being deposited to the bank. Reduces hand balance."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "INSERT INTO cash_deposits (amount, note) VALUES ($1, $2) RETURNING id",
-                amount, note,
+                amount,
+                note,
             )
             return row["id"]
 
@@ -2342,21 +2569,27 @@ class Database:
                 """
             )
         initial_balance = float(row["initial_balance"])
-        cash_sales    = float(row["cash_sales"])
+        cash_sales = float(row["cash_sales"])
         cash_expenses = float(row["cash_expenses"])
-        deposits      = float(row["deposits"])
+        deposits = float(row["deposits"])
         transfers_out = float(row["transfers_out"])
-        transfers_in  = float(row["transfers_in"])
-        cash_returns  = float(row["cash_returns"])
+        transfers_in = float(row["transfers_in"])
+        cash_returns = float(row["cash_returns"])
         return {
             "initial_balance": initial_balance,
-            "cash_sales":    cash_sales,
+            "cash_sales": cash_sales,
             "cash_expenses": cash_expenses,
-            "deposits":      deposits,
+            "deposits": deposits,
             "transfers_out": transfers_out,
-            "transfers_in":  transfers_in,
-            "cash_returns":  cash_returns,
-            "balance": initial_balance + cash_sales - cash_expenses - deposits - transfers_out + transfers_in - cash_returns,
+            "transfers_in": transfers_in,
+            "cash_returns": cash_returns,
+            "balance": initial_balance
+            + cash_sales
+            - cash_expenses
+            - deposits
+            - transfers_out
+            + transfers_in
+            - cash_returns,
         }
 
     # ─── Internal transfers ───────────────────────────────────────────────────
@@ -2374,7 +2607,11 @@ class Database:
             row = await conn.fetchrow(
                 """INSERT INTO transfers (from_account, to_account, amount, currency, note)
                    VALUES ($1, $2, $3, $4, $5) RETURNING id""",
-                from_account, to_account, amount, currency, note,
+                from_account,
+                to_account,
+                amount,
+                currency,
+                note,
             )
             return row["id"]
 
@@ -2392,7 +2629,8 @@ class Database:
                 """SELECT * FROM transfers
                    WHERE created_at >= $1 AND created_at < $2
                    ORDER BY created_at DESC""",
-                start, end,
+                start,
+                end,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2404,7 +2642,8 @@ class Database:
                 """SELECT * FROM cash_deposits
                    WHERE created_at >= $1 AND created_at < $2
                    ORDER BY created_at DESC""",
-                start, end,
+                start,
+                end,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2431,8 +2670,15 @@ class Database:
                         seller_type, customer_name, sold_at, notes, payment_status)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                    RETURNING id""",
-                product_id, quantity, unit_price, payment_method,
-                seller_type, customer_name or None, sold_at, notes, payment_status,
+                product_id,
+                quantity,
+                unit_price,
+                payment_method,
+                seller_type,
+                customer_name or None,
+                sold_at,
+                notes,
+                payment_status,
             )
             return row["id"]
 
@@ -2447,7 +2693,8 @@ class Database:
                    WHERE s.sold_at >= $1 AND s.sold_at <= $2
                      AND s.status != 'returned'
                    ORDER BY s.sold_at DESC""",
-                date_from, date_to,
+                date_from,
+                date_to,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2461,7 +2708,8 @@ class Database:
                    LEFT JOIN products p ON r.product_id = p.id
                    WHERE r.returned_at >= $1 AND r.returned_at <= $2
                    ORDER BY r.returned_at DESC""",
-                date_from, date_to,
+                date_from,
+                date_to,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2473,7 +2721,8 @@ class Database:
                 """SELECT * FROM expenses
                    WHERE created_at >= $1 AND created_at <= $2 AND is_paid = TRUE
                    ORDER BY created_at DESC""",
-                date_from, date_to,
+                date_from,
+                date_to,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2486,7 +2735,8 @@ class Database:
                 """SELECT * FROM expenses
                    WHERE created_at >= $1 AND created_at <= $2 AND is_paid = FALSE
                    ORDER BY created_at DESC""",
-                date_from, date_to,
+                date_from,
+                date_to,
             )
             return self._rows(rows)  # type: ignore[return-value]
 
@@ -2507,9 +2757,9 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO parse_failures (topic_id, message_text) VALUES ($1, $2)",
-                topic_id, message_text,
+                topic_id,
+                message_text,
             )
-
 
     async def pay_sale(self, sale_id: int, amount: float, payment_method: str) -> float:
         """Pay a single nisia/debt sale fully or partially + post AR settlement.
@@ -2539,7 +2789,8 @@ class Database:
                         """UPDATE sales
                            SET payment_method = $1, payment_status = 'paid'
                            WHERE id = $2""",
-                        payment_method, sale_id,
+                        payment_method,
+                        sale_id,
                     )
                     await self._post_settlement_ledger(
                         conn,
@@ -2554,7 +2805,8 @@ class Database:
                     new_price = remaining / row["quantity"]
                     await conn.execute(
                         "UPDATE sales SET unit_price = $1 WHERE id = $2",
-                        new_price, sale_id,
+                        new_price,
+                        sale_id,
                     )
                     await self._post_settlement_ledger(
                         conn,
@@ -2725,10 +2977,10 @@ class Database:
                 old = dict(sale)
 
                 old_product_id = old.get("product_id")
-                old_quantity   = int(old["quantity"])
+                old_quantity = int(old["quantity"])
                 old_unit_price = float(old["unit_price"])
-                old_pm         = old["payment_method"]
-                old_cost       = float(old.get("cost_amount") or 0.0)
+                old_pm = old["payment_method"]
+                old_cost = float(old.get("cost_amount") or 0.0)
 
                 # Resolve the new values in terms of "what will actually be stored"
                 if clear_product:
@@ -2738,15 +2990,17 @@ class Database:
                 else:
                     new_product_id = old_product_id
 
-                new_quantity   = int(quantity) if quantity is not None else old_quantity
-                new_unit_price = float(unit_price) if unit_price is not None else old_unit_price
-                new_pm         = payment_method if payment_method is not None else old_pm
+                new_quantity = int(quantity) if quantity is not None else old_quantity
+                new_unit_price = (
+                    float(unit_price) if unit_price is not None else old_unit_price
+                )
+                new_pm = payment_method if payment_method is not None else old_pm
 
-                product_changed  = new_product_id != old_product_id
+                product_changed = new_product_id != old_product_id
                 quantity_changed = new_quantity != old_quantity
-                price_changed    = new_unit_price != old_unit_price
-                pm_changed       = new_pm != old_pm
-                ledger_touching  = (
+                price_changed = new_unit_price != old_unit_price
+                pm_changed = new_pm != old_pm
+                ledger_touching = (
                     product_changed or quantity_changed or price_changed or pm_changed
                 )
 
@@ -2756,20 +3010,23 @@ class Database:
                         await conn.execute(
                             "UPDATE products SET current_stock = current_stock + $1 "
                             "WHERE id = $2",
-                            old_quantity, old_product_id,
+                            old_quantity,
+                            old_product_id,
                         )
                     if new_product_id is not None:
                         await conn.execute(
                             "UPDATE products SET current_stock = current_stock - $1 "
                             "WHERE id = $2",
-                            new_quantity, new_product_id,
+                            new_quantity,
+                            new_product_id,
                         )
                 elif quantity_changed and old_product_id is not None:
                     delta = old_quantity - new_quantity  # >0 restores, <0 deducts
                     await conn.execute(
                         "UPDATE products SET current_stock = current_stock + $1 "
                         "WHERE id = $2",
-                        delta, old_product_id,
+                        delta,
+                        old_product_id,
                     )
 
                 # ─── Inventory batch rebalance ────────────────────────────
@@ -2778,13 +3035,18 @@ class Database:
                 if product_changed or quantity_changed:
                     if old_product_id is not None and old_cost > 0:
                         await self._restore_inventory_batch(
-                            conn, old_product_id, old_quantity, old_cost,
+                            conn,
+                            old_product_id,
+                            old_quantity,
+                            old_cost,
                             note=f"Edit reversal of sale #{sale_id}",
                         )
                     new_cost = 0.0
                     if new_product_id is not None:
                         new_cost = await self._consume_inventory_fifo(
-                            conn, new_product_id, new_quantity,
+                            conn,
+                            new_product_id,
+                            new_quantity,
                         )
 
                 # ─── Build the UPDATE (data columns) ─────────────────────
@@ -2855,8 +3117,11 @@ class Database:
                 # ─── Ledger rebalance ─────────────────────────────────────
                 if ledger_touching:
                     label_old = old.get("customer_name") or f"Sale #{sale_id}"
-                    label_new = (customer_name if customer_name is not None
-                                 else old.get("customer_name")) or f"Sale #{sale_id}"
+                    label_new = (
+                        customer_name
+                        if customer_name is not None
+                        else old.get("customer_name")
+                    ) or f"Sale #{sale_id}"
                     await self._reverse_sale_ledger(
                         conn,
                         sale_id=sale_id,
@@ -2890,7 +3155,9 @@ class Database:
 
     async def get_expense(self, expense_id: int) -> Optional[Dict[str, Any]]:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM expenses WHERE id = $1", expense_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM expenses WHERE id = $1", expense_id
+            )
             return self._row(row)
 
     async def edit_expense(
@@ -2930,7 +3197,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 current = await conn.fetchrow(
-                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE", expense_id,
+                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE",
+                    expense_id,
                 )
                 if not current:
                     return None
@@ -2963,8 +3231,16 @@ class Database:
                 new_pm = new_row["payment_method"]
 
                 if old_amount != new_amount or old_pm != new_pm:
-                    old_label = old.get("description") or old.get("category") or f"Expense #{expense_id}"
-                    new_label = new_row.get("description") or new_row.get("category") or f"Expense #{expense_id}"
+                    old_label = (
+                        old.get("description")
+                        or old.get("category")
+                        or f"Expense #{expense_id}"
+                    )
+                    new_label = (
+                        new_row.get("description")
+                        or new_row.get("category")
+                        or f"Expense #{expense_id}"
+                    )
                     await self._reverse_expense_ledger(
                         conn,
                         expense_id=expense_id,
@@ -2989,7 +3265,9 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE expenses SET topic_id=$1, topic_message_id=$2 WHERE id=$3",
-                topic_id, topic_message_id, expense_id,
+                topic_id,
+                topic_message_id,
+                expense_id,
             )
 
     async def delete_expense(self, expense_id: int) -> Optional[Dict[str, Any]]:
@@ -3002,7 +3280,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE", expense_id,
+                    "SELECT * FROM expenses WHERE id = $1 FOR UPDATE",
+                    expense_id,
                 )
                 if not row:
                     return None
@@ -3027,7 +3306,11 @@ class Database:
                     current.get("topic_message_id"),
                 )
 
-                label = current.get("description") or current.get("category") or f"Expense #{expense_id}"
+                label = (
+                    current.get("description")
+                    or current.get("category")
+                    or f"Expense #{expense_id}"
+                )
                 await self._reverse_expense_ledger(
                     conn,
                     expense_id=expense_id,
@@ -3108,7 +3391,9 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE sales SET topic_id=$1, topic_message_id=$2 WHERE id=$3",
-                topic_id, topic_message_id, sale_id,
+                topic_id,
+                topic_message_id,
+                sale_id,
             )
 
     # ─── Soft-delete & restore ────────────────────────────────────────────────
@@ -3124,7 +3409,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 sale = await conn.fetchrow(
-                    "SELECT * FROM sales WHERE id=$1 FOR UPDATE", sale_id,
+                    "SELECT * FROM sales WHERE id=$1 FOR UPDATE",
+                    sale_id,
                 )
                 if not sale:
                     return None
@@ -3166,10 +3452,14 @@ class Database:
                 if product_id:
                     await conn.execute(
                         "UPDATE products SET current_stock=current_stock+$1 WHERE id=$2",
-                        qty, product_id,
+                        qty,
+                        product_id,
                     )
                     await self._restore_inventory_batch(
-                        conn, product_id, qty, cost_amount,
+                        conn,
+                        product_id,
+                        qty,
+                        cost_amount,
                         note=f"Soft-delete of sale #{sale_id}",
                     )
 
@@ -3228,9 +3518,14 @@ class Database:
                             seller_type, customer_name, sold_at, notes)
                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                        RETURNING id""",
-                    product_id, qty, unit_price, pm,
+                    product_id,
+                    qty,
+                    unit_price,
+                    pm,
                     d.get("seller_type", "individual"),
-                    customer_name, d.get("sold_at"), d.get("notes"),
+                    customer_name,
+                    d.get("sold_at"),
+                    d.get("notes"),
                 )
                 new_sale_id = row["id"]
 
@@ -3238,15 +3533,19 @@ class Database:
                 if product_id:
                     await conn.execute(
                         "UPDATE products SET current_stock=current_stock-$1 WHERE id=$2",
-                        qty, product_id,
+                        qty,
+                        product_id,
                     )
                     cost_amount = await self._consume_inventory_fifo(
-                        conn, product_id, qty,
+                        conn,
+                        product_id,
+                        qty,
                     )
                     if cost_amount > 0:
                         await conn.execute(
                             "UPDATE sales SET cost_amount = $1, cogs = $1 WHERE id = $2",
-                            cost_amount, new_sale_id,
+                            cost_amount,
+                            new_sale_id,
                         )
 
                 label = customer_name or f"Sale #{new_sale_id}"
@@ -3288,13 +3587,21 @@ class Database:
                                 total_unit_cost_gel, suggested_retail_price_gel,
                                 supplier, invoice_number, invoice_date, invoice_exchange_rate)
                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)""",
-                        r["import_date"], r["oem"].strip().upper() if r.get("oem") else r["oem"], r["name"],
-                        r["quantity"], r["unit"],
-                        r["unit_price_usd"], r["exchange_rate"],
-                        r["transport_cost_gel"], r["other_cost_gel"],
-                        r["total_unit_cost_gel"], r["suggested_retail_price_gel"],
-                        r.get("supplier"), r.get("invoice_number"),
-                        r.get("invoice_date"), r.get("invoice_exchange_rate"),
+                        r["import_date"],
+                        r["oem"].strip().upper() if r.get("oem") else r["oem"],
+                        r["name"],
+                        r["quantity"],
+                        r["unit"],
+                        r["unit_price_usd"],
+                        r["exchange_rate"],
+                        r["transport_cost_gel"],
+                        r["other_cost_gel"],
+                        r["total_unit_cost_gel"],
+                        r["suggested_retail_price_gel"],
+                        r.get("supplier"),
+                        r.get("invoice_number"),
+                        r.get("invoice_date"),
+                        r.get("invoice_exchange_rate"),
                     )
         return len(rows)
 
@@ -3378,15 +3685,26 @@ class Database:
                             amount_paid_currency, estimated_arrival, notes)
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12)
                        RETURNING *""",
-                    customer_name, customer_contact, primary_name, primary_oem,
-                    cost_price, transportation_cost, vat_amount,
-                    sale_price_min, sale_price, currency, estimated_arrival, notes,
+                    customer_name,
+                    customer_contact,
+                    primary_name,
+                    primary_oem,
+                    cost_price,
+                    transportation_cost,
+                    vat_amount,
+                    sale_price_min,
+                    sale_price,
+                    currency,
+                    estimated_arrival,
+                    notes,
                 )
                 order_id = row["id"]
                 for part_name, oem_code in items:
                     await conn.execute(
                         "INSERT INTO personal_order_items (order_id, part_name, oem_code) VALUES ($1, $2, $3)",
-                        order_id, part_name, oem_code,
+                        order_id,
+                        part_name,
+                        oem_code,
                     )
         result = await self.get_personal_order_by_id(order_id)
         return result  # type: ignore[return-value]
@@ -3402,7 +3720,9 @@ class Database:
             )
         return [self._row_to_po(r) for r in rows]  # type: ignore[misc]
 
-    async def get_personal_order_by_id(self, order_id: int) -> Optional[PersonalOrderRow]:
+    async def get_personal_order_by_id(
+        self, order_id: int
+    ) -> Optional[PersonalOrderRow]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"SELECT o.*, {self._ITEMS_SUBQUERY} FROM personal_orders o WHERE o.id = $1",
@@ -3432,22 +3752,32 @@ class Database:
 
     async def update_personal_order(self, order_id: int, **fields: Any) -> None:
         allowed = {
-            "customer_name", "customer_contact", "part_name", "oem_code",
-            "cost_price", "transportation_cost", "vat_amount",
-            "sale_price_min", "sale_price", "sale_price_currency",
-            "amount_paid", "amount_paid_currency", "status", "estimated_arrival", "notes",
+            "customer_name",
+            "customer_contact",
+            "part_name",
+            "oem_code",
+            "cost_price",
+            "transportation_cost",
+            "vat_amount",
+            "sale_price_min",
+            "sale_price",
+            "sale_price_currency",
+            "amount_paid",
+            "amount_paid_currency",
+            "status",
+            "estimated_arrival",
+            "notes",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return
-        set_clauses = ", ".join(
-            f"{col} = ${i + 2}" for i, col in enumerate(updates)
-        )
+        set_clauses = ", ".join(f"{col} = ${i + 2}" for i, col in enumerate(updates))
         values = list(updates.values())
         async with self.pool.acquire() as conn:
             await conn.execute(
                 f"UPDATE personal_orders SET {set_clauses}, updated_at = NOW() WHERE id = $1",
-                order_id, *values,
+                order_id,
+                *values,
             )
 
     async def save_personal_order_tg_message(
@@ -3456,16 +3786,21 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE personal_orders SET telegram_chat_id = $2, telegram_message_id = $3 WHERE id = $1",
-                order_id, chat_id, message_id,
+                order_id,
+                chat_id,
+                message_id,
             )
 
-    async def update_personal_order_payment(self, order_id: int, amount_paid: float) -> None:
+    async def update_personal_order_payment(
+        self, order_id: int, amount_paid: float
+    ) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """UPDATE personal_orders
                    SET amount_paid = $2, updated_at = NOW()
                    WHERE id = $1""",
-                order_id, amount_paid,
+                order_id,
+                amount_paid,
             )
 
     # ─── Lost search log ──────────────────────────────────────────────────────
@@ -3476,12 +3811,15 @@ class Database:
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO lost_searches (query, source, results_count) VALUES ($1, $2, 0)",
-                    query.strip(), source,
+                    query.strip(),
+                    source,
                 )
         except Exception as exc:
             logger.warning("log_lost_search failed: %s", exc)
 
-    async def get_top_lost_searches(self, days: int = 7, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_top_lost_searches(
+        self, days: int = 7, limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """Return top zero-result queries grouped by LOWER(query) for the past N days."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -3493,6 +3831,7 @@ class Database:
                 ORDER BY cnt DESC
                 LIMIT $2
                 """,
-                days, limit,
+                days,
+                limit,
             )
         return [{"query": r["query"], "cnt": int(r["cnt"])} for r in rows]

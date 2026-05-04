@@ -14,7 +14,14 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Document, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    Document,
+    InaccessibleMessage,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 import config
 from bot.financial_ai import generate_weekly_advice
@@ -114,7 +121,9 @@ _HELP_TEXT = """
 
 @commands_router.message(Command("help"), IsAdmin())
 async def cmd_help(message: Message) -> None:
-    await message.bot.send_message(chat_id=message.from_user.id, text=_HELP_TEXT, parse_mode=_PARSE)
+    await message.bot.send_message(
+        chat_id=message.from_user.id, text=_HELP_TEXT, parse_mode=_PARSE
+    )
 
 
 @commands_router.message(Command("stock"), IsAdmin())
@@ -129,7 +138,9 @@ async def cmd_stock(message: Message, db: Database) -> None:
 
 @commands_router.message(Command("report"), IsAdmin())
 async def cmd_report(message: Message, db: Database) -> None:
-    if message.from_user and await is_rate_limited(message.from_user.id, "report", min_interval=10.0):
+    if message.from_user and await is_rate_limited(
+        message.from_user.id, "report", min_interval=10.0
+    ):
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
@@ -156,7 +167,15 @@ async def cmd_report(message: Message, db: Database) -> None:
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice, pending_liabilities=pending),
+        text=format_weekly_report(
+            sales,
+            returns,
+            expenses,
+            products,
+            cash,
+            ai_advice=ai_advice,
+            pending_liabilities=pending,
+        ),
         parse_mode=_PARSE,
     )
 
@@ -188,9 +207,13 @@ async def cmd_deposit(message: Message, state: FSMContext) -> None:
 
 
 @commands_router.message(StateFilter(DepositState.waiting_amount), IsAdmin())
-async def deposit_amount_input(message: Message, state: FSMContext, db: Database) -> None:
+async def deposit_amount_input(
+    message: Message, state: FSMContext, db: Database
+) -> None:
     """Handle the amount entered by the user."""
-    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    raw = (
+        (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    )
     try:
         amount = float(raw)
         if amount <= 0:
@@ -231,10 +254,18 @@ _TRANSFER_LABELS = {
 
 
 def _transfer_from_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="💵 სალარო (GEL)", callback_data="tf_from:cash_gel"),
-        InlineKeyboardButton(text="🏦 ბანკი (GEL)", callback_data="tf_from:bank_gel"),
-    ]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💵 სალარო (GEL)", callback_data="tf_from:cash_gel"
+                ),
+                InlineKeyboardButton(
+                    text="🏦 ბანკი (GEL)", callback_data="tf_from:bank_gel"
+                ),
+            ]
+        ]
+    )
 
 
 def _transfer_to_keyboard(exclude: str) -> InlineKeyboardMarkup:
@@ -320,7 +351,9 @@ async def _do_transfer(
     return await db.create_transfer(from_key, to_key, amount)  # type: ignore[union-attr]
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("tf_from:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("tf_from:"), IsAdmin()
+)
 async def transfer_from_selected(callback: CallbackQuery, state: FSMContext) -> None:
     from_key = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
     if from_key not in _TRANSFER_LABELS:
@@ -338,7 +371,9 @@ async def transfer_from_selected(callback: CallbackQuery, state: FSMContext) -> 
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("tf_to:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("tf_to:"), IsAdmin()
+)
 async def transfer_to_selected(callback: CallbackQuery, state: FSMContext) -> None:
     to_key = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
     if to_key not in _TRANSFER_LABELS:
@@ -361,8 +396,12 @@ async def transfer_to_selected(callback: CallbackQuery, state: FSMContext) -> No
 
 
 @commands_router.message(StateFilter(TransferState.waiting_amount), IsAdmin())
-async def transfer_amount_input(message: Message, state: FSMContext, db: Database) -> None:
-    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+async def transfer_amount_input(
+    message: Message, state: FSMContext, db: Database
+) -> None:
+    raw = (
+        (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    )
     try:
         amount = float(raw)
         if amount <= 0:
@@ -438,25 +477,42 @@ def _nisias_keyboard(sales: list) -> InlineKeyboardMarkup:
     for cname in named:
         label = (cname[:10] + "…") if len(cname) > 11 else cname
         key = _customer_key(cname)
-        rows.append([
-            InlineKeyboardButton(text=f"✅ სრულად — {label}", callback_data=f"npc:{key}:cash"),
-            InlineKeyboardButton(text=f"💸 ნაწილობრივ — {label}", callback_data=f"npp:{key}"),
-            InlineKeyboardButton(text="✏️", callback_data=f"npr:{key}"),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"✅ სრულად — {label}", callback_data=f"npc:{key}:cash"
+                ),
+                InlineKeyboardButton(
+                    text=f"💸 ნაწილობრივ — {label}", callback_data=f"npp:{key}"
+                ),
+                InlineKeyboardButton(text="✏️", callback_data=f"npr:{key}"),
+            ]
+        )
 
     # Per-sale rows for unnamed sales (no grouping possible)
     for s in unnamed:
         sale_id = s["id"]
-        rows.append([
-            InlineKeyboardButton(text=f"💵 ხელზე #{sale_id}",  callback_data=f"np:{sale_id}:cash"),
-            InlineKeyboardButton(text=f"🏦 დარიცხა #{sale_id}", callback_data=f"np:{sale_id}:transfer"),
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"💵 ხელზე #{sale_id}", callback_data=f"np:{sale_id}:cash"
+                ),
+                InlineKeyboardButton(
+                    text=f"🏦 დარიცხა #{sale_id}",
+                    callback_data=f"np:{sale_id}:transfer",
+                ),
+            ]
+        )
 
     if len(rows) > _NISIAS_KEYBOARD_MAX:
         rows = rows[:_NISIAS_KEYBOARD_MAX]
-        rows.append([
-            InlineKeyboardButton(text="... კიდევ მეტი ნისია", callback_data="np:0:ignore")
-        ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="... კიდევ მეტი ნისია", callback_data="np:0:ignore"
+                )
+            ]
+        )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -476,7 +532,9 @@ async def cmd_nisias(message: Message, state: FSMContext, db: Database) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("npc:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("npc:"), IsAdmin()
+)
 async def callback_nisias_pay_customer(callback: CallbackQuery, db: Database) -> None:
     """Handle customer-level nisias pay: npc:{customer_hash}:{cash|transfer}
     Marks ALL unpaid credit sales for that customer as paid in one action."""
@@ -497,19 +555,27 @@ async def callback_nisias_pay_customer(callback: CallbackQuery, db: Database) ->
             break
 
     if not target_customer:
-        await callback.answer("⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True)
+        await callback.answer(
+            "⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True
+        )
         return
 
     count = await db.mark_customer_sales_paid(target_customer, method)
     if count > 0:
         logger.info(
             "AUDIT: admin %d marked %d credit sale(s) for '%s' as paid (%s)",
-            callback.from_user.id, count, target_customer, method,
+            callback.from_user.id,
+            count,
+            target_customer,
+            method,
         )
-        await callback.answer(f"✅ {target_customer} — {label} ({count} ნისია)", show_alert=False)
+        await callback.answer(
+            f"✅ {target_customer} — {label} ({count} ნისია)", show_alert=False
+        )
     else:
         await callback.answer(
-            f"⚠️ {target_customer} — ნისია ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True
+            f"⚠️ {target_customer} — ნისია ვერ მოიძებნა ან უკვე გადახდილია.",
+            show_alert=True,
         )
         return
 
@@ -525,8 +591,12 @@ async def callback_nisias_pay_customer(callback: CallbackQuery, db: Database) ->
         logger.debug("Could not refresh nisias message after customer payment: %s", exc)
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("npp:"), IsAdmin())
-async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("npp:"), IsAdmin()
+)
+async def callback_nisias_partial(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
     """Start partial payment flow: npp:{customer_hash}
     Saves the customer name in FSM state and asks for the amount."""
     try:
@@ -547,7 +617,9 @@ async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db
             customer_debt += float(s["unit_price"]) * s["quantity"]
 
     if not target_customer:
-        await callback.answer("⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True)
+        await callback.answer(
+            "⚠️ კლიენტი ვერ მოიძებნა ან ნისია უკვე გადახდილია.", show_alert=True
+        )
         return
 
     await state.set_state(NisiasStates.waiting_partial_amount)
@@ -565,8 +637,12 @@ async def callback_nisias_partial(callback: CallbackQuery, state: FSMContext, db
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("npr:"), IsAdmin())
-async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("npr:"), IsAdmin()
+)
+async def callback_nisias_rename(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
     """Nisia edit entrypoint from the /nisias list.
 
     Formats:
@@ -586,6 +662,7 @@ async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db:
         # Delegate to the NisiaEditWizard by synthesizing an edit:nisia callback
         # The wizard router handles auth, state, and keyboard rendering.
         from bot.handlers.wizard import _start_nisia_edit  # local import avoids cycle
+
         sale = await db.get_sale(sale_id)
         if not sale or sale.get("payment_method") != "credit":
             await callback.answer("⚠️ ნისია ვერ მოიძებნა.", show_alert=True)
@@ -624,6 +701,7 @@ async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db:
     # Single sale: jump straight into the edit wizard
     if len(customer_sales) == 1:
         from bot.handlers.wizard import _start_nisia_edit
+
         await _start_nisia_edit(callback.message, state, customer_sales[0], send=True)
         await callback.answer()
         return
@@ -633,11 +711,17 @@ async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db:
     for s in customer_sales[:20]:
         label_product = (s.get("product_name") or s.get("notes") or "—")[:22]
         total = float(s["unit_price"]) * s["quantity"]
-        buttons.append([InlineKeyboardButton(
-            text=f"#{s['id']} {label_product} — {total:.0f}₾",
-            callback_data=f"npr:s:{s['id']}",
-        )])
-    buttons.append([InlineKeyboardButton(text="❌ გაუქმება", callback_data="wiz:cancel")])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"#{s['id']} {label_product} — {total:.0f}₾",
+                    callback_data=f"npr:s:{s['id']}",
+                )
+            ]
+        )
+    buttons.append(
+        [InlineKeyboardButton(text="❌ გაუქმება", callback_data="wiz:cancel")]
+    )
 
     await callback.message.reply(
         f"✏️ <b>{html.escape(target_customer)}</b>\n\n"
@@ -649,7 +733,9 @@ async def callback_nisias_rename(callback: CallbackQuery, state: FSMContext, db:
 
 
 @commands_router.message(NisiasStates.waiting_rename_customer, IsAdmin())
-async def handle_rename_customer(message: Message, state: FSMContext, db: Database) -> None:
+async def handle_rename_customer(
+    message: Message, state: FSMContext, db: Database
+) -> None:
     """Legacy customer-rename flow (kept for backwards compatibility if any
     caller still sets NisiasStates.waiting_rename_customer). The current
     /nisias ✏️ entrypoint routes through the NisiaEditWizard instead.
@@ -666,7 +752,10 @@ async def handle_rename_customer(message: Message, state: FSMContext, db: Databa
     updated = await db.rename_customer(old_name, new_name)
     logger.info(
         "AUDIT: admin %d renamed customer %r → %r (%d sales)",
-        message.from_user.id, old_name, new_name, updated,
+        message.from_user.id,
+        old_name,
+        new_name,
+        updated,
     )
 
     await message.reply(
@@ -682,12 +771,21 @@ async def handle_rename_customer(message: Message, state: FSMContext, db: Databa
 
 
 @commands_router.message(NisiasStates.waiting_partial_amount, IsAdmin())
-async def handle_partial_payment_amount(message: Message, state: FSMContext, db: Database) -> None:
+async def handle_partial_payment_amount(
+    message: Message, state: FSMContext, db: Database
+) -> None:
     """Receive the amount for partial payment and apply it."""
     data = await state.get_data()
     customer_name: str = data.get("customer_name", "")
 
-    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "").strip()
+    raw = (
+        (message.text or "")
+        .strip()
+        .replace(",", ".")
+        .replace("₾", "")
+        .replace("ლ", "")
+        .strip()
+    )
     try:
         amount = float(raw)
         if amount <= 0:
@@ -704,7 +802,10 @@ async def handle_partial_payment_amount(message: Message, state: FSMContext, db:
 
     logger.info(
         "AUDIT: admin %d applied partial payment %.2f₾ for '%s', remaining=%.2f₾",
-        message.from_user.id, amount, customer_name, remaining,
+        message.from_user.id,
+        amount,
+        customer_name,
+        remaining,
     )
 
     if remaining <= 0.005:
@@ -734,7 +835,9 @@ async def handle_partial_payment_amount(message: Message, state: FSMContext, db:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("np:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("np:"), IsAdmin()
+)
 async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
     """Handle nisias inline pay button: np:{sale_id}:{cash|transfer}"""
     try:
@@ -753,7 +856,9 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
     if updated:
         logger.info(
             "AUDIT: admin %d marked sale #%d as paid (%s)",
-            callback.from_user.id, sale_id, payment_method,
+            callback.from_user.id,
+            sale_id,
+            payment_method,
         )
         await callback.answer(f"✅ #{sale_id} — {label}", show_alert=False)
         # Refresh the list
@@ -763,11 +868,15 @@ async def callback_nisias_pay(callback: CallbackQuery, db: Database) -> None:
         if isinstance(callback.message, InaccessibleMessage):
             return
         try:
-            await callback.message.edit_text(text, parse_mode=_PARSE, reply_markup=keyboard)
+            await callback.message.edit_text(
+                text, parse_mode=_PARSE, reply_markup=keyboard
+            )
         except Exception as exc:
             logger.debug("Could not refresh nisias message (likely unchanged): %s", exc)
     else:
-        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True)
+        await callback.answer(
+            f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე გადახდილია.", show_alert=True
+        )
 
 
 async def _resolve_sale_display_name(db: Database, sale: Mapping[str, Any]) -> str:
@@ -787,7 +896,9 @@ async def _resolve_sale_display_name(db: Database, sale: Mapping[str, Any]) -> s
 
 
 def _format_topic_text_for_sale(
-    sale: Mapping[str, Any], sale_id: int, product_name: str,
+    sale: Mapping[str, Any],
+    sale_id: int,
+    product_name: str,
 ) -> str:
     """Rebuild the original topic-post text for a sale / nisia."""
     qty = int(sale["quantity"])
@@ -820,7 +931,9 @@ def _format_topic_text_for_sale(
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("ds:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("ds:"), IsAdmin()
+)
 async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
     """Delete a sale: soft-deletes to deleted_sales (24h restore window), removes topic message."""
     try:
@@ -831,13 +944,18 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
 
     deleted = await db.soft_delete_sale(sale_id)
     if not deleted:
-        await callback.answer(f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True)
+        await callback.answer(
+            f"⚠️ #{sale_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True
+        )
         return
 
     logger.info(
         "AUDIT: admin %d deleted sale #%d (product_id=%s, qty=%s, price=%s)",
-        callback.from_user.id, sale_id,
-        deleted.get("product_id"), deleted.get("quantity"), deleted.get("unit_price"),
+        callback.from_user.id,
+        sale_id,
+        deleted.get("product_id"),
+        deleted.get("quantity"),
+        deleted.get("unit_price"),
     )
 
     # Edit the bot's original topic confirmation in place: prepend a
@@ -849,7 +967,10 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
         product_name = await _resolve_sale_display_name(db, deleted)
         original_text = _format_topic_text_for_sale(deleted, sale_id, product_name)
         await mark_cancelled(
-            callback.bot, config.GROUP_ID, topic_msg, original_text,
+            callback.bot,
+            config.GROUP_ID,
+            topic_msg,
+            original_text,
         )
 
     total = float(deleted["unit_price"]) * deleted["quantity"]
@@ -857,9 +978,15 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
 
     await callback.answer(f"🗑 #{sale_id} წაიშალა — {total:.2f}₾", show_alert=False)
 
-    restore_kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="↩️ აღდგენა (24სთ)", callback_data=f"rs:{deleted_id}")
-    ]])
+    restore_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="↩️ აღდგენა (24სთ)", callback_data=f"rs:{deleted_id}"
+                )
+            ]
+        ]
+    )
     restore_text = (
         f"🗑 <b>გაყიდვა #{sale_id} წაიშალა</b>\n"
         f"💰 {deleted['quantity']}ც × {float(deleted['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>\n"
@@ -895,7 +1022,9 @@ async def callback_delete_sale(callback: CallbackQuery, db: Database) -> None:
         logger.debug("Could not update message after sale deletion: %s", exc)
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("de:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("de:"), IsAdmin()
+)
 async def callback_delete_expense(callback: CallbackQuery, db: Database) -> None:
     """Delete an expense: reverses ledger + removes topic message banner."""
     try:
@@ -906,13 +1035,17 @@ async def callback_delete_expense(callback: CallbackQuery, db: Database) -> None
 
     deleted = await db.delete_expense(expense_id)
     if not deleted:
-        await callback.answer(f"⚠️ #{expense_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True)
+        await callback.answer(
+            f"⚠️ #{expense_id} ვერ მოიძებნა ან უკვე წაშლილია.", show_alert=True
+        )
         return
 
     logger.info(
         "AUDIT: admin %d deleted expense #%d (amount=%s, payment=%s)",
-        callback.from_user.id, expense_id,
-        deleted.get("amount"), deleted.get("payment_method"),
+        callback.from_user.id,
+        expense_id,
+        deleted.get("amount"),
+        deleted.get("payment_method"),
     )
 
     # Prepend the cancellation banner to the topic post (if any).
@@ -927,11 +1060,16 @@ async def callback_delete_expense(callback: CallbackQuery, db: Database) -> None
             + (f"\n📝 {html.escape(str(desc))}" if desc else "")
         )
         await mark_cancelled(
-            callback.bot, config.GROUP_ID, topic_msg, original,
+            callback.bot,
+            config.GROUP_ID,
+            topic_msg,
+            original,
         )
 
     amt = float(deleted["amount"])
-    await callback.answer(f"🗑 ხარჯი #{expense_id} წაიშალა — {amt:.2f}₾", show_alert=False)
+    await callback.answer(
+        f"🗑 ხარჯი #{expense_id} წაიშალა — {amt:.2f}₾", show_alert=False
+    )
 
     if isinstance(callback.message, InaccessibleMessage):
         return
@@ -943,15 +1081,16 @@ async def callback_delete_expense(callback: CallbackQuery, db: Database) -> None
         return
     try:
         await callback.message.edit_text(
-            f"🗑 <b>ხარჯი #{expense_id} წაიშალა</b>\n"
-            f"💰 <b>{amt:.2f}₾</b>",
+            f"🗑 <b>ხარჯი #{expense_id} წაიშალა</b>\n💰 <b>{amt:.2f}₾</b>",
             parse_mode=_PARSE,
         )
     except Exception as exc:
         logger.debug("Could not update DM after expense deletion: %s", exc)
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("rs:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("rs:"), IsAdmin()
+)
 async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
     """Restore a soft-deleted sale within 24h: rs:{deleted_id}"""
     try:
@@ -962,29 +1101,40 @@ async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
 
     ds = await db.get_deleted_sale(deleted_id)
     if not ds:
-        await callback.answer("⚠️ ვადა გავიდა ან ჩანაწერი ვერ მოიძებნა.", show_alert=True)
+        await callback.answer(
+            "⚠️ ვადა გავიდა ან ჩანაწერი ვერ მოიძებნა.", show_alert=True
+        )
         return
 
     new_sale_id = await db.restore_deleted_sale(deleted_id)
     if not new_sale_id:
-        await callback.answer("⚠️ 24 საათი გავიდა — აღდგენა შეუძლებელია.", show_alert=True)
+        await callback.answer(
+            "⚠️ 24 საათი გავიდა — აღდგენა შეუძლებელია.", show_alert=True
+        )
         return
 
     logger.info(
         "AUDIT: admin %d restored deleted sale (original #%d → new #%d)",
-        callback.from_user.id, ds.get("original_sale_id", "?"), new_sale_id,
+        callback.from_user.id,
+        ds.get("original_sale_id", "?"),
+        new_sale_id,
     )
 
     # Prefer editing the original (cancelled) topic post back to its
     # restored form so topic history stays clean. Fall back to posting
     # a fresh message only if the old message is gone.
-    topic_id  = ds.get("topic_id")
+    topic_id = ds.get("topic_id")
     old_topic_msg = ds.get("topic_message_id")
     new_topic_msg_id: Optional[int] = None
     if topic_id:
-        text = _format_topic_text_for_sale(ds, new_sale_id, await _resolve_sale_display_name(db, ds))
+        text = _format_topic_text_for_sale(
+            ds, new_sale_id, await _resolve_sale_display_name(db, ds)
+        )
         edited = await restore_original(
-            callback.bot, config.GROUP_ID, old_topic_msg, text,
+            callback.bot,
+            config.GROUP_ID,
+            old_topic_msg,
+            text,
         )
         if edited and old_topic_msg:
             new_topic_msg_id = old_topic_msg
@@ -1013,21 +1163,28 @@ async def callback_restore_sale(callback: CallbackQuery, db: Database) -> None:
             f"✅ <b>გაყიდვა #{new_sale_id} აღდგენილია</b>\n"
             f"💰 {ds['quantity']}ც × {float(ds['unit_price']):.2f}₾ = <b>{total:.2f}₾</b>",
             parse_mode=_PARSE,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=f"🗑 წაშლა #{new_sale_id}", callback_data=f"ds:{new_sale_id}")
-            ]]),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=f"🗑 წაშლა #{new_sale_id}",
+                            callback_data=f"ds:{new_sale_id}",
+                        )
+                    ]
+                ]
+            ),
         )
     except Exception as exc:
         logger.debug("Could not update message after restore: %s", exc)
 
 
-
 # ─── /paid wizard ─────────────────────────────────────────────────────────────
 
+
 class PaidWizardState(StatesGroup):
-    select_type   = State()   # full or partial buttons
-    enter_amount  = State()   # partial: type amount
-    select_method = State()   # partial: cash or transfer
+    select_type = State()  # full or partial buttons
+    enter_amount = State()  # partial: type amount
+    select_method = State()  # partial: cash or transfer
 
 
 @commands_router.message(Command("paid"), IsAdmin())
@@ -1049,7 +1206,9 @@ async def cmd_paid(message: Message, state: FSMContext, db: Database) -> None:
         total = float(s["unit_price"]) * s["quantity"]
         customer = (s.get("customer_name") or "—")[:14]
         label = f"#{s['id']} {name} — {total:.0f}₾ | {customer}"
-        buttons.append([InlineKeyboardButton(text=label, callback_data=f"pw_sel:{s['id']}")])
+        buttons.append(
+            [InlineKeyboardButton(text=label, callback_data=f"pw_sel:{s['id']}")]
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
@@ -1059,8 +1218,12 @@ async def cmd_paid(message: Message, state: FSMContext, db: Database) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_sel:"), IsAdmin())
-async def paid_select_nisia(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("pw_sel:"), IsAdmin()
+)
+async def paid_select_nisia(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
     assert isinstance(callback.message, Message)
     sale_id = int((callback.data or "").split(":")[1])
     sales = await db.get_credit_sales()
@@ -1073,11 +1236,17 @@ async def paid_select_nisia(callback: CallbackQuery, state: FSMContext, db: Data
     name = sale.get("product_name") or sale.get("notes") or "—"
     customer = sale.get("customer_name") or "—"
 
-    await state.update_data(pw_sale_id=sale_id, pw_total=total, pw_name=name, pw_customer=customer)
+    await state.update_data(
+        pw_sale_id=sale_id, pw_total=total, pw_name=name, pw_customer=customer
+    )
     await state.set_state(PaidWizardState.select_type)
 
     buttons = [
-        [InlineKeyboardButton(text=f"✅ სრულად ({total:.2f}₾)", callback_data="pw_type:full")],
+        [
+            InlineKeyboardButton(
+                text=f"✅ სრულად ({total:.2f}₾)", callback_data="pw_type:full"
+            )
+        ],
         [InlineKeyboardButton(text="💸 ნაწილობრივ", callback_data="pw_type:partial")],
         [InlineKeyboardButton(text="❌ გაუქმება", callback_data="pw_cancel")],
     ]
@@ -1092,7 +1261,9 @@ async def paid_select_nisia(callback: CallbackQuery, state: FSMContext, db: Data
     await callback.answer()
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_type:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("pw_type:"), IsAdmin()
+)
 async def paid_select_type(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     ptype = (callback.data or "").split(":")[1]
@@ -1101,7 +1272,11 @@ async def paid_select_type(callback: CallbackQuery, state: FSMContext) -> None:
     if ptype == "full":
         buttons = [
             [InlineKeyboardButton(text="💵 ხელზე", callback_data="pw_method:cash")],
-            [InlineKeyboardButton(text="🏦 დარიცხა", callback_data="pw_method:transfer")],
+            [
+                InlineKeyboardButton(
+                    text="🏦 დარიცხა", callback_data="pw_method:transfer"
+                )
+            ],
             [InlineKeyboardButton(text="❌ გაუქმება", callback_data="pw_cancel")],
         ]
         await state.update_data(pw_amount=data.get("pw_total"))
@@ -1123,13 +1298,17 @@ async def paid_select_type(callback: CallbackQuery, state: FSMContext) -> None:
 
 @commands_router.message(StateFilter(PaidWizardState.enter_amount), IsAdmin())
 async def paid_enter_amount(message: Message, state: FSMContext) -> None:
-    raw = (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    raw = (
+        (message.text or "").strip().replace(",", ".").replace("₾", "").replace("ლ", "")
+    )
     try:
         amount = float(raw)
         if amount <= 0:
             raise ValueError
     except ValueError:
-        await message.reply("❌ სწორი თანხა ჩაწერე, მაგ: <code>150</code>", parse_mode=_PARSE)
+        await message.reply(
+            "❌ სწორი თანხა ჩაწერე, მაგ: <code>150</code>", parse_mode=_PARSE
+        )
         return
 
     await state.update_data(pw_amount=amount)
@@ -1146,8 +1325,12 @@ async def paid_enter_amount(message: Message, state: FSMContext) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("pw_method:"), IsAdmin())
-async def paid_select_method(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("pw_method:"), IsAdmin()
+)
+async def paid_select_method(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
     assert isinstance(callback.message, Message)
     method = (callback.data or "").split(":")[1]
     data = await state.get_data()
@@ -1160,7 +1343,9 @@ async def paid_select_method(callback: CallbackQuery, state: FSMContext, db: Dat
     remaining = await db.pay_sale(sale_id, amount, method)
 
     if remaining < 0:
-        await callback.message.edit_text("⚠️ ნისია ვერ მოიძებნა ან უკვე გადახდილია.", parse_mode=_PARSE)
+        await callback.message.edit_text(
+            "⚠️ ნისია ვერ მოიძებნა ან უკვე გადახდილია.", parse_mode=_PARSE
+        )
     elif remaining == 0:
         await callback.message.edit_text(
             f"✅ <b>ნისია #{sale_id} სრულად გადახდილია</b>\n💳 {method_label}",
@@ -1184,12 +1369,12 @@ async def paid_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-
-
 @commands_router.message(Command("diagnostics"), IsAdmin())
 async def cmd_diagnostics(message: Message, db: Database) -> None:
     """Show recent parse failures individually with full detail."""
-    if message.from_user and await is_rate_limited(message.from_user.id, "diagnostics", min_interval=10.0):
+    if message.from_user and await is_rate_limited(
+        message.from_user.id, "diagnostics", min_interval=10.0
+    ):
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text="⏳ ძალიან სწრაფად. 10 წამი დაიცადე.",
@@ -1206,11 +1391,16 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
         return
 
     import pytz
+
     tz = pytz.timezone("Asia/Tbilisi")
     parts: list[str] = [f"🔍 <b>ვერ ამოცნობილი ({len(failures)})</b>"]
     for f_ in failures:
         dt = f_["created_at"]
-        dt_str = dt.astimezone(tz).strftime("%d.%m %H:%M") if hasattr(dt, "astimezone") else str(dt)[:16]
+        dt_str = (
+            dt.astimezone(tz).strftime("%d.%m %H:%M")
+            if hasattr(dt, "astimezone")
+            else str(dt)[:16]
+        )
         topic = f_["topic_id"]
         text_esc = html.escape(str(f_["message_text"]).strip())
         parts.append(
@@ -1221,7 +1411,9 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
 
     full = "\n".join(parts)
     if len(full) <= 4096:
-        await message.bot.send_message(chat_id=message.from_user.id, text=full, parse_mode=_PARSE)
+        await message.bot.send_message(
+            chat_id=message.from_user.id, text=full, parse_mode=_PARSE
+        )
         return
 
     # Split into chunks under 4096 chars
@@ -1246,7 +1438,6 @@ async def cmd_diagnostics(message: Message, db: Database) -> None:
         )
 
 
-
 @commands_router.message(Command("history"), IsAdmin())
 async def cmd_history(message: Message, db: Database) -> None:
     """Show the last 25 deletions and edits (sales + expenses)."""
@@ -1262,11 +1453,16 @@ async def cmd_history(message: Message, db: Database) -> None:
         return
 
     import pytz
+
     tz = pytz.timezone("Asia/Tbilisi")
     lines: list[str] = ["📋 <b>ბოლო ცვლილებები:</b>\n"]
     for r in rows:
         ts = r.get("ts")
-        ts_str = ts.astimezone(tz).strftime("%d.%m %H:%M") if ts and hasattr(ts, "astimezone") else "—"
+        ts_str = (
+            ts.astimezone(tz).strftime("%d.%m %H:%M")
+            if ts and hasattr(ts, "astimezone")
+            else "—"
+        )
         rtype = r.get("type", "")
         ref = r.get("ref_id", "?")
         if rtype == "deleted_expense":
@@ -1274,14 +1470,18 @@ async def cmd_history(message: Message, db: Database) -> None:
             cat = html.escape(str(r.get("category") or "—"))
             desc = html.escape(str(r.get("description") or ""))
             label = f"{cat}" + (f" — {desc}" if desc else "")
-            lines.append(f"🗑 <b>ხარჯი #{ref} წაიშალა</b> — {amt:.2f}₾ | {label} | {ts_str}")
+            lines.append(
+                f"🗑 <b>ხარჯი #{ref} წაიშალა</b> — {amt:.2f}₾ | {label} | {ts_str}"
+            )
         elif rtype == "sale_edit":
             price = float(r.get("amount") or 0)
             lines.append(f"✏️ <b>გაყიდვა #{ref} შეიცვალა</b> — {price:.2f}₾ | {ts_str}")
         elif rtype == "expense_edit":
             amt = float(r.get("amount") or 0)
             cat = html.escape(str(r.get("category") or "—"))
-            lines.append(f"✏️ <b>ხარჯი #{ref} შეიცვალა</b> — {amt:.2f}₾ | {cat} | {ts_str}")
+            lines.append(
+                f"✏️ <b>ხარჯი #{ref} შეიცვალა</b> — {amt:.2f}₾ | {cat} | {ts_str}"
+            )
 
     text = "\n".join(lines)
     if len(text) > 4096:
@@ -1350,7 +1550,10 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
         display_name = await _resolve_sale_display_name(db, deleted)
         original_text = _format_topic_text_for_sale(deleted, sale_id, display_name)
         await mark_cancelled(
-            message.bot, config.GROUP_ID, topic_msg, original_text,
+            message.bot,
+            config.GROUP_ID,
+            topic_msg,
+            original_text,
         )
 
     await message.bot.send_message(
@@ -1365,13 +1568,13 @@ async def cmd_deletesale(message: Message, db: Database) -> None:
     )
 
 
-
 # ─── /editproduct wizard ──────────────────────────────────────────────────────
+
 
 class EditProductState(StatesGroup):
     search = State()
-    field  = State()
-    value  = State()
+    field = State()
+    value = State()
 
 
 @commands_router.message(Command("editproduct"), IsAdmin())
@@ -1390,7 +1593,9 @@ async def editproduct_search(message: Message, state: FSMContext, db: Database) 
     query = (message.text or "").strip()
     products = await db.search_products(query, limit=8)
     if not products:
-        await message.reply("⚠️ ვერ ვიპოვე. სცადე სხვა OEM ან სახელი.", parse_mode=_PARSE)
+        await message.reply(
+            "⚠️ ვერ ვიპოვე. სცადე სხვა OEM ან სახელი.", parse_mode=_PARSE
+        )
         return
     if len(products) == 1:
         p = products[0]
@@ -1400,7 +1605,9 @@ async def editproduct_search(message: Message, state: FSMContext, db: Database) 
     buttons = []
     for p in products:
         lbl = p["name"] + (f" [{p['oem_code']}]" if p.get("oem_code") else "")
-        buttons.append([InlineKeyboardButton(text=lbl[:60], callback_data=f"ep_pick:{p['id']}")])
+        buttons.append(
+            [InlineKeyboardButton(text=lbl[:60], callback_data=f"ep_pick:{p['id']}")]
+        )
     await state.set_state(EditProductState.field)
     await message.answer(
         f"🔍 ვიპოვე {len(products)} პროდუქტი. აირჩიე:",
@@ -1409,8 +1616,12 @@ async def editproduct_search(message: Message, state: FSMContext, db: Database) 
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("ep_pick:"), IsAdmin())
-async def editproduct_pick(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("ep_pick:"), IsAdmin()
+)
+async def editproduct_pick(
+    callback: CallbackQuery, state: FSMContext, db: Database
+) -> None:
     assert isinstance(callback.message, Message)
     product_id = int((callback.data or "").split(":")[1])
     p = await db.get_product_by_id(product_id)
@@ -1422,15 +1633,35 @@ async def editproduct_pick(callback: CallbackQuery, state: FSMContext, db: Datab
     await callback.answer()
 
 
-async def _editproduct_show_fields(message: Message, state: FSMContext, p: ProductRow) -> None:
+async def _editproduct_show_fields(
+    message: Message, state: FSMContext, p: ProductRow
+) -> None:
     await state.set_state(EditProductState.field)
     oem = p.get("oem_code") or "—"
     buttons = [
-        [InlineKeyboardButton(text=f"📝 სახელი: {p['name'][:30]}", callback_data="ep_field:name")],
+        [
+            InlineKeyboardButton(
+                text=f"📝 სახელი: {p['name'][:30]}", callback_data="ep_field:name"
+            )
+        ],
         [InlineKeyboardButton(text=f"🔑 OEM: {oem}", callback_data="ep_field:oem")],
-        [InlineKeyboardButton(text=f"💰 ფასი: {float(p['unit_price']):.2f}₾", callback_data="ep_field:price")],
-        [InlineKeyboardButton(text=f"📦 მინ. მარაგი: {p['min_stock']}", callback_data="ep_field:minstock")],
-        [InlineKeyboardButton(text=f"📐 ერთ.ზომა: {p.get('unit', 'ც')}", callback_data="ep_field:unit")],
+        [
+            InlineKeyboardButton(
+                text=f"💰 ფასი: {float(p['unit_price']):.2f}₾",
+                callback_data="ep_field:price",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"📦 მინ. მარაგი: {p['min_stock']}",
+                callback_data="ep_field:minstock",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"📐 ერთ.ზომა: {p.get('unit', 'ც')}", callback_data="ep_field:unit"
+            )
+        ],
         [InlineKeyboardButton(text="❌ გაუქმება", callback_data="ep_cancel")],
     ]
     await message.answer(
@@ -1440,7 +1671,9 @@ async def _editproduct_show_fields(message: Message, state: FSMContext, p: Produ
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("ep_field:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("ep_field:"), IsAdmin()
+)
 async def editproduct_pick_field(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     field = (callback.data or "").split(":")[1]
@@ -1461,7 +1694,9 @@ async def editproduct_pick_field(callback: CallbackQuery, state: FSMContext) -> 
 
 
 @commands_router.message(StateFilter(EditProductState.value), IsAdmin())
-async def editproduct_enter_value(message: Message, state: FSMContext, db: Database) -> None:
+async def editproduct_enter_value(
+    message: Message, state: FSMContext, db: Database
+) -> None:
     data = await state.get_data()
     product_id: int = data["ep_product_id"]
     field: str = data["ep_field"]
@@ -1511,8 +1746,6 @@ async def editproduct_cancel(callback: CallbackQuery, state: FSMContext) -> None
     await callback.answer()
 
 
-
-
 @commands_router.message(Command("checksales"), IsAdmin())
 async def cmd_checksales(message: Message, db: Database) -> None:
     """Show all unreceipted company (შპს) sales as inline buttons."""
@@ -1531,7 +1764,9 @@ async def cmd_checksales(message: Message, db: Database) -> None:
         name = (s.get("product_name") or s.get("notes") or "—")[:28]
         amount = float(s["unit_price"]) * s["quantity"]
         label = f"🧾 #{s['id']} {name} — {amount:.0f}₾"
-        buttons.append([InlineKeyboardButton(text=label, callback_data=f"cs:{s['id']}")])
+        buttons.append(
+            [InlineKeyboardButton(text=label, callback_data=f"cs:{s['id']}")]
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
@@ -1545,7 +1780,9 @@ async def cmd_checksales(message: Message, db: Database) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("cs:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("cs:"), IsAdmin()
+)
 async def checksales_receipt_callback(callback: CallbackQuery, db: Database) -> None:
     assert isinstance(callback.message, Message)
     sale_id = int((callback.data or "").split(":")[1])
@@ -1553,7 +1790,8 @@ async def checksales_receipt_callback(callback: CallbackQuery, db: Database) -> 
     if done:
         old_kb = callback.message.reply_markup
         new_rows = [
-            row for row in (old_kb.inline_keyboard if old_kb else [])
+            row
+            for row in (old_kb.inline_keyboard if old_kb else [])
             if not any(btn.callback_data == f"cs:{sale_id}" for btn in row)
         ]
         new_kb = InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
@@ -1578,9 +1816,13 @@ async def cmd_complete_order(message: Message, db: Database) -> None:
     buttons = []
     for o in orders:
         name = (o.get("product_name") or o.get("notes") or "—")[:30]
-        icon = {"urgent": "🔴", "normal": "🟡", "low": "🟢"}.get(o.get("priority", "normal"), "🟡")
+        icon = {"urgent": "🔴", "normal": "🟡", "low": "🟢"}.get(
+            o.get("priority", "normal"), "🟡"
+        )
         label = f"{icon} #{o['id']} {name} — {o['quantity_needed']}ც"
-        buttons.append([InlineKeyboardButton(text=label, callback_data=f"co:{o['id']}")])
+        buttons.append(
+            [InlineKeyboardButton(text=label, callback_data=f"co:{o['id']}")]
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
@@ -1590,7 +1832,9 @@ async def cmd_complete_order(message: Message, db: Database) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("co:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("co:"), IsAdmin()
+)
 async def complete_order_callback(callback: CallbackQuery, db: Database) -> None:
     assert isinstance(callback.message, Message)
     order_id = int((callback.data or "").split(":")[1])
@@ -1598,7 +1842,8 @@ async def complete_order_callback(callback: CallbackQuery, db: Database) -> None
     if done:
         old_kb = callback.message.reply_markup
         new_rows = [
-            row for row in (old_kb.inline_keyboard if old_kb else [])
+            row
+            for row in (old_kb.inline_keyboard if old_kb else [])
             if not any(btn.callback_data == f"co:{order_id}" for btn in row)
         ]
         new_kb = InlineKeyboardMarkup(inline_keyboard=new_rows) if new_rows else None
@@ -1608,15 +1853,14 @@ async def complete_order_callback(callback: CallbackQuery, db: Database) -> None
         await callback.answer(f"⚠️ შეკვეთა #{order_id} ვერ მოიძებნა", show_alert=True)
 
 
-
-
 # ─── /addproduct wizard ───────────────────────────────────────────────────────
 
+
 class AddProductState(StatesGroup):
-    name  = State()
-    oem   = State()
-    qty   = State()
-    unit  = State()
+    name = State()
+    oem = State()
+    qty = State()
+    unit = State()
     price = State()
 
 
@@ -1643,8 +1887,7 @@ async def addproduct_oem(message: Message, state: FSMContext) -> None:
     await state.set_state(AddProductState.name)
     oem_line = f"✅ OEM: <code>{html.escape(oem)}</code>\n\n" if oem else ""
     await message.reply(
-        f"{oem_line}"
-        "<b>2/5 — პროდუქტის დასახელება:</b>",
+        f"{oem_line}<b>2/5 — პროდუქტის დასახელება:</b>",
         parse_mode=_PARSE,
     )
 
@@ -1657,7 +1900,9 @@ async def addproduct_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(ap_name=name)
     await state.set_state(AddProductState.qty)
-    await message.reply("<b>3/5 — საწყისი რაოდენობა</b> (მთელი რიცხვი):", parse_mode=_PARSE)
+    await message.reply(
+        "<b>3/5 — საწყისი რაოდენობა</b> (მთელი რიცხვი):", parse_mode=_PARSE
+    )
 
 
 @commands_router.message(StateFilter(AddProductState.qty), IsAdmin())
@@ -1667,7 +1912,9 @@ async def addproduct_qty(message: Message, state: FSMContext) -> None:
         if qty < 0:
             raise ValueError
     except ValueError:
-        await message.reply("❌ სწორი მთელი რიცხვი ჩაწერე (0 ან მეტი).", parse_mode=_PARSE)
+        await message.reply(
+            "❌ სწორი მთელი რიცხვი ჩაწერე (0 ან მეტი).", parse_mode=_PARSE
+        )
         return
     await state.update_data(ap_qty=qty)
     await state.set_state(AddProductState.unit)
@@ -1690,13 +1937,17 @@ async def addproduct_qty(message: Message, state: FSMContext) -> None:
     )
 
 
-@commands_router.callback_query(lambda c: c.data and c.data.startswith("ap_unit:"), IsAdmin())
+@commands_router.callback_query(
+    lambda c: c.data and c.data.startswith("ap_unit:"), IsAdmin()
+)
 async def addproduct_unit_cb(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     val = (callback.data or "").split(":", 1)[1]
     if val == "__custom__":
         await state.set_state(AddProductState.unit)
-        await callback.message.edit_text("<b>4/5 — ერთეულის ზომა</b> ჩაწერე:", parse_mode=_PARSE)
+        await callback.message.edit_text(
+            "<b>4/5 — ერთეულის ზომა</b> ჩაწერე:", parse_mode=_PARSE
+        )
         await callback.answer()
         return
     await state.update_data(ap_unit=val)
@@ -1770,9 +2021,6 @@ async def addproduct_price(message: Message, state: FSMContext, db: Database) ->
     )
 
 
-
-
-
 def _build_supplier_section(ok_rows: list[ImportRow]) -> list[str]:
     """Group successful rows by supplier/invoice and return summary lines."""
     if not any(r.supplier or r.invoice_number for r in ok_rows):
@@ -1803,15 +2051,26 @@ def _build_rate_diff_section(ok_rows: list[ImportRow]) -> list[str]:
     # Key: (supplier, invoice_number, decl_rate, inv_rate)
     groups: dict[tuple, float] = {}
     for r in relevant:
-        key = (r.supplier or "—", r.invoice_number or "—", r.exchange_rate, r.invoice_exchange_rate)
-        diff = (r.exchange_rate - (r.invoice_exchange_rate or 0.0)) * r.unit_price_usd * r.quantity
+        key = (
+            r.supplier or "—",
+            r.invoice_number or "—",
+            r.exchange_rate,
+            r.invoice_exchange_rate,
+        )
+        diff = (
+            (r.exchange_rate - (r.invoice_exchange_rate or 0.0))
+            * r.unit_price_usd
+            * r.quantity
+        )
         groups[key] = groups.get(key, 0.0) + diff
 
     lines: list[str] = ["\n💱 <b>კურსთა სხვაობა (ინვ.კ. → დეკლ.კ.):</b>"]
     for (supplier, inv_num, decl_rate, inv_rate), total_diff in groups.items():
         s = html.escape(supplier)
         sign = "+" if total_diff >= 0 else ""
-        label = "ძვირია" if total_diff > 0 else ("იაფია" if total_diff < 0 else "სხვ.=0")
+        label = (
+            "ძვირია" if total_diff > 0 else ("იაფია" if total_diff < 0 else "სხვ.=0")
+        )
         lines.append(
             f"  {s}: {inv_rate:.4f} → {decl_rate:.4f} | "
             f"სულ: <b>{sign}{total_diff:.2f}₾</b> ({label})"
@@ -1835,7 +2094,11 @@ def _build_price_change_lines(
             unchanged_count += 1
         else:
             arrow = "▲" if new_price > prev_price else "▼"
-            pct = ((new_price - prev_price) / prev_price * 100) if prev_price else Decimal(0)
+            pct = (
+                ((new_price - prev_price) / prev_price * 100)
+                if prev_price
+                else Decimal(0)
+            )
             sign = "+" if pct > 0 else "−"
             changed.append(
                 f"{arrow} {label}    ${prev_price:.2f} → <b>${new_price:.2f}</b>"
@@ -1859,6 +2122,7 @@ def _build_price_change_lines(
 
 
 # ─── /import — Excel cost-tracking import (9 columns) ────────────────────────
+
 
 class ImportState(StatesGroup):
     waiting_file = State()
@@ -1889,7 +2153,9 @@ async def cmd_import(message: Message, state: FSMContext) -> None:
 
 
 @commands_router.message(StateFilter(ImportState.waiting_file), IsAdmin())
-async def import_file_received(message: Message, state: FSMContext, db: "Database") -> None:
+async def import_file_received(
+    message: Message, state: FSMContext, db: "Database"
+) -> None:
     """Handle the uploaded 9-column import Excel file."""
     doc: Optional[Document] = message.document
     if not doc or not (doc.file_name or "").lower().endswith(".xlsx"):
@@ -1955,7 +2221,9 @@ async def import_file_received(message: Message, state: FSMContext, db: "Databas
             else:
                 updated += 1
             ok_rows.append(r)
-            price_changes.append((r.oem, r.name, r.unit_price_usd, prev_prices.get(r.oem)))
+            price_changes.append(
+                (r.oem, r.name, r.unit_price_usd, prev_prices.get(r.oem))
+            )
             # Auto-fulfill pending orders for this product.
             fulfilled = await db.match_orders_on_receipt(
                 product_id=int(result["product_id"]),

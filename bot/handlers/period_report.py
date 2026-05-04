@@ -40,21 +40,32 @@ class PeriodState(StatesGroup):
 
 
 def _quick_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📅 ბოლო 7 დღე",    callback_data="qperiod:week"),
-            InlineKeyboardButton(text="🗓 მიმდინარე თვე", callback_data="qperiod:month"),
-        ],
-        [
-            InlineKeyboardButton(text="◀️ გასული თვე", callback_data="qperiod:lastmonth"),
-        ],
-        [
-            InlineKeyboardButton(text="📆 კონკრეტული თარიღები", callback_data="qperiod:custom"),
-        ],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📅 ბოლო 7 დღე", callback_data="qperiod:week"
+                ),
+                InlineKeyboardButton(
+                    text="🗓 მიმდინარე თვე", callback_data="qperiod:month"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="◀️ გასული თვე", callback_data="qperiod:lastmonth"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📆 კონკრეტული თარიღები", callback_data="qperiod:custom"
+                ),
+            ],
+        ]
+    )
 
 
 # ─── /report_period command ───────────────────────────────────────────────────
+
 
 @period_router.message(Command("report_period"), IsAdmin())
 async def cmd_report_period(message: Message, state: FSMContext) -> None:
@@ -69,7 +80,10 @@ async def cmd_report_period(message: Message, state: FSMContext) -> None:
 
 # ─── Quick-option buttons ─────────────────────────────────────────────────────
 
-@period_router.callback_query(lambda c: c.data and c.data.startswith("qperiod:"), IsAdmin())
+
+@period_router.callback_query(
+    lambda c: c.data and c.data.startswith("qperiod:"), IsAdmin()
+)
 async def handle_quick_period(
     callback: CallbackQuery, db: Database, state: FSMContext
 ) -> None:
@@ -119,12 +133,15 @@ async def handle_quick_period(
         db.get_unpaid_expenses_by_period(date_from, date_to),
     )
 
-    text = format_period_report(sales, returns, expenses, date_from, date_to, cash, pending)
+    text = format_period_report(
+        sales, returns, expenses, date_from, date_to, cash, pending
+    )
     await callback.message.edit_text(text, parse_mode=_PARSE)
     await callback.answer()
 
 
 # ─── Calendar: start date ─────────────────────────────────────────────────────
+
 
 @period_router.callback_query(
     simple_cal_callback.filter(), StateFilter(PeriodState.waiting_start), IsAdmin()
@@ -157,6 +174,7 @@ async def process_start_date(
 
 
 # ─── Calendar: end date ───────────────────────────────────────────────────────
+
 
 @period_router.callback_query(
     simple_cal_callback.filter(), StateFilter(PeriodState.waiting_end), IsAdmin()
@@ -201,7 +219,9 @@ async def process_end_date(
         await callback.answer()
         return
 
-    loading = await callback.message.answer("⏳ ანგარიში მუშავდება...", parse_mode=_PARSE)
+    loading = await callback.message.answer(
+        "⏳ ანგარიში მუშავდება...", parse_mode=_PARSE
+    )
 
     sales, returns, expenses, cash, pending = await asyncio.gather(
         db.get_sales_by_period(date_from, date_to),
@@ -211,6 +231,8 @@ async def process_end_date(
         db.get_unpaid_expenses_by_period(date_from, date_to),
     )
 
-    text = format_period_report(sales, returns, expenses, date_from, date_to, cash, pending)
+    text = format_period_report(
+        sales, returns, expenses, date_from, date_to, cash, pending
+    )
     await loading.edit_text(text, parse_mode=_PARSE)
     await callback.answer()

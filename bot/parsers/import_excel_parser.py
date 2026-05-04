@@ -138,8 +138,23 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         # Pad to at least 13 cells (cols 10–13 are optional)
         cells = list(row) + [None] * max(0, 13 - len(row))
 
-        raw_date, raw_oem, raw_name, raw_qty, raw_unit, raw_price_usd, raw_rate, raw_transport, raw_other = cells[:9]
-        raw_supplier, raw_invoice_num, raw_invoice_date, raw_invoice_rate = cells[9], cells[10], cells[11], cells[12]
+        (
+            raw_date,
+            raw_oem,
+            raw_name,
+            raw_qty,
+            raw_unit,
+            raw_price_usd,
+            raw_rate,
+            raw_transport,
+            raw_other,
+        ) = cells[:9]
+        raw_supplier, raw_invoice_num, raw_invoice_date, raw_invoice_rate = (
+            cells[9],
+            cells[10],
+            cells[11],
+            cells[12],
+        )
 
         # ── Date — carry forward last valid date if missing ──────────────────
         parsed_date = _parse_date(raw_date)
@@ -162,7 +177,9 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         # ── Quantity ─────────────────────────────────────────────────────────
         qty = _parse_float(raw_qty)
         if qty is None or qty <= 0:
-            errors.append(f"სტრიქონი {row_num} ({oem}): არასწორი რაოდენობა '{raw_qty}' — გამოტოვებულია")
+            errors.append(
+                f"სტრიქონი {row_num} ({oem}): არასწორი რაოდენობა '{raw_qty}' — გამოტოვებულია"
+            )
             continue
 
         # ── Unit ─────────────────────────────────────────────────────────────
@@ -173,13 +190,17 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         # ── Unit price USD ────────────────────────────────────────────────────
         unit_price_usd = _parse_float(raw_price_usd)
         if unit_price_usd is None or unit_price_usd < 0:
-            errors.append(f"სტრიქონი {row_num} ({oem}): არასწორი ფასი '{raw_price_usd}' — გამოტოვებულია")
+            errors.append(
+                f"სტრიქონი {row_num} ({oem}): არასწორი ფასი '{raw_price_usd}' — გამოტოვებულია"
+            )
             continue
 
         # ── Exchange rate ─────────────────────────────────────────────────────
         exchange_rate = _parse_float(raw_rate)
         if exchange_rate is None or exchange_rate <= 0:
-            errors.append(f"სტრიქონი {row_num} ({oem}): არასწორი კურსი '{raw_rate}' — გამოტოვებულია")
+            errors.append(
+                f"სტრიქონი {row_num} ({oem}): არასწორი კურსი '{raw_rate}' — გამოტოვებულია"
+            )
             continue
 
         # ── Transport & other costs (empty = 0) ──────────────────────────────
@@ -192,8 +213,16 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
             other = 0.0
 
         # ── Optional: supplier & invoice number (cols 10–11) ─────────────────
-        supplier = str(raw_supplier).strip() if raw_supplier and str(raw_supplier).strip() else None
-        invoice_number = str(raw_invoice_num).strip() if raw_invoice_num and str(raw_invoice_num).strip() else None
+        supplier = (
+            str(raw_supplier).strip()
+            if raw_supplier and str(raw_supplier).strip()
+            else None
+        )
+        invoice_number = (
+            str(raw_invoice_num).strip()
+            if raw_invoice_num and str(raw_invoice_num).strip()
+            else None
+        )
 
         # ── Optional: invoice date (col 12) ──────────────────────────────────
         invoice_date = _parse_date(raw_invoice_date) if raw_invoice_date else None
@@ -209,23 +238,25 @@ def parse_import_excel(buf: BytesIO) -> tuple[list[ImportRow], list[str]]:
         total_cost = round((unit_price_usd * exchange_rate) + transport + other, 4)
         suggested = round(total_cost * RETAIL_MARKUP, 4)
 
-        rows.append(ImportRow(
-            import_date=import_date,
-            oem=oem,
-            name=name,
-            quantity=qty,
-            unit=unit,
-            unit_price_usd=unit_price_usd,
-            exchange_rate=exchange_rate,
-            transport_cost_gel=transport,
-            other_cost_gel=other,
-            total_unit_cost_gel=total_cost,
-            suggested_retail_price_gel=suggested,
-            supplier=supplier,
-            invoice_number=invoice_number,
-            invoice_date=invoice_date,
-            invoice_exchange_rate=invoice_exchange_rate,
-        ))
+        rows.append(
+            ImportRow(
+                import_date=import_date,
+                oem=oem,
+                name=name,
+                quantity=qty,
+                unit=unit,
+                unit_price_usd=unit_price_usd,
+                exchange_rate=exchange_rate,
+                transport_cost_gel=transport,
+                other_cost_gel=other,
+                total_unit_cost_gel=total_cost,
+                suggested_retail_price_gel=suggested,
+                supplier=supplier,
+                invoice_number=invoice_number,
+                invoice_date=invoice_date,
+                invoice_exchange_rate=invoice_exchange_rate,
+            )
+        )
 
     wb.close()
     return rows, errors

@@ -40,28 +40,31 @@ from typing import List, Optional, Tuple
 
 PAYMENT_CASH = "cash"
 PAYMENT_TRANSFER = "transfer"
-PAYMENT_CREDIT = "credit"   # ნისია — გადახდა გამოტოვებულია
+PAYMENT_CREDIT = "credit"  # ნისია — გადახდა გამოტოვებულია
 
 
 # ─── Data classes ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ParsedSale:
-    raw_product: str       # product name or OEM exactly as written
+    raw_product: str  # product name or OEM exactly as written
     quantity: int
     price: float
-    payment_method: str    # cash | transfer | credit
+    payment_method: str  # cash | transfer | credit
     is_return: bool = False
-    seller_type: str = "individual"   # individual (ფზ selling entity) | llc (შპს selling entity)
-    buyer_type: str = "retail"        # retail (ფიზ. პირი buyer) | business (მეწარმე buyer)
+    seller_type: str = (
+        "individual"  # individual (ფზ selling entity) | llc (შპს selling entity)
+    )
+    buyer_type: str = "retail"  # retail (ფიზ. პირი buyer) | business (მეწარმე buyer)
     customer_name: str = ""
     notes: str = ""
     # Split-payment marker fields (set when "მომცა/ხელზე X დარჩა Y" is parsed)
     is_split_payment: bool = False
-    split_paid: float = 0.0   # cash portion already received
+    split_paid: float = 0.0  # cash portion already received
     # Debt / AR fields (set when ვალი/debt keyword detected)
-    is_debt: bool = False     # True when explicitly marked as debt with ვალი keyword
-    debt_client: str = ""     # debtor name extracted after the debt keyword
+    is_debt: bool = False  # True when explicitly marked as debt with ვალი keyword
+    debt_client: str = ""  # debtor name extracted after the debt keyword
 
 
 @dataclass
@@ -72,7 +75,9 @@ class ParsedExpense:
 
 
 ORDER_PRIORITY_URGENT = "urgent"
-ORDER_PRIORITY_NORMAL = "normal"  # legacy — retained for import compat; do not use in new code
+ORDER_PRIORITY_NORMAL = (
+    "normal"  # legacy — retained for import compat; do not use in new code
+)
 ORDER_PRIORITY_LOW = "low"
 
 
@@ -87,16 +92,61 @@ class ParsedOrder:
 # ─── Expense category detection ──────────────────────────────────────────────
 
 _CATEGORY_RULES: List[tuple] = [
-    (re.compile(r"ბენზინ|საწვავ|ნავთ|fuel|petrol|gas(?:oline)?", re.UNICODE | re.IGNORECASE), "fuel"),
-    (re.compile(r"საბაჟ|customs?|tax(?:es)?|გადასახ|ბაჟ", re.UNICODE | re.IGNORECASE), "customs"),
-    (re.compile(r"დელივ|კურიერ|გაგზავნ|მიტან|deliver|courier|shipping|postal|ფოსტ", re.UNICODE | re.IGNORECASE), "delivery"),
-    (re.compile(r"სერვის|სარემონტ|შეკეთ|repair|service|მოვლ", re.UNICODE | re.IGNORECASE), "maintenance"),
-    (re.compile(r"რეკლამ|advertis|marketing|მარკეტ|promotion", re.UNICODE | re.IGNORECASE), "marketing"),
-    (re.compile(r"ოფის|office|კანცელარ|stationer", re.UNICODE | re.IGNORECASE), "office"),
-    (re.compile(r"კომუნალ|utility|utilities|electric|წყალ|გაზ(?:ი)?$|ელ\.?ენ", re.UNICODE | re.IGNORECASE), "utilities"),
-    (re.compile(r"ხელფას|salary|სახელფ|მუშა|employee|staff", re.UNICODE | re.IGNORECASE), "salary"),
+    (
+        re.compile(
+            r"ბენზინ|საწვავ|ნავთ|fuel|petrol|gas(?:oline)?", re.UNICODE | re.IGNORECASE
+        ),
+        "fuel",
+    ),
+    (
+        re.compile(
+            r"საბაჟ|customs?|tax(?:es)?|გადასახ|ბაჟ", re.UNICODE | re.IGNORECASE
+        ),
+        "customs",
+    ),
+    (
+        re.compile(
+            r"დელივ|კურიერ|გაგზავნ|მიტან|deliver|courier|shipping|postal|ფოსტ",
+            re.UNICODE | re.IGNORECASE,
+        ),
+        "delivery",
+    ),
+    (
+        re.compile(
+            r"სერვის|სარემონტ|შეკეთ|repair|service|მოვლ", re.UNICODE | re.IGNORECASE
+        ),
+        "maintenance",
+    ),
+    (
+        re.compile(
+            r"რეკლამ|advertis|marketing|მარკეტ|promotion", re.UNICODE | re.IGNORECASE
+        ),
+        "marketing",
+    ),
+    (
+        re.compile(r"ოფის|office|კანცელარ|stationer", re.UNICODE | re.IGNORECASE),
+        "office",
+    ),
+    (
+        re.compile(
+            r"კომუნალ|utility|utilities|electric|წყალ|გაზ(?:ი)?$|ელ\.?ენ",
+            re.UNICODE | re.IGNORECASE,
+        ),
+        "utilities",
+    ),
+    (
+        re.compile(
+            r"ხელფას|salary|სახელფ|მუშა|employee|staff", re.UNICODE | re.IGNORECASE
+        ),
+        "salary",
+    ),
     (re.compile(r"სადაზღვ|insurance|დაზღვ", re.UNICODE | re.IGNORECASE), "insurance"),
-    (re.compile(r"ტრანსპ|transport|მანქან|car|auto|სატვ", re.UNICODE | re.IGNORECASE), "transport"),
+    (
+        re.compile(
+            r"ტრანსპ|transport|მანქან|car|auto|სატვ", re.UNICODE | re.IGNORECASE
+        ),
+        "transport",
+    ),
 ]
 
 
@@ -110,7 +160,9 @@ def detect_expense_category(description: str) -> Optional[str]:
 
 # ─── Keyword patterns ─────────────────────────────────────────────────────────
 
-_CASH_RE = re.compile(r"ხელ[ზბ]?[ე-ს]?|ქეში|ნაღ|მომც|გადაიხად", re.UNICODE | re.IGNORECASE)
+_CASH_RE = re.compile(
+    r"ხელ[ზბ]?[ე-ს]?|ქეში|ნაღ|მომც|გადაიხად", re.UNICODE | re.IGNORECASE
+)
 _TRANSFER_RE = re.compile(
     r"გადარ|დარიცხ|ტრანსფ|გადაქ|transfer|ბარათ|კარტ|დავურიცხ",
     re.UNICODE | re.IGNORECASE,
@@ -220,9 +272,7 @@ _ORDER_QTY_ONLY = re.compile(r"^\d+\s*ც(?:\s+\S+)?\s*$", re.UNICODE)
 # Order: product name only, no quantity (qty stored as 0)
 # Must have at least 2 Georgian characters to avoid false positives.
 # Must NOT contain a price indicator (₾ ლ $).
-_ORDER_PRODUCT_ONLY = re.compile(
-    r"^[^\d₾ლ$\-].{3,}$", re.UNICODE
-)
+_ORDER_PRODUCT_ONLY = re.compile(r"^[^\d₾ლ$\-].{3,}$", re.UNICODE)
 
 # Priority keyword detection
 _PRIORITY_URGENT_RE = re.compile(r"სასწრაფ", re.UNICODE | re.IGNORECASE)
@@ -238,13 +288,14 @@ def _detect_priority(text: str) -> str:
         return ORDER_PRIORITY_URGENT
     return ORDER_PRIORITY_LOW
 
+
 # Phone number — silently ignored in sales topic (contact info, not a sale).
 # Covers: +995 592 15 90 52  |  592159052  |  555 12 34 56  |  032 2 XX XX XX
 _PHONE_RE = re.compile(
-    r"^\+[\d\s\-().]{8,}$"     # international: +995...
-    r"|^5\d{8}$"               # Georgian mobile local: 5XXXXXXXX (9 digits)
+    r"^\+[\d\s\-().]{8,}$"  # international: +995...
+    r"|^5\d{8}$"  # Georgian mobile local: 5XXXXXXXX (9 digits)
     r"|^5\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}$"  # 5XX XX XX XX
-    r"|^0\d{8,9}$",            # landline with leading 0
+    r"|^0\d{8,9}$",  # landline with leading 0
     re.UNICODE,
 )
 
@@ -286,6 +337,7 @@ _SALE_DUAL = re.compile(
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _normalize_text(text: str) -> str:
     """Strip emoji, normalize whitespace, convert comma-price to dot-price."""
     text = _EMOJI_RE.sub(" ", text)
@@ -317,13 +369,13 @@ def _parse_rest(rest: Optional[str]) -> Tuple[str, str, str, str, bool]:
     llc_match = _LLC_RE.search(rest)
     if llc_match:
         seller = "llc"
-        rest = (rest[: llc_match.start()] + rest[llc_match.end():]).strip()
+        rest = (rest[: llc_match.start()] + rest[llc_match.end() :]).strip()
 
     # Detect and remove business-buyer keyword (მეწარმეზე / შპსზე / ინდ.მეწ)
     biz_match = _BUSINESS_BUYER_RE.search(rest)
     if biz_match:
         buyer = "business"
-        rest = (rest[: biz_match.start()] + rest[biz_match.end():]).strip()
+        rest = (rest[: biz_match.start()] + rest[biz_match.end() :]).strip()
 
     tokens = rest.split()
     payment = PAYMENT_CREDIT
@@ -361,6 +413,7 @@ def _parse_price(raw: str) -> float:
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
+
 
 def parse_sale_message(text: str) -> Optional[ParsedSale]:
     """
@@ -424,7 +477,9 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
         qty = int(float(m.group("qty")))
         raw_price = _parse_price(m.group("price"))
         # "ჯამში" means the price is the total; derive unit price
-        unit_price = (raw_price / qty) if (m.group("total_flag") and qty > 0) else raw_price
+        unit_price = (
+            (raw_price / qty) if (m.group("total_flag") and qty > 0) else raw_price
+        )
         payment, seller, buyer, customer, is_debt = _parse_rest(m.group("rest"))
         # LLC keyword may appear before the quantity (e.g., "სარკე შპსდან 1ც 30₾")
         if seller == "individual" and _LLC_RE.search(product_raw):
@@ -484,13 +539,19 @@ def parse_sale_message(text: str) -> Optional[ParsedSale]:
         kw = m.group("kw")
         if _CASH_RE.search(kw):
             return ParsedSale(
-                raw_product="", quantity=1, price=_parse_price(m.group("price")),
-                payment_method=PAYMENT_CASH, is_return=is_return,
+                raw_product="",
+                quantity=1,
+                price=_parse_price(m.group("price")),
+                payment_method=PAYMENT_CASH,
+                is_return=is_return,
             )
         if _TRANSFER_RE.search(kw):
             return ParsedSale(
-                raw_product="", quantity=1, price=_parse_price(m.group("price")),
-                payment_method=PAYMENT_TRANSFER, is_return=is_return,
+                raw_product="",
+                quantity=1,
+                price=_parse_price(m.group("price")),
+                payment_method=PAYMENT_TRANSFER,
+                is_return=is_return,
             )
         # kw is not a payment keyword → fall through to Pattern E
 
@@ -545,7 +606,7 @@ def _extract_hashtag_category(text: str) -> tuple[str, Optional[str]]:
     if not m:
         return text, None
     category = m.group(1).strip()
-    cleaned = (text[: m.start()] + text[m.end():]).strip()
+    cleaned = (text[: m.start()] + text[m.end() :]).strip()
     cleaned = " ".join(cleaned.split())  # collapse double spaces left by removal
     return cleaned, category if category else None
 
@@ -633,12 +694,28 @@ def parse_dual_sale_message(text: str) -> Optional[List[ParsedSale]]:
     unit2 = half / qty2 if qty2 > 0 else half
 
     return [
-        ParsedSale(raw_product=product1, quantity=qty1, price=unit1,
-                   payment_method=payment, seller_type=seller, buyer_type=buyer,
-                   customer_name=customer, is_debt=is_debt, debt_client=customer if is_debt else ""),
-        ParsedSale(raw_product=product2, quantity=qty2, price=unit2,
-                   payment_method=payment, seller_type=seller, buyer_type=buyer,
-                   customer_name=customer, is_debt=is_debt, debt_client=customer if is_debt else ""),
+        ParsedSale(
+            raw_product=product1,
+            quantity=qty1,
+            price=unit1,
+            payment_method=payment,
+            seller_type=seller,
+            buyer_type=buyer,
+            customer_name=customer,
+            is_debt=is_debt,
+            debt_client=customer if is_debt else "",
+        ),
+        ParsedSale(
+            raw_product=product2,
+            quantity=qty2,
+            price=unit2,
+            payment_method=payment,
+            seller_type=seller,
+            buyer_type=buyer,
+            customer_name=customer,
+            is_debt=is_debt,
+            debt_client=customer if is_debt else "",
+        ),
     ]
 
 
@@ -764,6 +841,7 @@ def parse_order_message(text: str) -> Optional[ParsedOrder]:
 
 
 # ─── OEM code sanitization ───────────────────────────────────────────────────
+
 
 def sanitize_oem(raw: object) -> Optional[str]:
     """Normalise an OEM code read from an Excel cell.

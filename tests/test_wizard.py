@@ -1,4 +1,5 @@
 """Tests for bot/handlers/wizard.py — pure helpers and critical FSM handler paths."""
+
 from __future__ import annotations
 
 import os
@@ -38,6 +39,7 @@ from bot.handlers.wizard import (  # noqa: E402
 
 
 # ─── Pure helpers ─────────────────────────────────────────────────────────────
+
 
 class TestCalcVat:
     def test_standard_amount(self):
@@ -108,6 +110,7 @@ class TestKeyboardBuilders:
 
 # ─── FSM handler helpers ──────────────────────────────────────────────────────
 
+
 def _make_callback(data: str = "wiz:test", user_id: int = 12345) -> MagicMock:
     cb = MagicMock()
     cb.data = data
@@ -145,6 +148,7 @@ def _make_db() -> MagicMock:
 
 # ─── cb_cancel ────────────────────────────────────────────────────────────────
 
+
 class TestCbCancel:
     @pytest.mark.asyncio
     async def test_clears_state_and_edits_text(self):
@@ -161,6 +165,7 @@ class TestCbCancel:
 
 # ─── cb_done ──────────────────────────────────────────────────────────────────
 
+
 class TestCbDone:
     @pytest.mark.asyncio
     async def test_clears_state_and_removes_keyboard(self):
@@ -175,6 +180,7 @@ class TestCbDone:
 
 
 # ─── sale_start ───────────────────────────────────────────────────────────────
+
 
 class TestSaleStart:
     @pytest.mark.asyncio
@@ -191,6 +197,7 @@ class TestSaleStart:
 
 
 # ─── sale_payment ─────────────────────────────────────────────────────────────
+
 
 class TestSalePayment:
     @pytest.mark.asyncio
@@ -225,6 +232,7 @@ class TestSalePayment:
 
 # ─── sale_seller_type ─────────────────────────────────────────────────────────
 
+
 class TestSaleSellerType:
     @pytest.mark.asyncio
     async def test_company_seller_auto_computes_vat_and_goes_to_buyer_type(self):
@@ -253,6 +261,7 @@ class TestSaleSellerType:
 
 
 # ─── sale_confirm ─────────────────────────────────────────────────────────────
+
 
 class TestSaleConfirm:
     def _state_data(self, **overrides) -> dict:
@@ -294,9 +303,13 @@ class TestSaleConfirm:
         state = _make_state(data=self._state_data(product_id=5))
         db = _make_db()
         db.create_sale = AsyncMock(return_value=(10, 0))
-        db.get_product_by_id = AsyncMock(return_value={
-            "id": 5, "name": "სარკე", "min_stock": 3,
-        })
+        db.get_product_by_id = AsyncMock(
+            return_value={
+                "id": 5,
+                "name": "სარკე",
+                "min_stock": 3,
+            }
+        )
 
         with patch("bot.handlers.wizard.format_topic_sale", return_value="OK"):
             await sale_confirm(cb, state, db)

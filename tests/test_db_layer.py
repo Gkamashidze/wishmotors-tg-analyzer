@@ -30,19 +30,24 @@ def _make_db() -> Database:
 def _make_pool_mock():
     """Return a MagicMock that simulates asyncpg.Pool with async context manager."""
     conn = AsyncMock()
-    conn.transaction = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=conn),
-        __aexit__=AsyncMock(return_value=None),
-    ))
+    conn.transaction = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=conn),
+            __aexit__=AsyncMock(return_value=None),
+        )
+    )
     pool = MagicMock()
-    pool.acquire = MagicMock(return_value=AsyncMock(
-        __aenter__=AsyncMock(return_value=conn),
-        __aexit__=AsyncMock(return_value=None),
-    ))
+    pool.acquire = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=conn),
+            __aexit__=AsyncMock(return_value=None),
+        )
+    )
     return pool, conn
 
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
+
 
 class TestDatabasePool:
     def test_pool_raises_before_init(self):
@@ -75,9 +80,13 @@ class TestGetProductById:
         db = _make_db()
         pool, conn = _make_pool_mock()
         fake_row = {
-            "id": 1, "name": "სარკე", "oem_code": "12345",
-            "current_stock": 10, "min_stock": 5,
-            "unit_price": 30.0, "created_at": None,
+            "id": 1,
+            "name": "სარკე",
+            "oem_code": "12345",
+            "current_stock": 10,
+            "min_stock": 5,
+            "unit_price": 30.0,
+            "created_at": None,
         }
         conn.fetchrow = AsyncMock(return_value=fake_row)
         db._pool = pool
@@ -96,7 +105,7 @@ class TestCreateSale:
         pool, conn = _make_pool_mock()
 
         # fetchrow sequence: INSERT sales → UPDATE products stock
-        sale_row  = {"id": 42}
+        sale_row = {"id": 42}
         stock_row = {"current_stock": 8}
         conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
         # _consume_inventory_fifo: no active batches → cost 0
@@ -148,13 +157,15 @@ class TestCreateSale:
         db = _make_db()
         pool, conn = _make_pool_mock()
 
-        sale_row  = {"id": 55}
+        sale_row = {"id": 55}
         stock_row = {"current_stock": 3}
         conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
         # One batch covering the full qty at cost 10.0 per unit.
-        conn.fetch = AsyncMock(return_value=[
-            {"id": 1, "remaining_quantity": 5, "unit_cost": 10.0},
-        ])
+        conn.fetch = AsyncMock(
+            return_value=[
+                {"id": 1, "remaining_quantity": 5, "unit_cost": 10.0},
+            ]
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
@@ -190,11 +201,18 @@ class TestDeleteSale:
         db = _make_db()
         pool, conn = _make_pool_mock()
         fake_sale = {
-            "id": 5, "product_id": 1, "quantity": 2,
-            "unit_price": 30.0, "payment_method": "cash",
-            "seller_type": "llc", "buyer_type": "retail", "customer_name": None,
-            "sold_at": None, "notes": None,
-            "cost_amount": 20.0, "output_vat": 0.0,
+            "id": 5,
+            "product_id": 1,
+            "quantity": 2,
+            "unit_price": 30.0,
+            "payment_method": "cash",
+            "seller_type": "llc",
+            "buyer_type": "retail",
+            "customer_name": None,
+            "sold_at": None,
+            "notes": None,
+            "cost_amount": 20.0,
+            "output_vat": 0.0,
         }
         conn.fetchrow = AsyncMock(return_value=fake_sale)
         conn.execute = AsyncMock()
@@ -218,10 +236,17 @@ class TestMarkSalePaid:
         """Full payoff of a nisia posts settlement pair (DR cash, CR AR)."""
         db = _make_db()
         pool, conn = _make_pool_mock()
-        conn.fetchrow = AsyncMock(return_value={
-            "id": 1, "unit_price": 30.0, "quantity": 2, "customer_name": "Giorgi",
-            "client_name": None, "seller_type": "llc", "buyer_type": "retail",
-        })
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "id": 1,
+                "unit_price": 30.0,
+                "quantity": 2,
+                "customer_name": "Giorgi",
+                "client_name": None,
+                "seller_type": "llc",
+                "buyer_type": "retail",
+            }
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
@@ -295,8 +320,11 @@ class TestReceiveInventoryBatch:
         db = _make_db()
         with pytest.raises(ValueError, match="quantity"):
             await db.receive_inventory_batch(
-                name="სარკე", oem_code="12345", quantity=0,
-                unit_cost=10.0, min_stock=20,
+                name="სარკე",
+                oem_code="12345",
+                quantity=0,
+                unit_cost=10.0,
+                min_stock=20,
             )
 
     @pytest.mark.asyncio
@@ -304,8 +332,11 @@ class TestReceiveInventoryBatch:
         db = _make_db()
         with pytest.raises(ValueError, match="unit_cost"):
             await db.receive_inventory_batch(
-                name="სარკე", oem_code="12345", quantity=5,
-                unit_cost=-1.0, min_stock=20,
+                name="სარკე",
+                oem_code="12345",
+                quantity=5,
+                unit_cost=-1.0,
+                min_stock=20,
             )
 
     @pytest.mark.asyncio
@@ -314,8 +345,11 @@ class TestReceiveInventoryBatch:
         db = _make_db()
         with pytest.raises(ValueError, match="oem_code"):
             await db.receive_inventory_batch(
-                name="სარკე", oem_code=None, quantity=5,
-                unit_cost=10.0, min_stock=20,
+                name="სარკე",
+                oem_code=None,
+                quantity=5,
+                unit_cost=10.0,
+                min_stock=20,
             )
 
     @pytest.mark.asyncio
@@ -324,8 +358,11 @@ class TestReceiveInventoryBatch:
         db = _make_db()
         with pytest.raises(ValueError, match="oem_code"):
             await db.receive_inventory_batch(
-                name="სარკე", oem_code="   ", quantity=5,
-                unit_cost=10.0, min_stock=20,
+                name="სარკე",
+                oem_code="   ",
+                quantity=5,
+                unit_cost=10.0,
+                min_stock=20,
             )
 
     @pytest.mark.asyncio
@@ -339,18 +376,23 @@ class TestReceiveInventoryBatch:
         #   2. UPDATE products SET current_stock += ... RETURNING current_stock
         #   3. INSERT INTO inventory_batches RETURNING id
         #   4. SELECT WAC aggregates
-        conn.fetchrow = AsyncMock(side_effect=[
-            {"id": 7},                                     # product found by OEM
-            {"current_stock": 30},                         # stock after receipt
-            {"id": 100},                                   # batch id
-            {"total_cost": 200.0, "total_qty": 20.0},      # WAC aggregates
-        ])
+        conn.fetchrow = AsyncMock(
+            side_effect=[
+                {"id": 7},  # product found by OEM
+                {"current_stock": 30},  # stock after receipt
+                {"id": 100},  # batch id
+                {"total_cost": 200.0, "total_qty": 20.0},  # WAC aggregates
+            ]
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
         result = await db.receive_inventory_batch(
-            name="სარკე განახლებული", oem_code="12345", quantity=10,
-            unit_cost=15.0, min_stock=20,
+            name="სარკე განახლებული",
+            oem_code="12345",
+            quantity=10,
+            unit_cost=15.0,
+            min_stock=20,
         )
 
         assert result["product_id"] == 7
@@ -374,19 +416,24 @@ class TestReceiveInventoryBatch:
         #   3. UPDATE products SET current_stock += ... RETURNING current_stock
         #   4. INSERT INTO inventory_batches RETURNING id
         #   5. SELECT WAC aggregates
-        conn.fetchrow = AsyncMock(side_effect=[
-            None,
-            {"id": 42},
-            {"current_stock": 5},
-            {"id": 101},
-            {"total_cost": 25.0, "total_qty": 5.0},
-        ])
+        conn.fetchrow = AsyncMock(
+            side_effect=[
+                None,
+                {"id": 42},
+                {"current_stock": 5},
+                {"id": 101},
+                {"total_cost": 25.0, "total_qty": 5.0},
+            ]
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
         result = await db.receive_inventory_batch(
-            name="ახალი ნაწილი", oem_code="99999",
-            quantity=5, unit_cost=5.0, min_stock=20,
+            name="ახალი ნაწილი",
+            oem_code="99999",
+            quantity=5,
+            unit_cost=5.0,
+            min_stock=20,
         )
 
         assert result["product_id"] == 42
@@ -412,8 +459,13 @@ class TestEditProduct:
         db = _make_db()
         pool, conn = _make_pool_mock()
         updated = {
-            "id": 1, "name": "ახალი სახელი", "oem_code": None,
-            "current_stock": 5, "min_stock": 2, "unit_price": 25.0, "created_at": None,
+            "id": 1,
+            "name": "ახალი სახელი",
+            "oem_code": None,
+            "current_stock": 5,
+            "min_stock": 2,
+            "unit_price": 25.0,
+            "created_at": None,
         }
         conn.fetchrow = AsyncMock(return_value=updated)
         db._pool = pool
@@ -437,16 +489,22 @@ class TestDbErrorPaths:
 
         # First fetchrow (SELECT by OEM) returns None → product not found
         # Second fetchrow (INSERT RETURNING id) raises UniqueViolationError (race)
-        conn.fetchrow = AsyncMock(side_effect=[
-            None,
-            asyncpg.UniqueViolationError(),
-        ])
+        conn.fetchrow = AsyncMock(
+            side_effect=[
+                None,
+                asyncpg.UniqueViolationError(),
+            ]
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
         with pytest.raises(asyncpg.UniqueViolationError):
             await db.receive_inventory_batch(
-                name="სარკე", oem_code="12345", quantity=5, unit_cost=10.0, min_stock=2,
+                name="სარკე",
+                oem_code="12345",
+                quantity=5,
+                unit_cost=10.0,
+                min_stock=2,
             )
 
     @pytest.mark.asyncio
@@ -461,8 +519,11 @@ class TestDbErrorPaths:
 
         with pytest.raises(asyncpg.UniqueViolationError):
             await db.create_sale(
-                product_id=1, quantity=1, unit_price=10.0,
-                payment_method="cash", seller_type="llc",
+                product_id=1,
+                quantity=1,
+                unit_price=10.0,
+                payment_method="cash",
+                seller_type="llc",
             )
 
     # ── Pool exhaustion ───────────────────────────────────────────────────────
@@ -472,10 +533,12 @@ class TestDbErrorPaths:
         """When pool.acquire() raises TooManyConnectionsError it propagates."""
         db = _make_db()
         pool = MagicMock()
-        pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
-            __aexit__=AsyncMock(return_value=None),
-        ))
+        pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
         db._pool = pool
 
         with pytest.raises(asyncpg.TooManyConnectionsError):
@@ -486,16 +549,21 @@ class TestDbErrorPaths:
         """Pool exhaustion during create_sale propagates — no silent data loss."""
         db = _make_db()
         pool = MagicMock()
-        pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
-            __aexit__=AsyncMock(return_value=None),
-        ))
+        pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(side_effect=asyncpg.TooManyConnectionsError()),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
         db._pool = pool
 
         with pytest.raises(asyncpg.TooManyConnectionsError):
             await db.create_sale(
-                product_id=1, quantity=1, unit_price=10.0,
-                payment_method="cash", seller_type="llc",
+                product_id=1,
+                quantity=1,
+                unit_price=10.0,
+                payment_method="cash",
+                seller_type="llc",
             )
 
     # ── Mid-transaction failure ───────────────────────────────────────────────
@@ -506,19 +574,24 @@ class TestDbErrorPaths:
         db = _make_db()
         pool, conn = _make_pool_mock()
 
-        conn.fetchrow = AsyncMock(side_effect=[
-            {"id": 1},           # INSERT sales RETURNING id
-            {"current_stock": 5}, # UPDATE products RETURNING current_stock
-        ])
-        conn.fetch = AsyncMock(return_value=[])   # no inventory batches
+        conn.fetchrow = AsyncMock(
+            side_effect=[
+                {"id": 1},  # INSERT sales RETURNING id
+                {"current_stock": 5},  # UPDATE products RETURNING current_stock
+            ]
+        )
+        conn.fetch = AsyncMock(return_value=[])  # no inventory batches
         # First execute (ledger INSERT) raises
         conn.execute = AsyncMock(side_effect=asyncpg.PostgresError())
         db._pool = pool
 
         with pytest.raises(asyncpg.PostgresError):
             await db.create_sale(
-                product_id=1, quantity=1, unit_price=10.0,
-                payment_method="cash", seller_type="llc",
+                product_id=1,
+                quantity=1,
+                unit_price=10.0,
+                payment_method="cash",
+                seller_type="llc",
             )
 
     # ── Partial stock / FIFO negative-stock behaviour ────────────────────────
@@ -533,15 +606,20 @@ class TestDbErrorPaths:
         stock_row = {"current_stock": -2}  # stock goes negative (allowed by db)
         conn.fetchrow = AsyncMock(side_effect=[sale_row, stock_row])
         # One batch with only 3 units available
-        conn.fetch = AsyncMock(return_value=[
-            {"id": 1, "remaining_quantity": 3, "unit_cost": 10.0},
-        ])
+        conn.fetch = AsyncMock(
+            return_value=[
+                {"id": 1, "remaining_quantity": 3, "unit_cost": 10.0},
+            ]
+        )
         conn.execute = AsyncMock()
         db._pool = pool
 
         sale_id, new_stock = await db.create_sale(
-            product_id=1, quantity=5, unit_price=20.0,
-            payment_method="cash", seller_type="llc",
+            product_id=1,
+            quantity=5,
+            unit_price=20.0,
+            payment_method="cash",
+            seller_type="llc",
         )
 
         assert sale_id == 10

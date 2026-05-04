@@ -10,6 +10,7 @@ Callbacks:
   po_link:{id}    — tracking ლინკის ხელახლა გაგზავნა
   po_detail:{id}  — სრული ინფო (მფლობელის ვიუ)
 """
+
 from __future__ import annotations
 
 import html
@@ -43,11 +44,11 @@ _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
 
 _STATUS_LABELS: dict[str, str] = {
-    "ordered":    "📦 შეკვეთილია",
+    "ordered": "📦 შეკვეთილია",
     "in_transit": "🚚 გზაშია",
-    "arrived":    "✅ ჩამოვიდა",
-    "delivered":  "🎉 გადაეცა",
-    "cancelled":  "❌ გაუქმდა",
+    "arrived": "✅ ჩამოვიდა",
+    "delivered": "🎉 გადაეცა",
+    "cancelled": "❌ გაუქმდა",
 }
 
 _DATE_RE = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})$")
@@ -55,18 +56,19 @@ _DATE_RE = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})$")
 
 # ─── FSM States ──────────────────────────────────────────────────────────────
 
+
 class AddPOStates(StatesGroup):
-    customer_name    = State()
+    customer_name = State()
     customer_contact = State()
-    part_name        = State()
-    oem_code         = State()
-    cost_price       = State()
-    transport_vat    = State()
-    sale_currency    = State()   # GEL or USD — applies to sale_price and amount_paid
-    sale_price_min   = State()
-    sale_price       = State()
-    arrival_date     = State()
-    confirm          = State()
+    part_name = State()
+    oem_code = State()
+    cost_price = State()
+    transport_vat = State()
+    sale_currency = State()  # GEL or USD — applies to sale_price and amount_paid
+    sale_price_min = State()
+    sale_price = State()
+    arrival_date = State()
+    confirm = State()
 
 
 class PayPOStates(StatesGroup):
@@ -75,12 +77,14 @@ class PayPOStates(StatesGroup):
 
 # ─── Price formatting ─────────────────────────────────────────────────────────
 
+
 def _fmt_price(amount: float, currency: str) -> str:
     symbol = "$" if currency.upper() == "USD" else "₾"
     return f"{symbol}{amount:.2f}"
 
 
 # ─── Keyboard helpers ─────────────────────────────────────────────────────────
+
 
 def _kb(*rows: list[InlineKeyboardButton]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=list(rows))
@@ -92,30 +96,44 @@ def _btn(text: str, data: str) -> InlineKeyboardButton:
 
 def _currency_kb() -> InlineKeyboardMarkup:
     return _kb(
-        [_btn("₾ ლარი (GEL)", "po_currency:GEL"), _btn("$ დოლარი (USD)", "po_currency:USD")],
+        [
+            _btn("₾ ლარი (GEL)", "po_currency:GEL"),
+            _btn("$ დოლარი (USD)", "po_currency:USD"),
+        ],
         [_btn("❌ გაუქმება", "po_cancel")],
     )
 
 
 def _order_actions_kb(order_id: int) -> InlineKeyboardMarkup:
     return _kb(
-        [_btn("💰 გადახდა", f"po_pay:{order_id}"), _btn("📋 სტატუსი", f"po_status:{order_id}")],
-        [_btn("🔗 ლინკი", f"po_link:{order_id}"), _btn("ℹ️ დეტალები", f"po_detail:{order_id}")],
+        [
+            _btn("💰 გადახდა", f"po_pay:{order_id}"),
+            _btn("📋 სტატუსი", f"po_status:{order_id}"),
+        ],
+        [
+            _btn("🔗 ლინკი", f"po_link:{order_id}"),
+            _btn("ℹ️ დეტალები", f"po_detail:{order_id}"),
+        ],
     )
 
 
 def _status_kb(order_id: int) -> InlineKeyboardMarkup:
     return _kb(
-        [_btn("📦 შეკვეთილია", f"po_set_status:{order_id}:ordered"),
-         _btn("🚚 გზაშია", f"po_set_status:{order_id}:in_transit")],
-        [_btn("✅ ჩამოვიდა", f"po_set_status:{order_id}:arrived"),
-         _btn("🎉 გადაეცა", f"po_set_status:{order_id}:delivered")],
+        [
+            _btn("📦 შეკვეთილია", f"po_set_status:{order_id}:ordered"),
+            _btn("🚚 გზაშია", f"po_set_status:{order_id}:in_transit"),
+        ],
+        [
+            _btn("✅ ჩამოვიდა", f"po_set_status:{order_id}:arrived"),
+            _btn("🎉 გადაეცა", f"po_set_status:{order_id}:delivered"),
+        ],
         [_btn("❌ გაუქმდა", f"po_set_status:{order_id}:cancelled")],
         [_btn("« უკან", f"po_detail:{order_id}")],
     )
 
 
 # ─── Formatting helpers ───────────────────────────────────────────────────────
+
 
 def _tracking_link(token: str) -> str:
     if config.DASHBOARD_URL:
@@ -139,7 +157,11 @@ def _format_order_summary(order: Any) -> str:
         f"{_fmt_price(sale, currency)} "
         f"(დარჩა: <b>{_fmt_price(remaining, currency)}</b>)"
     )
-    oem = f" | OEM: <code>{html.escape(order['oem_code'])}</code>" if order.get("oem_code") else ""
+    oem = (
+        f" | OEM: <code>{html.escape(order['oem_code'])}</code>"
+        if order.get("oem_code")
+        else ""
+    )
     return (
         f"<b>{html.escape(order['part_name'])}</b>{oem}\n"
         f"👤 {html.escape(order['customer_name'])}\n"
@@ -165,8 +187,16 @@ def _format_order_detail(order: Any) -> str:
     sale_currency = str(order.get("sale_price_currency") or "GEL")
     profit = sale - cost - transport - vat
 
-    oem = f"\n🔖 OEM: <code>{html.escape(order['oem_code'])}</code>" if order.get("oem_code") else ""
-    contact = f"\n📞 {html.escape(order['customer_contact'])}" if order.get("customer_contact") else ""
+    oem = (
+        f"\n🔖 OEM: <code>{html.escape(order['oem_code'])}</code>"
+        if order.get("oem_code")
+        else ""
+    )
+    contact = (
+        f"\n📞 {html.escape(order['customer_contact'])}"
+        if order.get("customer_contact")
+        else ""
+    )
     notes_line = f"\n📝 {html.escape(order['notes'])}" if order.get("notes") else ""
     link = _tracking_link(order["tracking_token"])
 
@@ -191,26 +221,31 @@ def _format_order_detail(order: Any) -> str:
 
 # ─── /po — list orders ────────────────────────────────────────────────────────
 
+
 @personal_orders_router.message(Command("po"), _PRIVATE, IsAdmin())
 async def cmd_po(message: Message, db: Database) -> None:
     orders = await db.get_personal_orders(limit=10)
     if not orders:
-        await message.answer("კერძო შეკვეთები არ გაქვს. დაამატე /addpo-ით.", parse_mode=_PARSE)
+        await message.answer(
+            "კერძო შეკვეთები არ გაქვს. დაამატე /addpo-ით.", parse_mode=_PARSE
+        )
         return
     for order in orders:
         text = _format_order_summary(order)
-        await message.answer(text, parse_mode=_PARSE, reply_markup=_order_actions_kb(order["id"]))
+        await message.answer(
+            text, parse_mode=_PARSE, reply_markup=_order_actions_kb(order["id"])
+        )
 
 
 # ─── /addpo — create wizard ───────────────────────────────────────────────────
+
 
 @personal_orders_router.message(Command("addpo"), _PRIVATE, IsAdmin())
 async def cmd_addpo(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddPOStates.customer_name)
     await message.answer(
-        "🆕 <b>ახალი კერძო შეკვეთა</b>\n\n"
-        "<b>1/9</b> — მომხმარებლის სახელი:",
+        "🆕 <b>ახალი კერძო შეკვეთა</b>\n\n<b>1/9</b> — მომხმარებლის სახელი:",
         parse_mode=_PARSE,
         reply_markup=_kb([_btn("❌ გაუქმება", "po_cancel")]),
     )
@@ -224,10 +259,11 @@ async def po_got_customer_name(message: Message, state: FSMContext) -> None:
     await state.update_data(customer_name=message.text.strip())
     await state.set_state(AddPOStates.customer_contact)
     await message.answer(
-        "<b>2/9</b> — საკონტაქტო (ტელეფონი ან @username):\n"
-        "არ გაქვს? — /skip",
+        "<b>2/9</b> — საკონტაქტო (ტელეფონი ან @username):\nარ გაქვს? — /skip",
         parse_mode=_PARSE,
-        reply_markup=_kb([_btn("⏭ გამოტოვება", "po_skip_contact"), _btn("❌ გაუქმება", "po_cancel")]),
+        reply_markup=_kb(
+            [_btn("⏭ გამოტოვება", "po_skip_contact"), _btn("❌ გაუქმება", "po_cancel")]
+        ),
     )
 
 
@@ -266,10 +302,11 @@ async def po_got_part_name(message: Message, state: FSMContext) -> None:
     await state.update_data(part_name=message.text.strip())
     await state.set_state(AddPOStates.oem_code)
     await message.answer(
-        "<b>4/9</b> — OEM კოდი (optional):\n"
-        "არ გაქვს? — /skip",
+        "<b>4/9</b> — OEM კოდი (optional):\nარ გაქვს? — /skip",
         parse_mode=_PARSE,
-        reply_markup=_kb([_btn("⏭ გამოტოვება", "po_skip_oem"), _btn("❌ გაუქმება", "po_cancel")]),
+        reply_markup=_kb(
+            [_btn("⏭ გამოტოვება", "po_skip_oem"), _btn("❌ გაუქმება", "po_cancel")]
+        ),
     )
 
 
@@ -279,8 +316,7 @@ async def po_skip_oem(cb: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(oem_code=None)
     await state.set_state(AddPOStates.cost_price)
     await cb.message.edit_text(  # type: ignore[union-attr]
-        "<b>5/9</b> — თვითღირებულება (₾):\n"
-        "მაგ: <code>45.50</code>",
+        "<b>5/9</b> — თვითღირებულება (₾):\nმაგ: <code>45.50</code>",
         parse_mode=_PARSE,
         reply_markup=_kb([_btn("❌ გაუქმება", "po_cancel")]),
     )
@@ -295,8 +331,7 @@ async def po_got_oem(message: Message, state: FSMContext) -> None:
         await state.update_data(oem_code=text.strip().upper() or None)
     await state.set_state(AddPOStates.cost_price)
     await message.answer(
-        "<b>5/9</b> — თვითღირებულება (₾):\n"
-        "მაგ: <code>45.50</code>",
+        "<b>5/9</b> — თვითღირებულება (₾):\nმაგ: <code>45.50</code>",
         parse_mode=_PARSE,
         reply_markup=_kb([_btn("❌ გაუქმება", "po_cancel")]),
     )
@@ -309,7 +344,9 @@ async def po_got_cost(message: Message, state: FSMContext) -> None:
         if cost < 0:
             raise ValueError
     except ValueError:
-        await message.answer("გთხოვ შეიყვანო დადებითი რიცხვი. მაგ: <code>45.50</code>", parse_mode=_PARSE)
+        await message.answer(
+            "გთხოვ შეიყვანო დადებითი რიცხვი. მაგ: <code>45.50</code>", parse_mode=_PARSE
+        )
         return
     await state.update_data(cost_price=cost)
     await state.set_state(AddPOStates.transport_vat)
@@ -346,7 +383,9 @@ async def po_got_transport_vat(message: Message, state: FSMContext) -> None:
     )
 
 
-@personal_orders_router.callback_query(F.data.startswith("po_currency:"), StateFilter(AddPOStates.sale_currency))
+@personal_orders_router.callback_query(
+    F.data.startswith("po_currency:"), StateFilter(AddPOStates.sale_currency)
+)
 async def po_got_currency(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     chosen = (cb.data or "").split(":")[1].upper()
@@ -359,7 +398,12 @@ async def po_got_currency(cb: CallbackQuery, state: FSMContext) -> None:
         f"მინიმალური ფასი. მაგ: <code>100.00</code>\n"
         "არ იცი? — გამოტოვება",
         parse_mode=_PARSE,
-        reply_markup=_kb([_btn("⏭ გამოტოვება", "po_skip_price_min"), _btn("❌ გაუქმება", "po_cancel")]),
+        reply_markup=_kb(
+            [
+                _btn("⏭ გამოტოვება", "po_skip_price_min"),
+                _btn("❌ გაუქმება", "po_cancel"),
+            ]
+        ),
     )
 
 
@@ -391,7 +435,9 @@ async def po_got_sale_price_min(message: Message, state: FSMContext) -> None:
                 raise ValueError
             await state.update_data(sale_price_min=price_min)
         except ValueError:
-            await message.answer("გთხოვ შეიყვანო დადებითი რიცხვი ან /skip", parse_mode=_PARSE)
+            await message.answer(
+                "გთხოვ შეიყვანო დადებითი რიცხვი ან /skip", parse_mode=_PARSE
+            )
             return
     data = await state.get_data()
     currency = str(data.get("sale_price_currency") or "GEL")
@@ -412,7 +458,10 @@ async def po_got_sale_price(message: Message, state: FSMContext) -> None:
         if price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("გთხოვ შეიყვანო დადებითი რიცხვი. მაგ: <code>150.00</code>", parse_mode=_PARSE)
+        await message.answer(
+            "გთხოვ შეიყვანო დადებითი რიცხვი. მაგ: <code>150.00</code>",
+            parse_mode=_PARSE,
+        )
         return
     await state.update_data(sale_price=price)
     await state.set_state(AddPOStates.arrival_date)
@@ -428,8 +477,12 @@ async def po_got_sale_price(message: Message, state: FSMContext) -> None:
     )
 
 
-@personal_orders_router.callback_query(simple_cal_callback.filter(), StateFilter(AddPOStates.arrival_date))
-async def po_calendar_selected(cb: CallbackQuery, callback_data: simple_cal_callback, state: FSMContext) -> None:  # type: ignore[name-defined]
+@personal_orders_router.callback_query(
+    simple_cal_callback.filter(), StateFilter(AddPOStates.arrival_date)
+)
+async def po_calendar_selected(
+    cb: CallbackQuery, callback_data: simple_cal_callback, state: FSMContext
+) -> None:  # type: ignore[name-defined]
     cal = SimpleCalendar()
     selected, chosen_date = await cal.process_selection(cb, callback_data)
     if selected and chosen_date:
@@ -446,12 +499,16 @@ async def po_got_date_text(message: Message, state: FSMContext) -> None:
         return
     m = _DATE_RE.match(text)
     if not m:
-        await message.answer("ფორმატი: <code>dd.mm.yyyy</code> ან /skip", parse_mode=_PARSE)
+        await message.answer(
+            "ფორმატი: <code>dd.mm.yyyy</code> ან /skip", parse_mode=_PARSE
+        )
         return
     try:
         arrival = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
     except ValueError:
-        await message.answer("არასწორი თარიღი. სცადე: <code>15.05.2025</code>", parse_mode=_PARSE)
+        await message.answer(
+            "არასწორი თარიღი. სცადე: <code>15.05.2025</code>", parse_mode=_PARSE
+        )
         return
     await state.update_data(estimated_arrival=arrival)
     await _show_po_confirm(message, state)
@@ -463,8 +520,16 @@ async def _show_po_confirm(message: Message, state: FSMContext) -> None:
     arr = data.get("estimated_arrival")
     if arr and hasattr(arr, "strftime"):
         arrival_str = f"\n📅 ჩამოსვლა: {arr.strftime('%d.%m.%Y')}"
-    oem_str = f" | OEM: <code>{html.escape(data.get('oem_code') or '')}</code>" if data.get("oem_code") else ""
-    contact_str = f"\n📞 {html.escape(data.get('customer_contact') or '')}" if data.get("customer_contact") else ""
+    oem_str = (
+        f" | OEM: <code>{html.escape(data.get('oem_code') or '')}</code>"
+        if data.get("oem_code")
+        else ""
+    )
+    contact_str = (
+        f"\n📞 {html.escape(data.get('customer_contact') or '')}"
+        if data.get("customer_contact")
+        else ""
+    )
     cost = data.get("cost_price", 0)
     transport = data.get("transportation_cost", 0)
     vat = data.get("vat_amount", 0)
@@ -474,7 +539,8 @@ async def _show_po_confirm(message: Message, state: FSMContext) -> None:
     profit = float(sale) - float(cost) - float(transport) - float(vat)
     price_range = (
         f"{_fmt_price(float(sale_min), currency)} — {_fmt_price(float(sale), currency)}"
-        if sale_min else _fmt_price(float(sale), currency)
+        if sale_min
+        else _fmt_price(float(sale), currency)
     )
 
     await state.set_state(AddPOStates.confirm)
@@ -496,7 +562,9 @@ async def _show_po_confirm(message: Message, state: FSMContext) -> None:
     )
 
 
-@personal_orders_router.callback_query(F.data == "po_confirm_save", StateFilter(AddPOStates.confirm))
+@personal_orders_router.callback_query(
+    F.data == "po_confirm_save", StateFilter(AddPOStates.confirm)
+)
 async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) -> None:
     await cb.answer()
     data = await state.get_data()
@@ -507,16 +575,26 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
             items=[(data["part_name"], data.get("oem_code"))],
             sale_price=float(data["sale_price"]),
             customer_contact=data.get("customer_contact"),
-            cost_price=float(data["cost_price"]) if data.get("cost_price") is not None else None,
-            transportation_cost=float(data["transportation_cost"]) if data.get("transportation_cost") is not None else None,
-            vat_amount=float(data["vat_amount"]) if data.get("vat_amount") is not None else None,
-            sale_price_min=float(data["sale_price_min"]) if data.get("sale_price_min") is not None else None,
+            cost_price=float(data["cost_price"])
+            if data.get("cost_price") is not None
+            else None,
+            transportation_cost=float(data["transportation_cost"])
+            if data.get("transportation_cost") is not None
+            else None,
+            vat_amount=float(data["vat_amount"])
+            if data.get("vat_amount") is not None
+            else None,
+            sale_price_min=float(data["sale_price_min"])
+            if data.get("sale_price_min") is not None
+            else None,
             sale_price_currency=str(data.get("sale_price_currency") or "GEL"),
             estimated_arrival=data.get("estimated_arrival"),
         )
     except Exception:
         logger.exception("Failed to create personal order")
-        await cb.message.edit_text("❌ შეცდომა შენახვისას. სცადე ხელახლა.", parse_mode=_PARSE)  # type: ignore[union-attr]
+        await cb.message.edit_text(
+            "❌ შეცდომა შენახვისას. სცადე ხელახლა.", parse_mode=_PARSE
+        )  # type: ignore[union-attr]
         return
 
     link = _tracking_link(order["tracking_token"])
@@ -529,10 +607,13 @@ async def po_confirm_save(cb: CallbackQuery, state: FSMContext, db: Database) ->
         reply_markup=_order_actions_kb(order["id"]),
     )
     if isinstance(sent, Message) and not isinstance(sent, InaccessibleMessage):
-        await db.save_personal_order_tg_message(order["id"], sent.chat.id, sent.message_id)
+        await db.save_personal_order_tg_message(
+            order["id"], sent.chat.id, sent.message_id
+        )
 
 
 # ─── po_cancel ────────────────────────────────────────────────────────────────
+
 
 @personal_orders_router.callback_query(F.data == "po_cancel")
 async def po_cancel(cb: CallbackQuery, state: FSMContext) -> None:
@@ -542,6 +623,7 @@ async def po_cancel(cb: CallbackQuery, state: FSMContext) -> None:
 
 
 # ─── po_detail:{id} ───────────────────────────────────────────────────────────
+
 
 @personal_orders_router.callback_query(F.data.startswith("po_detail:"), IsAdmin())
 async def po_detail(cb: CallbackQuery, db: Database) -> None:
@@ -560,6 +642,7 @@ async def po_detail(cb: CallbackQuery, db: Database) -> None:
 
 # ─── po_status:{id} ──────────────────────────────────────────────────────────
 
+
 @personal_orders_router.callback_query(F.data.startswith("po_status:"), IsAdmin())
 async def po_status_menu(cb: CallbackQuery, db: Database) -> None:
     await cb.answer()
@@ -570,8 +653,7 @@ async def po_status_menu(cb: CallbackQuery, db: Database) -> None:
         return
     current = _STATUS_LABELS.get(order["status"], order["status"])
     await cb.message.edit_text(  # type: ignore[union-attr]
-        f"📋 <b>სტატუსის შეცვლა</b>\n"
-        f"შეკვეთა #{order_id} | ახლა: {current}",
+        f"📋 <b>სტატუსის შეცვლა</b>\nშეკვეთა #{order_id} | ახლა: {current}",
         parse_mode=_PARSE,
         reply_markup=_status_kb(order_id),
     )
@@ -595,6 +677,7 @@ async def po_set_status(cb: CallbackQuery, db: Database) -> None:
 
 
 # ─── po_pay:{id} ─────────────────────────────────────────────────────────────
+
 
 @personal_orders_router.callback_query(F.data.startswith("po_pay:"), IsAdmin())
 async def po_pay_prompt(cb: CallbackQuery, state: FSMContext, db: Database) -> None:
@@ -658,6 +741,7 @@ async def po_pay_cancel(cb: CallbackQuery, state: FSMContext) -> None:
 
 # ─── po_link:{id} ────────────────────────────────────────────────────────────
 
+
 @personal_orders_router.callback_query(F.data.startswith("po_link:"), IsAdmin())
 async def po_link(cb: CallbackQuery, db: Database) -> None:
     await cb.answer()
@@ -668,7 +752,6 @@ async def po_link(cb: CallbackQuery, db: Database) -> None:
         return
     link = _tracking_link(order["tracking_token"])
     await cb.message.answer(  # type: ignore[union-attr]
-        f"🔗 <b>Tracking ლინკი</b> — შეკვეთა #{order_id}\n\n"
-        f"{link}",
+        f"🔗 <b>Tracking ლინკი</b> — შეკვეთა #{order_id}\n\n{link}",
         parse_mode=_PARSE,
     )

@@ -16,7 +16,11 @@ import pytz
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+)
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, ErrorEvent, TelegramObject
@@ -48,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 # ─── Dependency injection middleware ──────────────────────────────────────────
 
+
 class DatabaseMiddleware(BaseMiddleware):
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -64,6 +69,7 @@ class DatabaseMiddleware(BaseMiddleware):
 
 # ─── Scheduled weekly report ──────────────────────────────────────────────────
 
+
 async def _run_integrity_check(db: Database, bot: Bot) -> None:
     """Hourly: verify audit log checksums and warn admins if tampering is found."""
     if db.audit is None:
@@ -78,7 +84,9 @@ async def _run_integrity_check(db: Database, bot: Bot) -> None:
             )
             for admin_id in config.ADMIN_IDS:
                 try:
-                    await bot.send_message(chat_id=admin_id, text=warn, parse_mode="HTML")
+                    await bot.send_message(
+                        chat_id=admin_id, text=warn, parse_mode="HTML"
+                    )
                 except Exception:
                     pass
         else:
@@ -122,10 +130,7 @@ async def _send_lost_searches_report(bot: Bot, db: Database) -> None:
             suffix = "ჯერ" if r["cnt"] == 1 else "ჯერ"
             lines.append(f"{i}. {r['query']} — {r['cnt']}-{suffix}")
 
-        text = (
-            "🔍 <b>ვერ-ნაპოვნი ძიებები — ბოლო 7 დღე</b>\n\n"
-            + "\n".join(lines)
-        )
+        text = "🔍 <b>ვერ-ნაპოვნი ძიებები — ბოლო 7 დღე</b>\n\n" + "\n".join(lines)
 
         for admin_id in config.ADMIN_IDS:
             try:
@@ -155,7 +160,9 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
         now = datetime.now(tz)
         ai_advice = await generate_weekly_advice(db, now - timedelta(days=7), now)
 
-        text = format_weekly_report(sales, returns, expenses, products, cash, ai_advice=ai_advice)
+        text = format_weekly_report(
+            sales, returns, expenses, products, cash, ai_advice=ai_advice
+        )
 
         # DM each admin
         for admin_id in config.ADMIN_IDS:
@@ -184,6 +191,7 @@ async def _send_weekly_report(bot: Bot, db: Database) -> None:
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
+
 async def main() -> None:
     db = Database(dsn=config.DATABASE_URL, timezone=config.TIMEZONE)
     await db.init()
@@ -198,36 +206,49 @@ async def main() -> None:
     db.audit = AuditLogger(pool=db.pool)
     logger.info("AuditLogger ready (local logging only)")
 
-    await bot.set_my_commands([
-        # ── ✏️ შეყვანა ────────────────────────────────
-        BotCommand(command="new",           description="✏️ გაყიდვა / ნისია / ხარჯი"),
-        # ── 💳 ნისია ──────────────────────────────────
-        BotCommand(command="nisias",        description="💳 გადაუხდელი ნისიები"),
-        # ── 📦 საწყობი ────────────────────────────────
-        BotCommand(command="stock",         description="🏪 საწყობის მდგომარეობა"),
-        BotCommand(command="addproduct",    description="➕ პროდუქტის დამატება"),
-        BotCommand(command="import",        description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"),
-        BotCommand(command="orders",        description="📋 მომლოდინე შეკვეთები"),
-        BotCommand(command="addorder",      description="📝 ახალი შეკვეთის დამატება — wizard"),
-        # ── 💰 ანგარიში და ფული ───────────────────────
-        BotCommand(command="report",        description="📊 კვირის ანგარიში"),
-        BotCommand(command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"),
-        BotCommand(command="cash",          description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"),
-        BotCommand(command="deposit",       description="🏦 ბანკში შეტანა"),
-        BotCommand(command="checksales",    description="🏢 შპს — ჩაუბეჭდავი ჩეკები"),
-        # ── 🛒 კერძო შეკვეთები ───────────────────────
-        BotCommand(command="po",            description="🛒 კერძო შეკვეთების სია"),
-        BotCommand(command="addpo",         description="➕ ახალი კერძო შეკვეთა — wizard"),
-        # ── 🔧 სისტემა ────────────────────────────────
-        BotCommand(command="diagnostics",   description="🔍 ვერ ამოცნობილი შეტყობინებები"),
-        BotCommand(command="help",          description="❓ გამოყენების სახელმძღვანელო"),
-    ])
+    await bot.set_my_commands(
+        [
+            # ── ✏️ შეყვანა ────────────────────────────────
+            BotCommand(command="new", description="✏️ გაყიდვა / ნისია / ხარჯი"),
+            # ── 💳 ნისია ──────────────────────────────────
+            BotCommand(command="nisias", description="💳 გადაუხდელი ნისიები"),
+            # ── 📦 საწყობი ────────────────────────────────
+            BotCommand(command="stock", description="🏪 საწყობის მდგომარეობა"),
+            BotCommand(command="addproduct", description="➕ პროდუქტის დამატება"),
+            BotCommand(
+                command="import", description="📂 Excel-ის იმპორტი — საწყისი ნაშთები"
+            ),
+            BotCommand(command="orders", description="📋 მომლოდინე შეკვეთები"),
+            BotCommand(
+                command="addorder", description="📝 ახალი შეკვეთის დამატება — wizard"
+            ),
+            # ── 💰 ანგარიში და ფული ───────────────────────
+            BotCommand(command="report", description="📊 კვირის ანგარიში"),
+            BotCommand(
+                command="report_period", description="📅 პერიოდის ანგარიში — კალენდარი"
+            ),
+            BotCommand(
+                command="cash", description="💵 ხელზე — მიმდინარე ნაღდი ბალანსი"
+            ),
+            BotCommand(command="deposit", description="🏦 ბანკში შეტანა"),
+            BotCommand(command="checksales", description="🏢 შპს — ჩაუბეჭდავი ჩეკები"),
+            # ── 🛒 კერძო შეკვეთები ───────────────────────
+            BotCommand(command="po", description="🛒 კერძო შეკვეთების სია"),
+            BotCommand(command="addpo", description="➕ ახალი კერძო შეკვეთა — wizard"),
+            # ── 🔧 სისტემა ────────────────────────────────
+            BotCommand(
+                command="diagnostics", description="🔍 ვერ ამოცნობილი შეტყობინებები"
+            ),
+            BotCommand(command="help", description="❓ გამოყენების სახელმძღვანელო"),
+        ]
+    )
     logger.info("Bot commands menu registered.")
 
     storage: BaseStorage
     if config.REDIS_URL:
         from aiogram.fsm.storage.redis import RedisStorage  # type: ignore[import]
         from bot.handlers import _redis as _redis_mod
+
         storage = RedisStorage.from_url(config.REDIS_URL)
         _redis_mod.init(config.REDIS_URL)
         logger.info("FSM storage: Redis (state persists across restarts)")
@@ -239,7 +260,7 @@ async def main() -> None:
     dp.message.middleware(DatabaseMiddleware(db))
     dp.callback_query.middleware(DatabaseMiddleware(db))
 
-    dp.include_router(deeplink_router)   # before commands_router — wins /start order_N
+    dp.include_router(deeplink_router)  # before commands_router — wins /start order_N
     dp.include_router(wizard_router)
     dp.include_router(addorder_router)
     dp.include_router(personal_orders_router)

@@ -1,4 +1,5 @@
 """Tests for bot/parsers/import_excel_parser.py."""
+
 from __future__ import annotations
 
 import os
@@ -28,16 +29,28 @@ from bot.parsers.import_excel_parser import (  # noqa: E402
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_workbook(*data_rows) -> BytesIO:
     """Build a workbook with a header row + given data rows, return as BytesIO."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.append([
-        "თარიღი", "OEM კოდი", "დასახელება", "რაოდენობა",
-        "ზომის ერთეული", "ერთეულის ფასი $", "კურსი",
-        "ტრანსპორტირება ₾", "სხვა ₾",
-        "მომწოდებელი", "ინვოისი №", "ინვ. თარიღი", "ინვ. კურსი",
-    ])
+    ws.append(
+        [
+            "თარიღი",
+            "OEM კოდი",
+            "დასახელება",
+            "რაოდენობა",
+            "ზომის ერთეული",
+            "ერთეულის ფასი $",
+            "კურსი",
+            "ტრანსპორტირება ₾",
+            "სხვა ₾",
+            "მომწოდებელი",
+            "ინვოისი №",
+            "ინვ. თარიღი",
+            "ინვ. კურსი",
+        ]
+    )
     for row in data_rows:
         ws.append(list(row))
     buf = BytesIO()
@@ -62,13 +75,24 @@ def _minimal_row(
     invoice_rate=None,
 ):
     return (
-        import_date, oem, name, qty, unit,
-        price_usd, rate, transport, other,
-        supplier, invoice_num, invoice_date, invoice_rate,
+        import_date,
+        oem,
+        name,
+        qty,
+        unit,
+        price_usd,
+        rate,
+        transport,
+        other,
+        supplier,
+        invoice_num,
+        invoice_date,
+        invoice_rate,
     )
 
 
 # ─── _parse_date ──────────────────────────────────────────────────────────────
+
 
 class TestParseDate:
     def test_datetime_object(self):
@@ -96,6 +120,7 @@ class TestParseDate:
 
 
 # ─── _parse_float ─────────────────────────────────────────────────────────────
+
 
 class TestParseFloat:
     def test_plain_number(self):
@@ -134,6 +159,7 @@ class TestParseFloat:
 
 # ─── parse_import_excel ───────────────────────────────────────────────────────
 
+
 class TestParseImportExcel:
     def test_happy_path_returns_one_row(self):
         buf = _make_workbook(_minimal_row())
@@ -155,7 +181,9 @@ class TestParseImportExcel:
 
     def test_transport_and_other_added_to_cost(self):
         # total = (10 * 2.70) + 1.5 + 0.5 = 29.0
-        buf = _make_workbook(_minimal_row(price_usd=10.0, rate=2.70, transport=1.5, other=0.5))
+        buf = _make_workbook(
+            _minimal_row(price_usd=10.0, rate=2.70, transport=1.5, other=0.5)
+        )
         rows, _ = parse_import_excel(buf)
         assert rows[0].total_unit_cost_gel == pytest.approx(29.0)
 
@@ -184,7 +212,21 @@ class TestParseImportExcel:
     def test_empty_row_skipped(self):
         buf = _make_workbook(
             _minimal_row(oem="OEM001"),
-            (None, None, None, None, None, None, None, None, None, None, None, None, None),
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             _minimal_row(oem="OEM002"),
         )
         rows, _ = parse_import_excel(buf)
@@ -281,17 +323,30 @@ class TestParseImportExcel:
         rows, _ = parse_import_excel(buf)
         d = rows[0].to_dict()
         for key in (
-            "import_date", "oem", "name", "quantity", "unit",
-            "unit_price_usd", "exchange_rate", "transport_cost_gel",
-            "other_cost_gel", "total_unit_cost_gel", "suggested_retail_price_gel",
-            "supplier", "invoice_number", "invoice_date", "invoice_exchange_rate",
+            "import_date",
+            "oem",
+            "name",
+            "quantity",
+            "unit",
+            "unit_price_usd",
+            "exchange_rate",
+            "transport_cost_gel",
+            "other_cost_gel",
+            "total_unit_cost_gel",
+            "suggested_retail_price_gel",
+            "supplier",
+            "invoice_number",
+            "invoice_date",
+            "invoice_exchange_rate",
         ):
             assert key in d
 
     def test_9_column_file_without_optional_columns(self):
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.append(["თარიღი", "OEM", "სახელი", "რაოდ", "ც", "ფასი$", "კურსი", "ტრანსპ", "სხვა"])
+        ws.append(
+            ["თარიღი", "OEM", "სახელი", "რაოდ", "ც", "ფასი$", "კურსი", "ტრანსპ", "სხვა"]
+        )
         ws.append(["2024-03-01", "OEM999", "Bearing", 5, "ც", 8.0, 2.75, 0, 0])
         buf = BytesIO()
         wb.save(buf)

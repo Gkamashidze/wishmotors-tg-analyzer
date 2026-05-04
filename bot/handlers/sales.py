@@ -43,7 +43,11 @@ def _parse_backdate(raw: object) -> Optional[datetime]:
     if raw is None:
         return None
     if isinstance(raw, datetime):
-        return raw.replace(tzinfo=timezone.utc) if raw.tzinfo is None else raw.astimezone(timezone.utc)
+        return (
+            raw.replace(tzinfo=timezone.utc)
+            if raw.tzinfo is None
+            else raw.astimezone(timezone.utc)
+        )
     if isinstance(raw, date):
         return datetime(raw.year, raw.month, raw.day, tzinfo=timezone.utc)
     s = str(raw).strip()
@@ -59,9 +63,15 @@ def _parse_backdate(raw: object) -> Optional[datetime]:
 
 def _delete_keyboard(sale_id: int) -> InlineKeyboardMarkup:
     """Single delete button for one sale confirmation."""
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f"🗑 წაშლა #{sale_id}", callback_data=f"ds:{sale_id}")
-    ]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 წაშლა #{sale_id}", callback_data=f"ds:{sale_id}"
+                )
+            ]
+        ]
+    )
 
 
 def _delete_keyboard_batch(sale_ids: list[int]) -> InlineKeyboardMarkup:
@@ -70,13 +80,14 @@ def _delete_keyboard_batch(sale_ids: list[int]) -> InlineKeyboardMarkup:
     for i in range(0, len(sale_ids), 2):
         row = [
             InlineKeyboardButton(text=f"🗑 #{sid}", callback_data=f"ds:{sid}")
-            for sid in sale_ids[i:i + 2]
+            for sid in sale_ids[i : i + 2]
         ]
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ─── Sales topic: text messages ───────────────────────────────────────────────
+
 
 @sales_router.message(InTopic(config.SALES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_sales_text(message: Message, db: Database) -> None:
@@ -105,6 +116,7 @@ async def handle_sales_text(message: Message, db: Database) -> None:
         # If the message has no product identifier (e.g. "2ც 45₾"), check for a
         # pending barcode scan and inject its OEM code + name.
         from bot.handlers.barcode import bc_consume
+
         bc = (await bc_consume(user_id)) if not raw else None
         if bc:
             raw = bc["oem"]
@@ -125,7 +137,9 @@ async def handle_sales_text(message: Message, db: Database) -> None:
                 return
             # Use barcode-suggested name when available, otherwise fall back to raw text
             display_name = (bc["name_ka"] or bc["name_en"]) if bc else None
-            await _record_sale_freeform(message, db, display_name or raw or text, parsed)
+            await _record_sale_freeform(
+                message, db, display_name or raw or text, parsed
+            )
             return
 
         if parsed.is_return:
@@ -160,7 +174,9 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
     for i, item_group in enumerate(parsed_list):
         if item_group is None:
             line_idx = offset + i
-            failed_lines.append(raw_lines[line_idx] if line_idx < len(raw_lines) else "?")
+            failed_lines.append(
+                raw_lines[line_idx] if line_idx < len(raw_lines) else "?"
+            )
             continue
 
         for parsed in item_group:
@@ -202,7 +218,9 @@ async def _handle_batch_sales(message: Message, db: Database, text: str) -> None
     sale_ids = [sale_id for _, _, sale_id in results]
     await message.bot.send_message(
         chat_id=message.from_user.id,
-        text=format_batch_confirmation(customer_name, results, grand_total, failed_lines),
+        text=format_batch_confirmation(
+            customer_name, results, grand_total, failed_lines
+        ),
         parse_mode=_PARSE,
         reply_markup=_delete_keyboard_batch(sale_ids),
     )
@@ -246,7 +264,9 @@ async def _handle_dual_sale(message: Message, db: Database, dual: list) -> None:
     )
 
 
-async def _record_sale(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:
+async def _record_sale(
+    message: Message, db: Database, product: ProductRow, parsed: ParsedSale
+) -> None:
     sale_id, new_stock = await db.create_sale(
         product_id=product["id"],
         quantity=parsed.quantity,
@@ -278,8 +298,16 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
     )
 
     # Mirror to topic and save message_id for later deletion
-    topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
-    kb = topic_nisia_kb(sale_id) if parsed.payment_method == "credit" else topic_sale_kb(sale_id)
+    topic_id = (
+        config.NISIAS_TOPIC_ID
+        if parsed.payment_method == "credit"
+        else config.SALES_TOPIC_ID
+    )
+    kb = (
+        topic_nisia_kb(sale_id)
+        if parsed.payment_method == "credit"
+        else topic_sale_kb(sale_id)
+    )
     try:
         topic_msg = await message.bot.send_message(
             chat_id=config.GROUP_ID,
@@ -303,12 +331,16 @@ async def _record_sale(message: Message, db: Database, product: ProductRow, pars
     if low:
         logger.warning(
             "Low stock alert: %s — %d units remaining (min_stock=%d)",
-            product["name"], new_stock, product["min_stock"],
+            product["name"],
+            new_stock,
+            product["min_stock"],
         )
         already_ordered = await db.has_active_order_for_product(product["id"])
         if not already_ordered:
             qty_needed = max(5, product.get("min_stock") or 5)
-            stock_label = "0-ზე ჩამოვიდა" if new_stock == 0 else f"{new_stock}ც-მდე ჩამოვიდა"
+            stock_label = (
+                "0-ზე ჩამოვიდა" if new_stock == 0 else f"{new_stock}ც-მდე ჩამოვიდა"
+            )
             await db.create_order(
                 product_id=product["id"],
                 quantity_needed=qty_needed,
@@ -360,8 +392,16 @@ async def _record_sale_freeform(
         reply_markup=_delete_keyboard(sale_id),
     )
 
-    topic_id = config.NISIAS_TOPIC_ID if parsed.payment_method == "credit" else config.SALES_TOPIC_ID
-    kb = topic_nisia_kb(sale_id) if parsed.payment_method == "credit" else topic_sale_kb(sale_id)
+    topic_id = (
+        config.NISIAS_TOPIC_ID
+        if parsed.payment_method == "credit"
+        else config.SALES_TOPIC_ID
+    )
+    kb = (
+        topic_nisia_kb(sale_id)
+        if parsed.payment_method == "credit"
+        else topic_sale_kb(sale_id)
+    )
     try:
         topic_msg = await message.bot.send_message(
             chat_id=config.GROUP_ID,
@@ -383,7 +423,9 @@ async def _record_sale_freeform(
         logger.warning("Failed to post freeform sale to topic: %s", _te)
 
 
-async def _record_return(message: Message, db: Database, product: ProductRow, parsed: ParsedSale) -> None:
+async def _record_return(
+    message: Message, db: Database, product: ProductRow, parsed: ParsedSale
+) -> None:
     refund = parsed.price * parsed.quantity
 
     _return_id, new_stock = await db.create_return(
@@ -407,6 +449,7 @@ async def _record_return(message: Message, db: Database, product: ProductRow, pa
 
 # ─── Sales topic: Excel historical import ────────────────────────────────────
 
+
 def _parse_import_date(val: object, tz: pytz.BaseTzInfo) -> datetime:
     """Accept Excel date objects or strings (DD.MM.YYYY / YYYY-MM-DD / DD/MM/YYYY)."""
     if isinstance(val, datetime):
@@ -424,7 +467,9 @@ def _parse_import_date(val: object, tz: pytz.BaseTzInfo) -> datetime:
 
 def _parse_import_payment(val: object) -> str:
     v = str(val).lower().strip()
-    if any(k in v for k in ("გადარიცხვა", "დარიცხა", "transfer", "ბარათი", "კარტი", "card")):
+    if any(
+        k in v for k in ("გადარიცხვა", "დარიცხა", "transfer", "ბარათი", "კარტი", "card")
+    ):
         return "transfer"
     if any(k in v for k in ("ნისია", "credit")):
         return "credit"
@@ -489,14 +534,18 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
             continue
         data_rows += 1
         if data_rows > _MAX_IMPORT_ROWS:
-            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი. დანარჩენი გამოტოვდა.")
+            errors.append(
+                f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი. დანარჩენი გამოტოვდა."
+            )
             break
         try:
             sold_at = _parse_import_date(row[0], tz)
             raw_product = str(row[1]).strip() if row[1] is not None else ""
             quantity = int(row[2])
             unit_price = float(row[3])
-            payment = _parse_import_payment(row[4]) if len(row) > 4 and row[4] else "credit"
+            payment = (
+                _parse_import_payment(row[4]) if len(row) > 4 and row[4] else "credit"
+            )
 
             if not raw_product or quantity <= 0 or unit_price < 0:
                 raise ValueError("ცარიელი ან არასწორი მნიშვნელობა")
@@ -525,7 +574,9 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
         preview = "\n".join(errors[:5])
         if len(errors) > 5:
             preview += f"\n... და კიდევ {len(errors) - 5}"
-        summary += f"\n⚠️ გამოტოვებული ({len(errors)}):\n<code>{html.escape(preview)}</code>"
+        summary += (
+            f"\n⚠️ გამოტოვებული ({len(errors)}):\n<code>{html.escape(preview)}</code>"
+        )
 
     await message.bot.send_message(
         chat_id=message.from_user.id,
@@ -541,6 +592,7 @@ async def handle_sales_import_excel(message: Message, bot: Bot, db: Database) ->
 #   delta < 0 → shortage:  DR 7500 Write-off / CR 1600 Inventory  (non-cash expense)
 #   delta > 0 → overage:   DR 1600 Inventory / CR 7500 Write-off  (gain)
 #   delta = 0 → no action
+
 
 @sales_router.message(InTopic(config.STOCK_TOPIC_ID), IsAdmin(), F.document)
 async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> None:
@@ -595,7 +647,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
         return
 
     shortages: list[tuple[str, str, float, float]] = []  # (oem, name, qty, loss_value)
-    overages: list[tuple[str, str, float]] = []           # (oem, name, qty)
+    overages: list[tuple[str, str, float]] = []  # (oem, name, qty)
     unchanged = 0
     errors: list[str] = []
     data_rows = 0
@@ -605,7 +657,9 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
             continue
         data_rows += 1
         if data_rows > _MAX_IMPORT_ROWS:
-            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა.")
+            errors.append(
+                f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა."
+            )
             break
 
         try:
@@ -727,6 +781,7 @@ async def handle_inventory_upload(message: Message, bot: Bot, db: Database) -> N
 # The generated expense has is_non_cash=True so it NEVER reduces the Cash/Bank
 # balance — it only moves through the P&L as a write-off.
 
+
 @sales_router.message(
     InTopic(config.STOCK_TOPIC_ID),
     IsAdmin(),
@@ -776,7 +831,7 @@ async def handle_stock_adjustment(message: Message, bot: Bot, db: Database) -> N
         return
 
     shortages: list[tuple[str, str, float, float]] = []  # (oem, name, qty, loss_value)
-    overages: list[tuple[str, str, float]] = []           # (oem, name, qty)
+    overages: list[tuple[str, str, float]] = []  # (oem, name, qty)
     unchanged = 0
     errors: list[str] = []
     data_rows = 0
@@ -786,7 +841,9 @@ async def handle_stock_adjustment(message: Message, bot: Bot, db: Database) -> N
             continue
         data_rows += 1
         if data_rows > _MAX_IMPORT_ROWS:
-            errors.append(f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა.")
+            errors.append(
+                f"⚠️ ლიმიტი: {_MAX_IMPORT_ROWS} სტრიქონი — დანარჩენი გამოტოვდა."
+            )
             break
 
         try:

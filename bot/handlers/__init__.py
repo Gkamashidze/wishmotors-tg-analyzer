@@ -36,9 +36,7 @@ class IsAdmin(Filter):
     Works for both Message and CallbackQuery events."""
 
     async def __call__(self, event: Union[Message, CallbackQuery]) -> bool:
-        return bool(
-            event.from_user and event.from_user.id in config.ADMIN_IDS
-        )
+        return bool(event.from_user and event.from_user.id in config.ADMIN_IDS)
 
 
 # ─── Simple per-user rate limiter ────────────────────────────────────────────
@@ -49,7 +47,9 @@ _last_called: dict[str, float] = {}
 _RL_KEY = "wishmotors:rate_limit:{}:{}"
 
 
-async def is_rate_limited(user_id: int, command: str, min_interval: float = 2.0) -> bool:
+async def is_rate_limited(
+    user_id: int, command: str, min_interval: float = 2.0
+) -> bool:
     """Return True if the user called this command too recently."""
     r = _redis_mod.get()
     if r is not None:

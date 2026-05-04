@@ -13,18 +13,32 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import CallbackQuery, InaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    CallbackQuery,
+    InaccessibleMessage,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 
 _MONTH_NAMES = [
-    "იანვარი", "თებერვალი", "მარტი", "აპრილი",
-    "მაისი", "ივნისი", "ივლისი", "აგვისტო",
-    "სექტემბერი", "ოქტომბერი", "ნოემბერი", "დეკემბერი",
+    "იანვარი",
+    "თებერვალი",
+    "მარტი",
+    "აპრილი",
+    "მაისი",
+    "ივნისი",
+    "ივლისი",
+    "აგვისტო",
+    "სექტემბერი",
+    "ოქტომბერი",
+    "ნოემბერი",
+    "დეკემბერი",
 ]
 _DAY_NAMES = ["ორ", "სა", "ოთ", "ხუ", "პა", "შა", "კვ"]
 
 
 class SimpleCalCallback(CallbackData, prefix="scal"):
-    act: str   # "day" | "prev" | "next" | "ignore"
+    act: str  # "day" | "prev" | "next" | "ignore"
     year: int
     month: int
     day: int
@@ -96,7 +110,9 @@ class SimpleCalendar:
 
         if callback_data.act == "day":
             await callback.answer()
-            return True, datetime(callback_data.year, callback_data.month, callback_data.day)
+            return True, datetime(
+                callback_data.year, callback_data.month, callback_data.day
+            )
 
         await callback.answer()
         return False, None

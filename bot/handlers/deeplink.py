@@ -5,13 +5,18 @@ Filter is intentionally narrow: only fires when the /start payload starts with
 "order_" followed by digits, so plain /start (no payload or different payload)
 falls through to commands_router unaffected.
 """
+
 import asyncio
 import html
 import logging
 from typing import Optional
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+)
 from aiogram.types import Message
 
 import config
@@ -26,7 +31,7 @@ _PREFIX = "/start order_"
 
 def _parse_product_id(text: str) -> Optional[int]:
     """Return numeric product ID from '/start order_N', or None if payload is invalid."""
-    payload = text[len(_PREFIX):].strip()
+    payload = text[len(_PREFIX) :].strip()
     return int(payload) if payload.isdigit() else None
 
 
@@ -42,20 +47,28 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
     product_id = _parse_product_id(raw_text)
 
     if product_id is None:
-        logger.warning("catalog deeplink: invalid payload from user=%d text=%r", user.id, raw_text)
-        await message.answer("ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.")
+        logger.warning(
+            "catalog deeplink: invalid payload from user=%d text=%r", user.id, raw_text
+        )
+        await message.answer(
+            "ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით."
+        )
         return
 
     try:
         product = await db.get_product_by_id(product_id)
     except Exception as exc:
-        logger.exception("catalog deeplink: get_product_by_id(%d) failed: %s", product_id, exc)
+        logger.exception(
+            "catalog deeplink: get_product_by_id(%d) failed: %s", product_id, exc
+        )
         await message.answer("⚠️ სისტემური შეცდომა. გთხოვთ სცადოთ მოგვიანებით.")
         return
 
     if product is None:
         logger.info("catalog deeplink: product_id=%d not found", product_id)
-        await message.answer("ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით.")
+        await message.answer(
+            "ბოდიში, ეს პროდუქტი ვეღარ მოიძებნა. დაგვიკავშირდით ხელით."
+        )
         return
 
     try:
@@ -72,7 +85,9 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
     except Exception as exc:
         logger.exception(
             "catalog deeplink: order creation failed for product_id=%d user=%d: %s",
-            product_id, user.id, exc,
+            product_id,
+            user.id,
+            exc,
         )
         await message.answer("⚠️ შეკვეთა ვერ შეიქმნა. გთხოვთ სცადოთ მოგვიანებით.")
         return
@@ -93,7 +108,12 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
         parse_mode="HTML",
     )
 
-    logger.info("catalog deeplink: catalog_order #%d created product_id=%d user=%d", order_id, product_id, user.id)
+    logger.info(
+        "catalog deeplink: catalog_order #%d created product_id=%d user=%d",
+        order_id,
+        product_id,
+        user.id,
+    )
 
     if message.bot is None:
         return
@@ -127,4 +147,6 @@ async def handle_catalog_deeplink(message: Message, db: Database) -> None:
             parse_mode="HTML",
         )
     except (TelegramNetworkError, TelegramBadRequest) as exc:
-        logger.warning("Could not forward catalog order #%d to group: %s", order_id, exc)
+        logger.warning(
+            "Could not forward catalog order #%d to group: %s", order_id, exc
+        )

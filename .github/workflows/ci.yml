@@ -25,6 +25,9 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check .
 
+      - name: Ruff format check
+        run: python -m ruff format --check .
+
       - name: Mypy
         run: python -m mypy bot/ database/ config.py --ignore-missing-imports --no-strict-optional
 

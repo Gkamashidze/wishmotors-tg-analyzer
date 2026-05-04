@@ -52,16 +52,16 @@ def _seller_label(seller_type: str) -> str:
 
 
 _CATEGORY_LABELS = {
-    "fuel":        "⛽ საწვავი",
-    "customs":     "🛃 საბაჟო",
-    "delivery":    "🚚 მიტანა",
+    "fuel": "⛽ საწვავი",
+    "customs": "🛃 საბაჟო",
+    "delivery": "🚚 მიტანა",
     "maintenance": "🔧 სერვისი",
-    "marketing":   "📣 რეკლამა",
-    "office":      "🖊 ოფისი",
-    "utilities":   "💡 კომუნალი",
-    "salary":      "👷 ხელფასი",
-    "insurance":   "🛡 სადაზღვევო",
-    "transport":   "🚗 ტრანსპორტი",
+    "marketing": "📣 რეკლამა",
+    "office": "🖊 ოფისი",
+    "utilities": "💡 კომუნალი",
+    "salary": "👷 ხელფასი",
+    "insurance": "🛡 სადაზღვევო",
+    "transport": "🚗 ტრანსპორტი",
 }
 
 
@@ -70,17 +70,17 @@ def _category_label(category: Optional[str]) -> str:
 
 
 _STATUS_LABELS = {
-    "new":        "🆕 ახალია",
+    "new": "🆕 ახალია",
     "processing": "⚙️ მუშავდება",
-    "ordered":    "📦 შეკვეთილია",
-    "ready":      "✅ მზადაა",
-    "delivered":  "🚚 მიტანილია",
-    "cancelled":  "❌ გაუქმებულია",
+    "ordered": "📦 შეკვეთილია",
+    "ready": "✅ მზადაა",
+    "delivered": "🚚 მიტანილია",
+    "cancelled": "❌ გაუქმებულია",
 }
 
 _ORDER_PRIORITY_LABELS = {
     "urgent": "🔴 სასწრაფო",
-    "low":    "🟢 არც ისე სასწრაფო",
+    "low": "🟢 არც ისე სასწრაფო",
 }
 
 
@@ -109,6 +109,7 @@ def format_topic_order(
 
 # ─── Confirmation messages ────────────────────────────────────────────────────
 
+
 def format_sale_confirmation(
     product_name: str,
     qty: int,
@@ -133,7 +134,7 @@ def format_sale_confirmation(
     if customer_name:
         lines.append(f"👤 მომხმარებელი: {_e(customer_name)}")
     if payment == PAYMENT_CREDIT:
-        lines.append(f"📋 <b>ნისია #{ sale_id } — გახსოვდეს დარეკვა!</b>")
+        lines.append(f"📋 <b>ნისია #{sale_id} — გახსოვდეს დარეკვა!</b>")
     if new_stock is not None:
         lines.append(f"📊 დარჩა საწყობში: {new_stock}ც")
     if unknown_product:
@@ -160,7 +161,9 @@ def format_batch_confirmation(
         item_total = parsed.quantity * parsed.price
         if not parsed.raw_product and not product:
             # Payment-only entry (e.g. "მომცა 300₾") — no product name
-            pay_icon = "💵 ხელზე" if parsed.payment_method == PAYMENT_CASH else "🏦 დარიცხა"
+            pay_icon = (
+                "💵 ხელზე" if parsed.payment_method == PAYMENT_CASH else "🏦 დარიცხა"
+            )
             lines.append(f"💳 #{sale_id} {pay_icon} — <b>{item_total:.2f}₾</b>")
         else:
             name = product["name"] if product else _e(parsed.raw_product or "—")
@@ -201,6 +204,7 @@ def format_return_confirmation(
 
 
 # ─── Credit (ნისია) report ────────────────────────────────────────────────────
+
 
 def format_credit_sales_report(sales: Sequence[Any]) -> str:
     if not sales:
@@ -246,6 +250,7 @@ def format_credit_sales_report(sales: Sequence[Any]) -> str:
 
 # ─── Shared report helpers ────────────────────────────────────────────────────
 
+
 def _calculate_report_metrics(
     sales: Sequence[Any],
     returns: Sequence[Any],
@@ -283,19 +288,23 @@ def _calculate_report_metrics(
         "net_income": gross_profit - total_returns - total_expenses,
         "cash_revenue": sum(
             float(s["unit_price"]) * s["quantity"]
-            for s in sales if s.get("payment_method") == PAYMENT_CASH
+            for s in sales
+            if s.get("payment_method") == PAYMENT_CASH
         ),
         "transfer_revenue": sum(
             float(s["unit_price"]) * s["quantity"]
-            for s in sales if s.get("payment_method") == PAYMENT_TRANSFER
+            for s in sales
+            if s.get("payment_method") == PAYMENT_TRANSFER
         ),
         "credit_revenue": sum(
             float(s["unit_price"]) * s["quantity"]
-            for s in sales if s.get("payment_method") == PAYMENT_CREDIT
+            for s in sales
+            if s.get("payment_method") == PAYMENT_CREDIT
         ),
         "llc_revenue": sum(
             float(s["unit_price"]) * s["quantity"]
-            for s in sales if s.get("seller_type") == "llc"
+            for s in sales
+            if s.get("seller_type") == "llc"
         ),
         "by_product": by_product,
     }
@@ -390,6 +399,7 @@ def _build_report_body(
 
 # ─── Weekly report ────────────────────────────────────────────────────────────
 
+
 def format_weekly_report(
     sales: Sequence[Any],
     returns: Sequence[Any],
@@ -409,15 +419,22 @@ def format_weekly_report(
         f"📅 {week_start.strftime('%d.%m.%Y')} — {now.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ კვირაში გაყიდვა არ მომხდარა.", cash_on_hand, pending_liabilities)
+    lines += _build_report_body(
+        m,
+        sales,
+        returns,
+        expenses,
+        "📦 ამ კვირაში გაყიდვა არ მომხდარა.",
+        cash_on_hand,
+        pending_liabilities,
+    )
     lines.append("")
 
     if low_stock:
         lines += ["", "⚠️ <b>დაბალი მარაგი:</b>"]
         for p in low_stock:
             lines.append(
-                f"• {_e(p['name'])}: {p['current_stock']}ც "
-                f"(მინ: {p['min_stock']}ც)"
+                f"• {_e(p['name'])}: {p['current_stock']}ც (მინ: {p['min_stock']}ც)"
             )
 
     if ai_advice:
@@ -428,6 +445,7 @@ def format_weekly_report(
 
 
 # ─── Stock report ─────────────────────────────────────────────────────────────
+
 
 def format_stock_report(products: Sequence[Any]) -> str:
     if not products:
@@ -460,6 +478,7 @@ def format_stock_report(products: Sequence[Any]) -> str:
 
 # ─── Orders report ────────────────────────────────────────────────────────────
 
+
 def format_orders_report(orders: Sequence[Any]) -> str:
     if not orders:
         return "📋 მომლოდინე შეკვეთა არ არის."
@@ -488,7 +507,10 @@ def format_orders_report(orders: Sequence[Any]) -> str:
 
 # ─── Diagnostics report ───────────────────────────────────────────────────────
 
-def format_diagnostics_report(failures: Sequence[Any], total_7d: int, total_30d: int) -> str:
+
+def format_diagnostics_report(
+    failures: Sequence[Any], total_7d: int, total_30d: int
+) -> str:
     now = _now()
     lines: List[str] = [
         "🔍 <b>დიაგნოსტიკა — ვერ ამოცნობილი შეტყობინებები</b>",
@@ -509,9 +531,7 @@ def format_diagnostics_report(failures: Sequence[Any], total_7d: int, total_30d:
         txt = str(f["message_text"])[:60]
         if len(str(f["message_text"])) > 60:
             txt += "..."
-        lines.append(
-            f"• <code>{_e(txt)}</code> — {f['occurrences']}-ჯერ"
-        )
+        lines.append(f"• <code>{_e(txt)}</code> — {f['occurrences']}-ჯერ")
 
     lines += [
         "",
@@ -521,6 +541,7 @@ def format_diagnostics_report(failures: Sequence[Any], total_7d: int, total_30d:
 
 
 # ─── Period report ────────────────────────────────────────────────────────────
+
 
 def format_period_report(
     sales: Sequence[Any],
@@ -542,12 +563,25 @@ def format_period_report(
         f"📅 {date_from.strftime('%d.%m.%Y')} — {date_to.strftime('%d.%m.%Y')}",
         "",
     ]
-    lines += _build_report_body(m, sales, returns, expenses, "📦 ამ პერიოდში გაყიდვა არ მომხდარა.", cash_on_hand, pending_liabilities)
-    lines += ["", "━━━━━━━━━━━━━━━━━━━━━", f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>"]
+    lines += _build_report_body(
+        m,
+        sales,
+        returns,
+        expenses,
+        "📦 ამ პერიოდში გაყიდვა არ მომხდარა.",
+        cash_on_hand,
+        pending_liabilities,
+    )
+    lines += [
+        "",
+        "━━━━━━━━━━━━━━━━━━━━━",
+        f"<i>ანგარიში შექმნილია: {now.strftime('%d.%m.%Y %H:%M')}</i>",
+    ]
     return _truncate("\n".join(lines))
 
 
 # ─── Cash on hand ────────────────────────────────────────────────────────────
+
 
 def format_cash_on_hand(data: Dict[str, float]) -> str:
     """Standalone /cash command message."""
@@ -584,6 +618,7 @@ def format_cash_on_hand(data: Dict[str, float]) -> str:
 
 
 # ─── Topic sharing — compact one-liners posted to group topics ─────────────────
+
 
 def format_topic_sale(
     product_name: str,

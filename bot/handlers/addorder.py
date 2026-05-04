@@ -22,6 +22,7 @@ the wizard. State is always cleared on:
     • finish-without-items
     • DB / network exception during the bulk insert
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 addorder_router = Router(name="addorder")
 
 # OEM code: alphanumeric (A-Z, a-z, 0-9), minimum 4 characters.
-_OEM_RE = re.compile(r'^[A-Za-z0-9]{4,}$')
+_OEM_RE = re.compile(r"^[A-Za-z0-9]{4,}$")
 
 _PARSE = ParseMode.HTML
 _PRIVATE = F.chat.type == ChatType.PRIVATE
@@ -72,6 +73,7 @@ _MAX_ITEMS_PER_SESSION = 50
 
 
 # ─── Keyboard helpers ────────────────────────────────────────────────────────
+
 
 def _kb(*rows: List[InlineKeyboardButton]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=list(rows))
@@ -120,19 +122,21 @@ def _continue_kb() -> InlineKeyboardMarkup:
 
 # ─── FSM states ──────────────────────────────────────────────────────────────
 
+
 class AddOrderWizard(StatesGroup):
-    oem       = State()   # strict OEM code (digits only)
-    name      = State()   # product name
-    quantity  = State()   # how many units
-    priority  = State()   # urgent / low
-    next_step = State()   # add another or finish
+    oem = State()  # strict OEM code (digits only)
+    name = State()  # product name
+    quantity = State()  # how many units
+    priority = State()  # urgent / low
+    next_step = State()  # add another or finish
 
 
 class OrderEditWizard(StatesGroup):
-    quantity = State()    # waiting for new quantity from admin
+    quantity = State()  # waiting for new quantity from admin
 
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
+
 
 def _parse_name_qty(text: str) -> tuple[str, Optional[int]]:
     """Split "product name 3" into ("product name", 3).
@@ -215,7 +219,9 @@ async def _ask_for_name(msg: Message, state: FSMContext, oem_code: str) -> None:
     await msg.answer(text, parse_mode=_PARSE, reply_markup=_kb(_CANCEL_ROW))
 
 
-async def _goto_quantity(msg: Message, state: FSMContext, product_name: str, edit: bool) -> None:
+async def _goto_quantity(
+    msg: Message, state: FSMContext, product_name: str, edit: bool
+) -> None:
     await state.set_state(AddOrderWizard.quantity)
     text = (
         f"✅ <b>{_e(product_name)}</b>\n\n"
@@ -247,10 +253,7 @@ def _summary_lines(items: List[Dict[str, Any]]) -> List[str]:
     for idx, it in enumerate(items, start=1):
         prio = _PRIORITY_LABEL.get(it["priority"], it["priority"])
         oem = f" <code>{_e(it['oem_code'])}</code>" if it.get("oem_code") else ""
-        out.append(
-            f"{idx}. {_e(it['product_name'])}{oem} — "
-            f"{it['quantity']}ც · {prio}"
-        )
+        out.append(f"{idx}. {_e(it['product_name'])}{oem} — {it['quantity']}ც · {prio}")
     return out
 
 
@@ -272,6 +275,7 @@ async def _ask_continue(msg: Message, state: FSMContext, send: bool) -> None:
 
 
 # ─── Final summary builder + dispatcher ──────────────────────────────────────
+
 
 def _format_topic_summary(
     items_with_ids: List[Dict[str, Any]],
@@ -312,28 +316,35 @@ def _format_topic_summary(
 
     lines.append("")
     lines.append(
-        f"📊 სულ: <b>{len(items_with_ids)}</b> ნივთი "
-        f"(🚨 {len(urgent)} · 🟢 {len(low)})"
+        f"📊 სულ: <b>{len(items_with_ids)}</b> ნივთი (🚨 {len(urgent)} · 🟢 {len(low)})"
     )
     return "\n".join(lines)
 
 
 # ─── Entry point: /addorder ──────────────────────────────────────────────────
 
+
 @addorder_router.message(Command("addorder"), IsAdmin(), _PRIVATE)
 async def cmd_addorder(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_data({
-        "saved_items": [],   # lightweight display list: {id, product_name, oem_code, quantity, priority}
-        "order_ids": [],     # DB IDs already inserted
-        "requester_id": message.from_user.id if message.from_user else None,
-        "requester_name": message.from_user.full_name if message.from_user else None,
-        "requester_username": message.from_user.username if message.from_user else None,
-    })
+    await state.set_data(
+        {
+            "saved_items": [],  # lightweight display list: {id, product_name, oem_code, quantity, priority}
+            "order_ids": [],  # DB IDs already inserted
+            "requester_id": message.from_user.id if message.from_user else None,
+            "requester_name": message.from_user.full_name
+            if message.from_user
+            else None,
+            "requester_username": message.from_user.username
+            if message.from_user
+            else None,
+        }
+    )
     await _ask_for_oem(message, state, edit=False)
 
 
 # ─── Cancel ──────────────────────────────────────────────────────────────────
+
 
 @addorder_router.callback_query(F.data == "ao:cancel", IsAdmin())
 async def cb_cancel(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
@@ -357,6 +368,7 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext, db: Database) ->
 
 # ─── Step 1a: OEM via barcode photo ──────────────────────────────────────────
 
+
 @addorder_router.message(AddOrderWizard.oem, IsAdmin(), _PRIVATE, F.photo)
 async def on_oem_photo(message: Message, state: FSMContext, bot: Bot) -> None:
     """Decode barcode from a photo at the OEM step, then extract part name."""
@@ -368,7 +380,9 @@ async def on_oem_photo(message: Message, state: FSMContext, bot: Bot) -> None:
     await bot.download_file(file_info.file_path, destination=buf)
     image_bytes = buf.getvalue()
 
-    oem = await asyncio.get_running_loop().run_in_executor(None, decode_barcode, image_bytes)
+    oem = await asyncio.get_running_loop().run_in_executor(
+        None, decode_barcode, image_bytes
+    )
 
     if not oem:
         await message.answer(
@@ -396,11 +410,15 @@ async def on_oem_photo(message: Message, state: FSMContext, bot: Bot) -> None:
     name_ka, name_en = await extract_part_info(image_bytes)
 
     if name_ka or name_en:
-        name_full = f"{name_ka} ({name_en})" if (name_ka and name_en) else (name_ka or name_en)
+        name_full = (
+            f"{name_ka} ({name_en})" if (name_ka and name_en) else (name_ka or name_en)
+        )
         await state.update_data(bc_suggested_name=name_ka or name_en)
         kb = _kb(
-            [_btn("✅ კი, ასე", "ao:bc_name_yes"),
-             _btn("✎ სახელი ხელით", "ao:bc_name_manual")],
+            [
+                _btn("✅ კი, ასე", "ao:bc_name_yes"),
+                _btn("✎ სახელი ხელით", "ao:bc_name_manual"),
+            ],
             _CANCEL_ROW,
         )
         await message.answer(
@@ -414,7 +432,9 @@ async def on_oem_photo(message: Message, state: FSMContext, bot: Bot) -> None:
         await _ask_for_name(message, state, oem_clean)
 
 
-@addorder_router.callback_query(F.data == "ao:bc_name_yes", IsAdmin(), StateFilter(AddOrderWizard.oem))
+@addorder_router.callback_query(
+    F.data == "ao:bc_name_yes", IsAdmin(), StateFilter(AddOrderWizard.oem)
+)
 async def cb_ao_bc_name_yes(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     data = await state.get_data()
@@ -424,7 +444,9 @@ async def cb_ao_bc_name_yes(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@addorder_router.callback_query(F.data == "ao:bc_name_manual", IsAdmin(), StateFilter(AddOrderWizard.oem))
+@addorder_router.callback_query(
+    F.data == "ao:bc_name_manual", IsAdmin(), StateFilter(AddOrderWizard.oem)
+)
 async def cb_ao_bc_name_manual(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     data = await state.get_data()
@@ -436,6 +458,7 @@ async def cb_ao_bc_name_manual(callback: CallbackQuery, state: FSMContext) -> No
 
 
 # ─── Step 1b: OEM code input (text) ──────────────────────────────────────────
+
 
 @addorder_router.message(AddOrderWizard.oem, IsAdmin(), _PRIVATE)
 async def on_oem_input(message: Message, state: FSMContext) -> None:
@@ -454,6 +477,7 @@ async def on_oem_input(message: Message, state: FSMContext) -> None:
 
 # ─── Step 2: product name only ───────────────────────────────────────────────
 
+
 @addorder_router.message(AddOrderWizard.name, IsAdmin(), _PRIVATE)
 async def on_name_qty_input(message: Message, state: FSMContext, db: Database) -> None:
     """Accept product name, then ask for quantity in the next step."""
@@ -471,6 +495,7 @@ async def on_name_qty_input(message: Message, state: FSMContext, db: Database) -
 
 # ─── Step 3: quantity (only reached when name was entered without qty) ────────
 
+
 @addorder_router.message(AddOrderWizard.quantity, IsAdmin(), _PRIVATE)
 async def on_quantity_input(message: Message, state: FSMContext, db: Database) -> None:
     raw = (message.text or "").strip()
@@ -484,7 +509,9 @@ async def on_quantity_input(message: Message, state: FSMContext, db: Database) -
         return
 
     if qty <= 0:
-        await message.answer("⚠️ რაოდენობა უნდა იყოს 1-ზე მეტი ან მისი ტოლი.", parse_mode=_PARSE)
+        await message.answer(
+            "⚠️ რაოდენობა უნდა იყოს 1-ზე მეტი ან მისი ტოლი.", parse_mode=_PARSE
+        )
         return
 
     data = await state.get_data()
@@ -494,12 +521,17 @@ async def on_quantity_input(message: Message, state: FSMContext, db: Database) -
 
 # ─── Step 3: priority + commit-to-session ────────────────────────────────────
 
-@addorder_router.callback_query(F.data.startswith("ao:prio:"), IsAdmin(), StateFilter(AddOrderWizard.priority))
+
+@addorder_router.callback_query(
+    F.data.startswith("ao:prio:"), IsAdmin(), StateFilter(AddOrderWizard.priority)
+)
 async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
     chosen = (callback.data or "").split(":", 2)[2]
     if chosen not in VALID_PRIORITIES:
-        await callback.answer("❌ უცნობი პრიორიტეტი — მხოლოდ 'urgent' ან 'low'", show_alert=True)
+        await callback.answer(
+            "❌ უცნობი პრიორიტეტი — მხოლოდ 'urgent' ან 'low'", show_alert=True
+        )
         return
 
     data = await state.get_data()
@@ -524,9 +556,8 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
             logger.exception("on_priority: upsert_client failed for %s", requester_id)
             requester_id = None
 
-    notes = (
-        f"manual /addorder by {requester_name or 'admin'}"
-        + (f" — not in catalog: {product_name}" if is_freeform and not product_id else "")
+    notes = f"manual /addorder by {requester_name or 'admin'}" + (
+        f" — not in catalog: {product_name}" if is_freeform and not product_id else ""
     )
 
     # Save to DB immediately — no data loss on restart.
@@ -569,7 +600,9 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
     )
 
     if len(saved_items) >= _MAX_ITEMS_PER_SESSION:
-        await callback.answer(f"მიღწეულია მაქსიმუმი ({_MAX_ITEMS_PER_SESSION})", show_alert=True)
+        await callback.answer(
+            f"მიღწეულია მაქსიმუმი ({_MAX_ITEMS_PER_SESSION})", show_alert=True
+        )
         await _finalize(callback, state, db)
         return
 
@@ -579,7 +612,10 @@ async def on_priority(callback: CallbackQuery, state: FSMContext, db: Database) 
 
 # ─── Step 4: loop — add another / finish ─────────────────────────────────────
 
-@addorder_router.callback_query(F.data == "ao:more", IsAdmin(), StateFilter(AddOrderWizard.next_step))
+
+@addorder_router.callback_query(
+    F.data == "ao:more", IsAdmin(), StateFilter(AddOrderWizard.next_step)
+)
 async def on_more(callback: CallbackQuery, state: FSMContext) -> None:
     assert isinstance(callback.message, Message)
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -587,7 +623,9 @@ async def on_more(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@addorder_router.callback_query(F.data == "ao:done", IsAdmin(), StateFilter(AddOrderWizard.next_step))
+@addorder_router.callback_query(
+    F.data == "ao:done", IsAdmin(), StateFilter(AddOrderWizard.next_step)
+)
 async def on_done(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     await _finalize(callback, state, db)
 
@@ -607,6 +645,7 @@ async def on_stale_wizard_button(callback: CallbackQuery, state: FSMContext) -> 
 
 
 # ─── Finalization: bulk INSERT + post topic summary ──────────────────────────
+
 
 async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     assert isinstance(callback.message, Message)
@@ -649,7 +688,8 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
         except Exception as link_exc:
             logger.warning(
                 "Failed to store topic_message_id for orders %r: %s",
-                order_ids, link_exc,
+                order_ids,
+                link_exc,
             )
     except Exception as exc:
         logger.warning("Failed to post addorder summary to ORDERS topic: %s", exc)
@@ -668,6 +708,7 @@ async def _finalize(callback: CallbackQuery, state: FSMContext, db: Database) ->
 
 # ─── "✅ შესრულდა" — close the whole batch from the topic message ────────────
 
+
 def _format_completed_summary(
     original_html: str,
     orders: Sequence[Mapping[str, Any]],
@@ -685,7 +726,8 @@ def _format_completed_summary(
     footer_ids = ", ".join(f"#{o['id']}" for o in orders)
     footer = (
         f"\n\n✅ <b>დახურული შეკვეთები ({len(orders)}):</b> {footer_ids}"
-        if orders else ""
+        if orders
+        else ""
     )
     return f"{banner}\n\n{original_html}{footer}"
 
@@ -714,7 +756,8 @@ async def cb_complete(callback: CallbackQuery, db: Database) -> None:
     except Exception:
         logger.exception(
             "complete_orders_by_topic_message failed (topic=%s msg=%s)",
-            topic_id, message_id,
+            topic_id,
+            message_id,
         )
         await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
         return
@@ -762,6 +805,7 @@ async def cb_complete(callback: CallbackQuery, db: Database) -> None:
 
 # ─── Helper: convert DB OrderRow to _format_topic_summary item ───────────────
 
+
 def _order_row_to_item(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": row["id"],
@@ -773,6 +817,7 @@ def _order_row_to_item(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─── "🗑 წაშლა" — delete all orders in the batch ────────────────────────────
+
 
 @addorder_router.callback_query(F.data == _CB_DELETE, IsAdmin())
 async def cb_delete(callback: CallbackQuery, db: Database) -> None:
@@ -792,7 +837,8 @@ async def cb_delete(callback: CallbackQuery, db: Database) -> None:
     except Exception:
         logger.exception(
             "delete_orders_by_topic_message failed (topic=%s msg=%s)",
-            topic_id, message_id,
+            topic_id,
+            message_id,
         )
         await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
         return
@@ -806,6 +852,7 @@ async def cb_delete(callback: CallbackQuery, db: Database) -> None:
 
 
 # ─── "✏️ რედაქტირება" — enter edit mode ────────────────────────────────────
+
 
 @addorder_router.callback_query(F.data == _CB_EDIT, IsAdmin())
 async def cb_edit(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
@@ -825,14 +872,17 @@ async def cb_edit(callback: CallbackQuery, state: FSMContext, db: Database) -> N
     except Exception:
         logger.exception(
             "get_orders_by_topic_message failed (topic=%s msg=%s)",
-            topic_id, message_id,
+            topic_id,
+            message_id,
         )
         await callback.answer("❌ შეცდომა ბაზაში", show_alert=True)
         return
 
     pending = [o for o in orders if o["status"] == "pending"]
     if not pending:
-        await callback.answer("ℹ️ ჩასარედაქტირებელი შეკვეთა ვერ მოიძებნა", show_alert=True)
+        await callback.answer(
+            "ℹ️ ჩასარედაქტირებელი შეკვეთა ვერ მოიძებნა", show_alert=True
+        )
         return
 
     await state.set_state(OrderEditWizard.quantity)
@@ -870,6 +920,7 @@ async def cb_edit(callback: CallbackQuery, state: FSMContext, db: Database) -> N
 
 
 # ─── Edit wizard: quantity input ─────────────────────────────────────────────
+
 
 @addorder_router.message(OrderEditWizard.quantity, IsAdmin())
 async def on_edit_qty_input(message: Message, state: FSMContext, db: Database) -> None:
@@ -934,7 +985,9 @@ async def on_edit_qty_input(message: Message, state: FSMContext, db: Database) -
             new_quantity=new_qty,
         )
     except Exception:
-        logger.exception("update_order_quantity failed for order_id=%s", target_order_id)
+        logger.exception(
+            "update_order_quantity failed for order_id=%s", target_order_id
+        )
         await message.answer("❌ შეცდომა ბაზაში", parse_mode=_PARSE)
         await state.clear()
         return

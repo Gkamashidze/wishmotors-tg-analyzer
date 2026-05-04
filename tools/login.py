@@ -5,6 +5,7 @@ After this, audit_live.py works automatically without any codes.
 Usage:
     python3 tools/login.py
 """
+
 import asyncio
 import os
 import sys
@@ -17,9 +18,9 @@ from telethon import TelegramClient
 
 load_dotenv()
 
-API_ID   = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-PHONE    = os.getenv("TELEGRAM_PHONE", "")
+PHONE = os.getenv("TELEGRAM_PHONE", "")
 
 session_path = Path(__file__).parent / "audit_session"
 

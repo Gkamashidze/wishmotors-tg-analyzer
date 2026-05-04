@@ -17,6 +17,7 @@ from bot.parsers.message_parser import (
 
 # ─── parse_sale_message — basic patterns ─────────────────────────────────────
 
+
 class TestParseSaleMessage:
     def test_pattern_a_cash_explicit(self):
         result = parse_sale_message("მარჭვენა რეფლექტორი 1ც 30₾ ხელზე")
@@ -104,6 +105,7 @@ class TestParseSaleMessage:
 
 # ─── parse_sale_message — payment methods ────────────────────────────────────
 
+
 class TestPaymentMethods:
     def test_baraTi_maps_to_transfer(self):
         """ბარათი should be transfer, not unknown."""
@@ -128,6 +130,7 @@ class TestPaymentMethods:
 
 
 # ─── parse_sale_message — seller type ────────────────────────────────────────
+
 
 class TestSellerType:
     def test_no_keyword_is_individual(self):
@@ -160,6 +163,7 @@ class TestSellerType:
 
 
 # ─── parse_sale_message — customer name ──────────────────────────────────────
+
 
 class TestCustomerName:
     def test_no_customer(self):
@@ -197,6 +201,7 @@ class TestCustomerName:
 
 # ─── parse_sale_message — format variations ──────────────────────────────────
 
+
 class TestFormatVariations:
     def test_slash_separator_between_qty_and_price(self):
         result = parse_sale_message("სარკე 1ც/30₾")
@@ -221,6 +226,7 @@ class TestFormatVariations:
 
 
 # ─── parse_sale_message — price-only shorthand (Pattern C) ───────────────────
+
 
 class TestPriceOnlyPattern:
     """Real-world format: '30ლ ხელზე' — price + payment, no product/qty."""
@@ -263,6 +269,7 @@ class TestPriceOnlyPattern:
 
 
 # ─── parse_expense_message ────────────────────────────────────────────────────
+
 
 class TestParseExpenseMessage:
     def test_amount_first(self):
@@ -388,6 +395,7 @@ class TestParseExpenseMessage:
 
 # ─── parse_order_message ─────────────────────────────────────────────────────
 
+
 class TestParseOrderMessage:
     def test_oem_code_order(self):
         result = parse_order_message("8390132500 5ც")
@@ -409,8 +417,8 @@ class TestParseOrderMessage:
 
     def test_unrecognised_returns_none(self):
         assert parse_order_message("") is None
-        assert parse_order_message("12") is None     # bare number, no ც
-        assert parse_order_message("ab") is None     # too short
+        assert parse_order_message("12") is None  # bare number, no ც
+        assert parse_order_message("ab") is None  # too short
 
     def test_whitespace_stripped(self):
         result = parse_order_message("  სარკე 1ც  ")
@@ -430,6 +438,7 @@ class TestParseOrderMessage:
 
 
 # ─── parse_sale_message — new real-world formats ─────────────────────────────
+
 
 class TestRealWorldFormats:
     def test_product_price_credit_no_qty(self):
@@ -496,6 +505,7 @@ class TestRealWorldFormats:
 
 # ─── ჯამში (total price) support ─────────────────────────────────────────────
 
+
 class TestJumshiTotalPrice:
     def test_jumshi_divides_by_qty(self):
         """'136001 2ც ჯამში 360ლ' → unit price = 180."""
@@ -525,6 +535,7 @@ class TestJumshiTotalPrice:
 
 
 # ─── parse_batch_sales ────────────────────────────────────────────────────────
+
 
 class TestParseBatchSales:
     # Each item in the returned list is: None (failed) | [ParsedSale, ...] (1 or 2 sales)
@@ -566,7 +577,7 @@ class TestParseBatchSales:
         name, items = parse_batch_sales(text)
         assert name == "იმედა"
         assert items[0] is not None
-        assert items[0][0].price == 180.0   # 360 / 2
+        assert items[0][0].price == 180.0  # 360 / 2
         assert items[1] is not None
         assert items[1][0].price == 35.0
 
@@ -587,11 +598,11 @@ class TestParseBatchSales:
         text = "იმედა:\n008b03 და 108000 1-1ც ჯამში 210\n209000 1ც 35ლ"
         name, items = parse_batch_sales(text)
         assert name == "იმედა"
-        assert len(items) == 2          # 2 input lines → 2 items
+        assert len(items) == 2  # 2 input lines → 2 items
         assert items[0] is not None
-        assert len(items[0]) == 2       # dual → two ParsedSale objects
+        assert len(items[0]) == 2  # dual → two ParsedSale objects
         assert items[1] is not None
-        assert len(items[1]) == 1       # single sale
+        assert len(items[1]) == 1  # single sale
 
     def test_dual_customer_propagated(self):
         """Customer name from header is set on both halves of a dual sale."""
@@ -605,7 +616,7 @@ class TestParseBatchSales:
         """A standalone phone number line in a batch is ignored, not a failure."""
         text = "გიო:\nსარკე 1ც 50ლ\n592159052"
         _, items = parse_batch_sales(text)
-        assert len(items) == 1          # only the sale; phone line dropped
+        assert len(items) == 1  # only the sale; phone line dropped
         assert items[0] is not None
 
     def test_phone_and_name_as_header(self):
@@ -617,6 +628,7 @@ class TestParseBatchSales:
 
 
 # ─── Payment-keyword-first format (Pattern G) ────────────────────────────────
+
 
 class TestPaymentKeywordFirst:
     def test_momca_lari_symbol(self):
@@ -659,6 +671,7 @@ class TestPaymentKeywordFirst:
 
 
 # ─── parse_dual_sale_message ──────────────────────────────────────────────────
+
 
 class TestParseDualSale:
     def test_basic_1_1_jumshi(self):
@@ -705,5 +718,5 @@ class TestParseDualSale:
         assert result is not None
         assert result[0].quantity == 1
         assert result[1].quantity == 2
-        assert result[0].price == 150.0   # 300/2 / 1
-        assert result[1].price == 75.0    # 300/2 / 2
+        assert result[0].price == 150.0  # 300/2 / 1
+        assert result[1].price == 75.0  # 300/2 / 2

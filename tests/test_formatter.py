@@ -1,4 +1,5 @@
 """Tests for bot/reports/formatter.py — pure formatting functions."""
+
 from __future__ import annotations
 
 import os
@@ -31,6 +32,7 @@ from bot.reports.formatter import (  # noqa: E402
 
 # ─── _e (html escape) ─────────────────────────────────────────────────────────
 
+
 class TestHtmlEscape:
     def test_plain_string_unchanged(self):
         assert _e("hello") == "hello"
@@ -57,6 +59,7 @@ class TestHtmlEscape:
 
 # ─── _payment_label ───────────────────────────────────────────────────────────
 
+
 class TestPaymentLabel:
     def test_cash(self):
         assert _payment_label("cash") == "ხელზე 💵"
@@ -75,6 +78,7 @@ class TestPaymentLabel:
 
 # ─── _seller_label ────────────────────────────────────────────────────────────
 
+
 class TestSellerLabel:
     def test_llc(self):
         assert _seller_label("llc") == "შპს"
@@ -87,6 +91,7 @@ class TestSellerLabel:
 
 
 # ─── _category_label ──────────────────────────────────────────────────────────
+
 
 class TestCategoryLabel:
     def test_known_category(self):
@@ -110,6 +115,7 @@ class TestCategoryLabel:
 
 # ─── _truncate ────────────────────────────────────────────────────────────────
 
+
 class TestTruncate:
     def test_short_message_unchanged(self):
         msg = "მოკლე შეტყობინება"
@@ -132,6 +138,7 @@ class TestTruncate:
 
 
 # ─── format_topic_sale ────────────────────────────────────────────────────────
+
 
 class TestFormatTopicSale:
     def _sale(self, **kwargs):
@@ -184,6 +191,7 @@ class TestFormatTopicSale:
 
 # ─── format_topic_nisia ───────────────────────────────────────────────────────
 
+
 class TestFormatTopicNisia:
     def _nisia(self, **kwargs):
         defaults = dict(
@@ -218,6 +226,7 @@ class TestFormatTopicNisia:
 
 
 # ─── format_topic_expense ─────────────────────────────────────────────────────
+
 
 class TestFormatTopicExpense:
     def test_known_category_label_shown(self):
@@ -254,6 +263,7 @@ class TestFormatTopicExpense:
 
 
 # ─── format_topic_order ───────────────────────────────────────────────────────
+
 
 class TestFormatTopicOrder:
     def _order(self, **kwargs):
@@ -304,6 +314,7 @@ class TestFormatTopicOrder:
 
 
 # ─── format_sale_confirmation ─────────────────────────────────────────────────
+
 
 class TestFormatSaleConfirmation:
     def _confirm(self, **kwargs):

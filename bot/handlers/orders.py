@@ -42,21 +42,21 @@ _PRIORITY_LABEL = {
 }
 
 _STATUS_BUTTON_LABELS = [
-    ("🆕 ახალი",       "new"),
-    ("⚙️ მუშავდება",   "processing"),
-    ("📦 შეკვეთილია",   "ordered"),
-    ("✅ მზადაა",       "ready"),
-    ("🚚 მიტანილი",    "delivered"),
-    ("❌ გაუქმება",     "cancelled"),
+    ("🆕 ახალი", "new"),
+    ("⚙️ მუშავდება", "processing"),
+    ("📦 შეკვეთილია", "ordered"),
+    ("✅ მზადაა", "ready"),
+    ("🚚 მიტანილი", "delivered"),
+    ("❌ გაუქმება", "cancelled"),
 ]
 
 _STATUS_ANSWER_LABELS = {
-    "new":        "🆕 ახალი",
+    "new": "🆕 ახალი",
     "processing": "⚙️ მუშავდება",
-    "ordered":    "📦 შეკვეთილია",
-    "ready":      "✅ მზადაა",
-    "delivered":  "🚚 მიტანილი",
-    "cancelled":  "❌ გაუქმდა",
+    "ordered": "📦 შეკვეთილია",
+    "ready": "✅ მზადაა",
+    "delivered": "🚚 მიტანილი",
+    "cancelled": "❌ გაუქმდა",
 }
 
 # user_id → order_id: tracks who is currently being asked for ordered quantity.
@@ -74,13 +74,18 @@ class _HasPendingQty(Filter):
 def _order_status_kb(order_id: int) -> InlineKeyboardMarkup:
     """6-button inline keyboard for changing a single order's status."""
     rows = [
-        [InlineKeyboardButton(text=label, callback_data=f"order_status:{order_id}:{status}")]
+        [
+            InlineKeyboardButton(
+                text=label, callback_data=f"order_status:{order_id}:{status}"
+            )
+        ]
         for label, status in _STATUS_BUTTON_LABELS
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ─── Orders topic ─────────────────────────────────────────────────────────────
+
 
 @orders_router.message(InTopic(config.ORDERS_TOPIC_ID), IsAdmin(), F.text)
 async def handle_order_message(message: Message, db: Database) -> None:
@@ -136,13 +141,17 @@ async def handle_order_message(message: Message, db: Database) -> None:
                 reply_markup=_order_status_kb(order_id),
             )
             await db.update_orders_topic_message(
-                [order_id], config.ORDERS_TOPIC_ID, topic_msg.message_id,
+                [order_id],
+                config.ORDERS_TOPIC_ID,
+                topic_msg.message_id,
             )
         except Exception as _te:
             logger.warning("Failed to post order to topic: %s", _te)
 
         priority_label = _PRIORITY_LABEL.get(parsed.priority, "🟢 არც ისე სასწრაფო")
-        qty_line = f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც\n" if parsed.quantity else ""
+        qty_line = (
+            f"🔢 საჭირო რაოდენობა: {parsed.quantity}ც\n" if parsed.quantity else ""
+        )
         await message.bot.send_message(
             chat_id=message.from_user.id,
             text=(
@@ -163,6 +172,7 @@ async def handle_order_message(message: Message, db: Database) -> None:
 
 
 # ─── Order status callback ────────────────────────────────────────────────────
+
 
 @orders_router.callback_query(F.data.startswith("order_status:"))
 async def handle_order_status_callback(callback: CallbackQuery, db: Database) -> None:
@@ -194,8 +204,14 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
     order = await db.get_order_by_id(order_id)
     qty_ordered = int(order.get("quantity_ordered") or 0) if order else 0
 
-    if order and callback.message and not isinstance(callback.message, InaccessibleMessage):
-        product_name = order.get("product_name") or order.get("part_name") or f"#{order_id}"
+    if (
+        order
+        and callback.message
+        and not isinstance(callback.message, InaccessibleMessage)
+    ):
+        product_name = (
+            order.get("product_name") or order.get("part_name") or f"#{order_id}"
+        )
         new_text = format_topic_order(
             product_name=str(product_name),
             qty=int(order["quantity_needed"]),
@@ -221,7 +237,11 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
     if new_status == "ordered" and callback.from_user:
         user_id = callback.from_user.id
         _pending_ordered_qty[user_id] = order_id
-        part_name = order.get("part_name") or order.get("product_name") or f"#{order_id}" if order else f"#{order_id}"
+        part_name = (
+            order.get("part_name") or order.get("product_name") or f"#{order_id}"
+            if order
+            else f"#{order_id}"
+        )
         qty_needed = int(order["quantity_needed"]) if order else "?"
         try:
             await callback.bot.send_message(
@@ -240,6 +260,7 @@ async def handle_order_status_callback(callback: CallbackQuery, db: Database) ->
 
 
 # ─── DM handler: capture ordered quantity reply ───────────────────────────────
+
 
 @orders_router.message(
     F.chat.type == ChatType.PRIVATE,
@@ -272,7 +293,9 @@ async def handle_ordered_qty_reply(message: Message, db: Database) -> None:
     # Re-fetch and edit the topic message.
     order = await db.get_order_by_id(order_id)
     if order:
-        product_name = order.get("product_name") or order.get("part_name") or f"#{order_id}"
+        product_name = (
+            order.get("product_name") or order.get("part_name") or f"#{order_id}"
+        )
         qty_needed = int(order["quantity_needed"])
         remaining = max(qty_needed - qty_ordered, 0)
         new_text = format_topic_order(
@@ -304,10 +327,13 @@ async def handle_ordered_qty_reply(message: Message, db: Database) -> None:
             parse_mode=_PARSE,
         )
     else:
-        await message.answer(f"✅ შეკვეთა #{order_id} — შეკვეთილი: {qty_ordered}ც", parse_mode=_PARSE)
+        await message.answer(
+            f"✅ შეკვეთა #{order_id} — შეკვეთილი: {qty_ordered}ც", parse_mode=_PARSE
+        )
 
 
 # ─── Expenses topic ───────────────────────────────────────────────────────────
+
 
 @orders_router.message(InTopic(config.EXPENSES_TOPIC_ID), IsAdmin(), F.text)
 async def handle_expense_message(message: Message, db: Database) -> None:
@@ -352,7 +378,9 @@ async def handle_expense_message(message: Message, db: Database) -> None:
                 reply_markup=topic_expense_kb(expense_id),
             )
             await db.update_expense_topic_message(
-                expense_id, config.EXPENSES_TOPIC_ID, topic_msg.message_id,
+                expense_id,
+                config.EXPENSES_TOPIC_ID,
+                topic_msg.message_id,
             )
         except Exception as _te:
             logger.warning("Failed to post expense to topic: %s", _te)

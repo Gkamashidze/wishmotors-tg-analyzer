@@ -4,6 +4,7 @@ decode_barcode()       — synchronous; run in an executor (CPU-bound).
 extract_part_info()    — async; name-only extraction via Claude Vision.
 extract_from_label()   — async; full fallback: OEM code + name via Claude Vision.
 """
+
 from __future__ import annotations
 
 import base64
@@ -26,9 +27,14 @@ def _get_anthropic_client() -> Optional[Any]:
     if _anthropic_client is None:
         try:
             import anthropic
-            _anthropic_client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+
+            _anthropic_client = anthropic.AsyncAnthropic(
+                api_key=config.ANTHROPIC_API_KEY
+            )
         except ImportError:
-            logger.warning("`anthropic` package not installed — barcode AI extraction unavailable.")
+            logger.warning(
+                "`anthropic` package not installed — barcode AI extraction unavailable."
+            )
     return _anthropic_client
 
 
@@ -103,7 +109,6 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
     if client is None:
         return "", ""
     try:
-
         b64 = base64.standard_b64encode(image_bytes).decode()
         response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -137,7 +142,8 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
         usage = response.usage
         logger.info(
             "extract_part_info tokens: in=%d out=%d",
-            usage.input_tokens, usage.output_tokens,
+            usage.input_tokens,
+            usage.output_tokens,
         )
         raw = getattr(response.content[0], "text", "").strip()
         parts = raw.split("|", 1)
@@ -145,7 +151,11 @@ async def extract_part_info(image_bytes: bytes) -> tuple[str, str]:
         name_ka = parts[1].strip() if len(parts) > 1 else ""
         return name_ka, name_en
     except Exception as exc:
-        logger.warning("Claude Vision part-name extraction failed (%s): %s", type(exc).__name__, exc)
+        logger.warning(
+            "Claude Vision part-name extraction failed (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
         return "", ""
 
 
@@ -159,7 +169,6 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
     if client is None:
         return "", "", ""
     try:
-
         b64 = base64.standard_b64encode(image_bytes).decode()
         response = await client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -201,7 +210,8 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
         usage = response.usage
         logger.info(
             "extract_from_label tokens: in=%d out=%d",
-            usage.input_tokens, usage.output_tokens,
+            usage.input_tokens,
+            usage.output_tokens,
         )
         raw = getattr(response.content[0], "text", "").strip()
         parts = raw.split("|", 2)
@@ -210,5 +220,9 @@ async def extract_from_label(image_bytes: bytes) -> tuple[str, str, str]:
         name_ka = parts[2].strip() if len(parts) > 2 else ""
         return oem, name_ka, name_en
     except Exception as exc:
-        logger.warning("Claude Vision full label extraction failed (%s): %s", type(exc).__name__, exc)
+        logger.warning(
+            "Claude Vision full label extraction failed (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
         return "", "", ""

@@ -86,13 +86,15 @@ class TestPeriodOverview:
     @pytest.mark.asyncio
     async def test_computes_margin_and_net_profit(self):
         pool, conn = _make_pool_with_conn()
-        conn.fetchrow = AsyncMock(return_value={
-            "revenue": 1000.0,
-            "cogs": 700.0,
-            "sales_count": 10,
-            "returns_total": 50.0,
-            "expenses_total": 100.0,
-        })
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "revenue": 1000.0,
+                "cogs": 700.0,
+                "sales_count": 10,
+                "returns_total": 50.0,
+                "expenses_total": 100.0,
+            }
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
@@ -110,13 +112,15 @@ class TestPeriodOverview:
     @pytest.mark.asyncio
     async def test_zero_revenue_does_not_divide_by_zero(self):
         pool, conn = _make_pool_with_conn()
-        conn.fetchrow = AsyncMock(return_value={
-            "revenue": 0.0,
-            "cogs": 0.0,
-            "sales_count": 0,
-            "returns_total": 0.0,
-            "expenses_total": 25.0,
-        })
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "revenue": 0.0,
+                "cogs": 0.0,
+                "sales_count": 0,
+                "returns_total": 0.0,
+                "expenses_total": 25.0,
+            }
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
@@ -134,12 +138,26 @@ class TestTopProductsByProfit:
     @pytest.mark.asyncio
     async def test_orders_and_computes_margin(self):
         pool, conn = _make_pool_with_conn()
-        conn.fetch = AsyncMock(return_value=[
-            {"product_id": 1, "name": "A", "oem_code": "111",
-             "units_sold": 5, "revenue": 500.0, "cogs": 300.0},
-            {"product_id": 2, "name": "B", "oem_code": None,
-             "units_sold": 2, "revenue": 200.0, "cogs": 100.0},
-        ])
+        conn.fetch = AsyncMock(
+            return_value=[
+                {
+                    "product_id": 1,
+                    "name": "A",
+                    "oem_code": "111",
+                    "units_sold": 5,
+                    "revenue": 500.0,
+                    "cogs": 300.0,
+                },
+                {
+                    "product_id": 2,
+                    "name": "B",
+                    "oem_code": None,
+                    "units_sold": 2,
+                    "revenue": 200.0,
+                    "cogs": 100.0,
+                },
+            ]
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
@@ -159,12 +177,24 @@ class TestSalesVelocity:
     @pytest.mark.asyncio
     async def test_units_per_day_and_days_of_cover(self):
         pool, conn = _make_pool_with_conn()
-        conn.fetch = AsyncMock(return_value=[
-            {"product_id": 1, "name": "X", "oem_code": "777",
-             "current_stock": 14, "units_sold": 7},  # 1/day, 14 days cover
-            {"product_id": 2, "name": "Y", "oem_code": None,
-             "current_stock": 100, "units_sold": 0},  # no velocity
-        ])
+        conn.fetch = AsyncMock(
+            return_value=[
+                {
+                    "product_id": 1,
+                    "name": "X",
+                    "oem_code": "777",
+                    "current_stock": 14,
+                    "units_sold": 7,
+                },  # 1/day, 14 days cover
+                {
+                    "product_id": 2,
+                    "name": "Y",
+                    "oem_code": None,
+                    "current_stock": 100,
+                    "units_sold": 0,
+                },  # no velocity
+            ]
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
@@ -180,18 +210,28 @@ class TestRestockAlerts:
     async def test_filters_by_threshold(self):
         pool, conn = _make_pool_with_conn()
         # First product is low cover; second is well-stocked.
-        conn.fetch = AsyncMock(return_value=[
-            {"product_id": 1, "name": "Urgent", "oem_code": "111",
-             "current_stock": 2, "units_sold": 14},   # 2/day, 1 day cover
-            {"product_id": 2, "name": "Healthy", "oem_code": "222",
-             "current_stock": 200, "units_sold": 7},  # 1/day, 200 days cover
-        ])
+        conn.fetch = AsyncMock(
+            return_value=[
+                {
+                    "product_id": 1,
+                    "name": "Urgent",
+                    "oem_code": "111",
+                    "current_stock": 2,
+                    "units_sold": 14,
+                },  # 2/day, 1 day cover
+                {
+                    "product_id": 2,
+                    "name": "Healthy",
+                    "oem_code": "222",
+                    "current_stock": 200,
+                    "units_sold": 7,
+                },  # 1/day, 200 days cover
+            ]
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
-        alerts = await reader.get_restock_alerts(
-            start, end, days_of_cover_threshold=14
-        )
+        alerts = await reader.get_restock_alerts(start, end, days_of_cover_threshold=14)
 
         assert len(alerts) == 1
         assert alerts[0].name == "Urgent"
@@ -206,11 +246,17 @@ class TestCashflow:
     async def test_combines_totals_and_period(self):
         pool, conn = _make_pool_with_conn()
         # First call returns totals, second returns period figures.
-        conn.fetchrow = AsyncMock(side_effect=[
-            {"cash_sales_total": 5000.0, "cash_expenses_total": 800.0,
-             "deposits_total": 2000.0, "ar_total": 600.0},
-            {"cash_in": 1200.0, "cash_out": 400.0},
-        ])
+        conn.fetchrow = AsyncMock(
+            side_effect=[
+                {
+                    "cash_sales_total": 5000.0,
+                    "cash_expenses_total": 800.0,
+                    "deposits_total": 2000.0,
+                    "ar_total": 600.0,
+                },
+                {"cash_in": 1200.0, "cash_out": 400.0},
+            ]
+        )
         reader = FinancialDataReader(pool)
         start, end = _period()
 
