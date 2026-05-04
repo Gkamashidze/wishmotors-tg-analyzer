@@ -47,7 +47,12 @@ class AuditLogger:
         except Exception as exc:
             logger.warning("audit_log._write failed (%s): %s", event_type, exc)
 
-        logger.info("AUDIT | %s | ref=%s | %s", event_type, reference_id, json.dumps(payload, default=str))
+        logger.info(
+            "AUDIT | %s | ref=%s | %s",
+            event_type,
+            reference_id,
+            json.dumps(payload, default=str),
+        )
 
     async def verify_integrity(self, since_hours: int = 24) -> Dict[str, Any]:
         """Compare stored checksums against freshly computed ones.
@@ -73,7 +78,11 @@ class AuditLogger:
                 expected = _checksum(stored_payload)
                 if row["checksum"] != expected:
                     tampered.append(row["id"])
-            return {"checked": len(rows), "ok": len(rows) - len(tampered), "tampered": tampered}
+            return {
+                "checked": len(rows),
+                "ok": len(rows) - len(tampered),
+                "tampered": tampered,
+            }
         except Exception as exc:
             logger.error("integrity check failed: %s", exc)
             return {"checked": 0, "ok": 0, "tampered": [], "error": str(exc)}
@@ -98,4 +107,3 @@ class AuditLogger:
                 payload_json,
                 cs,
             )
-
