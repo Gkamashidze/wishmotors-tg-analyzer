@@ -52,13 +52,18 @@ export default async function AboutPage() {
         {/* ── Hero ── */}
         <section className="text-center mb-14">
           <div className="flex justify-center mb-6">
-            <Image
-              src={logo}
-              alt="WishMotors"
-              height={80}
-              className="h-20 w-auto rounded-2xl shadow-sm"
-              unoptimized
-            />
+            <div className="logo-ring" style={{ borderRadius: "18px" }}>
+              <div className="logo-ring-inner" style={{ backgroundColor: "hsl(var(--background))", borderRadius: "16px" }}>
+                <Image
+                  src={logo}
+                  alt="WishMotors"
+                  width={80}
+                  height={80}
+                  className="h-20 w-20 object-contain block"
+                  unoptimized
+                />
+              </div>
+            </div>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold leading-tight mb-4">
             WishMotors — ხარისხიანი ნაწილები<br className="hidden sm:block" /> ხარისხიანი მანქანებისთვის

@@ -110,7 +110,11 @@ export default async function ModelLandingPage({ params }: { params: Params }) {
             <span className="hidden sm:inline">კატალოგი</span>
           </Link>
           <Link href="/catalog" className="shrink-0 flex items-center gap-2.5">
-            <Image src={logo} alt="WishMotors" height={48} className="h-12 w-auto" unoptimized />
+            <div className="logo-ring">
+              <div className="logo-ring-inner" style={{ backgroundColor: "hsl(var(--background))" }}>
+                <Image src={logo} alt="WishMotors" width={48} height={48} className="h-12 w-12 object-contain block" unoptimized />
+              </div>
+            </div>
             <span className="font-bold text-base text-[#1b2b5e]">WishMotors</span>
           </Link>
         </div>
