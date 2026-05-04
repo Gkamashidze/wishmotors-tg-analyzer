@@ -1,19 +1,19 @@
 # Audit Report — 2026-05-03
 
-## Overall Score: 6.3 / 10 → **7.1** (critical) → **7.9 / 10** (after high fixes) — ✅ Good
+## Overall Score: 6.3 / 10 → 7.1 (critical) → 7.9 (high) → **8.1 / 10** (final) — ✅ Good
 
-| კატეგორია       | ქულა (before) | after critical | after high  | წონა | Issues |
-|-----------------|---------------|----------------|-------------|------|--------|
-| Security        | 6.4           | 7.5            | **8.5** ✅  | 20%  | 🟢 2 low remaining |
-| Code Quality    | 7.2           | 7.8            | **7.8**     | 15%  | 🟢 3 remaining |
-| Testing         | 4.2           | 6.0            | **7.5** ✅  | 15%  | 391 tests, 33% cov, 🟢 2 remaining |
-| Architecture    | 6.8           | 7.5            | **8.0** ✅  | 10%  | #24 blocked, 🟢 2 remaining |
-| Error Handling  | 6.2           | 7.2            | **8.5** ✅  | 10%  | 🟢 1 remaining |
-| Frontend        | 6.4           | 7.0            | **7.5** ✅  | 10%  | #34 blocked, 🟢 1 remaining |
-| CI/CD           | 6.5           | 6.5            | **8.5** ✅  |  5%  | 🟢 1 remaining |
-| Database        | 7.5           | 8.0            | **8.5** ✅  |  5%  | 🟢 3 remaining |
-| Git             | 7.0           | 7.0            | **7.0**     |  5%  | 🟢 1 remaining |
-| Documentation   | 6.8           | 6.8            | **6.8**     |  5%  | 🟢 3 remaining |
+| კატეგორია       | before | critical | high   | **final** | წონა | Notes |
+|-----------------|--------|----------|--------|-----------|------|-------|
+| Security        | 6.4    | 7.5      | 8.5    | **8.5** ✅ | 20%  | 2 low deferred |
+| Code Quality    | 7.2    | 7.8      | 7.8    | **8.2** ✅ | 15%  | ruff format CI, utcnow, assert→return |
+| Testing         | 4.2    | 6.0      | 7.5    | **7.5** ✅ | 15%  | 391 tests, 32% cov |
+| Architecture    | 6.8    | 7.5      | 8.0    | **8.0** ✅ | 10%  | #24 wizard split blocked |
+| Error Handling  | 6.2    | 7.2      | 8.5    | **8.5** ✅ | 10%  | all handled |
+| Frontend        | 6.4    | 7.0      | 7.5    | **7.5** ✅ | 10%  | #34 SSR blocked |
+| CI/CD           | 6.5    | 6.5      | 8.5    | **9.0** ✅ |  5%  | ruff format --check added |
+| Database        | 7.5    | 8.0      | 8.5    | **9.0** ✅ |  5%  | LIMIT, ILIKE escape, orders index |
+| Git             | 7.0    | 7.0      | 7.0    | **7.0**    |  5%  | #46 history immutable |
+| Documentation   | 6.8    | 6.8      | 6.8    | **8.0** ✅ |  5%  | 22 commands, full tree, .env.example |
 
 ---
 
@@ -39,26 +39,28 @@
 
 ---
 
-## Metrics Summary (after high phase)
+## Metrics Summary (final — after all fix phases)
 
-| მეტრიკა | before | after critical | after high |
-|---|---|---|---|
-| Python test count | ~248 | 317 (+69) | **391 (+74)** |
-| Python test coverage | ~20% | 33% | 33% (more tests, same coverage) |
-| Dashboard tests | 0 | 53 passing | 53 passing ✅ |
-| TypeScript `any` | 0 ✅ | 0 ✅ | 0 ✅ |
-| Largest file | `db.py` 3,375 | 3,375 | 3,375 (🟢 low) |
-| Largest component | `products-table.tsx` 1,921 | 1,238 ✅ | 1,238 ✅ |
-| Bot modules without tests | 9 / 11 | 6 / 11 | **4 / 11** |
-| CSP header | ❌ | ❌ | **✅** |
-| Prompt caching | ❌ | ❌ | **✅** |
-| AsyncAnthropic singleton | ❌ | ❌ | **✅** |
-| Rate limiting (AI) | ❌ | ❌ | **✅** |
-| GitHub Actions CI | ❌ | ❌ | **✅** |
-| Returns table indexes | ❌ | ❌ | **✅** |
-| MIGRATE_SQL guard | ❌ | ❌ | **✅** |
-| SSL on DB | ❌ | ✅ | ✅ |
-| Debug endpoints | 2 | 0 ✅ | 0 ✅ |
-| Global error handler | ❌ | ✅ | ✅ |
-| Redis-backed caches | 0/3 | 2/3 ✅ | 2/3 ✅ |
-| Bus factor | 1 | 1 | 1 |
+| მეტრიკა | before | critical | high | **final** |
+|---|---|---|---|---|
+| Python test count | ~248 | 317 (+69) | 391 (+74) | **391** ✅ |
+| Python test coverage | ~20% | 33% | 33% | **32%** |
+| Dashboard tests | 0 | 53 ✅ | 53 ✅ | **53** ✅ |
+| TypeScript `any` | 0 ✅ | 0 ✅ | 0 ✅ | **0** ✅ |
+| datetime.utcnow() usages | 1 | 1 | 1 | **0** ✅ |
+| assert isinstance (wizard.py) | 52 | 52 | 52 | **0** ✅ |
+| Unbounded SELECTs | 5 | 5 | 5 | **0** ✅ LIMIT 500/5000 |
+| ILIKE injection risk | 2 | 2 | 2 | **0** ✅ |
+| Ruff format in CI | ❌ | ❌ | ❌ | **✅** |
+| Largest file | db.py 3,375 | 3,375 | 3,375 | **3,845** (growing) |
+| Largest component | products-table.tsx 1,921 | 1,238 ✅ | 1,238 ✅ | **1,298** ✅ |
+| Bot modules without tests | 9 / 11 | 6 / 11 | 4 / 11 | **4 / 11** |
+| README commands | 3 | 3 | 3 | **22** ✅ |
+| .env.example vars | 17 | 17 | 17 | **21** ✅ |
+| CSP header | ❌ | ❌ | ✅ | ✅ |
+| SSL on DB | ❌ | ✅ | ✅ | ✅ |
+| Debug endpoints | 2 | 0 ✅ | 0 ✅ | 0 ✅ |
+| Global error handler | ❌ | ✅ | ✅ | ✅ |
+| GitHub Actions CI | ❌ | ❌ | ✅ | ✅ |
+| Redis-backed caches | 0/3 | 2/3 ✅ | 2/3 ✅ | 2/3 ✅ |
+| Bus factor | 1 | 1 | 1 | 1 (accepted) |
