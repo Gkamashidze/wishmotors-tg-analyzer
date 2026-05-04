@@ -119,9 +119,10 @@ export default function Footer() {
     <footer className="mt-auto" style={{ backgroundColor: "#1b2b5e" }}>
       <div className="max-w-7xl mx-auto px-4 py-10">
 
-        {/* ── Main 3-column info grid ── */}
+        {/* ── 3-column grid: contact | social | quick links ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
 
+          {/* Column A — Contact */}
           {hasContact && (
             <div className="space-y-3">
               <h3 className="font-semibold text-sm text-white/90">დაგვიკავშირდით</h3>
@@ -158,24 +159,20 @@ export default function Footer() {
             </div>
           )}
 
-          {hasAddress && (
-            <div className="space-y-3">
-              <h3 className="font-semibold text-sm text-white/90">მისამართი</h3>
-              <div className="space-y-2 text-sm text-white/75">
-                {address && <p>{address}</p>}
-                {hours   && <p>{hours}</p>}
-                {mapsUrl && (
-                  <p>
-                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="hover:text-[#29abe2] transition-colors">
-                      Google Maps-ზე ნახვა →
-                    </a>
-                  </p>
-                )}
+          {/* Column B — Social networks (center) */}
+          {hasSocial && (
+            <div className="space-y-4 sm:flex sm:flex-col sm:items-center sm:text-center">
+              <h3 className="font-semibold text-sm text-white/90">გამოგვყევი</h3>
+              <div className="flex flex-wrap gap-2 sm:justify-center">
+                {socialLinks.map((link) => (
+                  <SocialPill key={`${link.href}-${link.sublabel}`} {...link} />
+                ))}
               </div>
             </div>
           )}
 
-          <div className="space-y-3">
+          {/* Column C — Quick links (right) */}
+          <div className="space-y-3 sm:ml-auto">
             <h3 className="font-semibold text-sm text-white/90">სწრაფი ბმულები</h3>
             <div className="space-y-2 text-sm text-white/75">
               <p>
@@ -196,31 +193,6 @@ export default function Footer() {
             </div>
           </div>
         </div>
-
-        {/* ── Social media section ── */}
-        {hasSocial && (
-          <div className="mt-10">
-            {/* Glowing gradient divider */}
-            <div
-              className="h-px w-full"
-              style={{
-                background:
-                  "linear-gradient(90deg, transparent 0%, rgba(41,171,226,0.30) 40%, rgba(41,171,226,0.30) 60%, transparent 100%)",
-              }}
-            />
-
-            <div className="mt-8 flex flex-col items-center gap-5">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-white/50">
-                გამოგვყევი სოც. ქსელებში
-              </p>
-              <div className="flex flex-wrap justify-center gap-3">
-                {socialLinks.map((link) => (
-                  <SocialPill key={`${link.href}-${link.sublabel}`} {...link} />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ── Copyright strip ── */}
         <div className="mt-8 pt-6 border-t border-white/[0.07] text-xs text-white/50 text-center">
