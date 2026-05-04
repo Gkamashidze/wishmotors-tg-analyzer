@@ -125,7 +125,7 @@ export default function Footer() {
           {/* Column A — Contact */}
           {hasContact && (
             <div className="space-y-3">
-              <h3 className="font-semibold text-sm text-white/90">დაგვიკავშირდით</h3>
+              <h3 className="font-bold text-sm text-white">დაგვიკავშირდით</h3>
               <div className="space-y-2 text-sm text-white/75">
                 {telHref && (
                   <p>
@@ -162,7 +162,7 @@ export default function Footer() {
           {/* Column B — Social networks (center) */}
           {hasSocial && (
             <div className="space-y-4 sm:flex sm:flex-col sm:items-center sm:text-center">
-              <h3 className="font-semibold text-sm text-white/90">გამოგვყევი</h3>
+              <h3 className="font-bold text-sm text-white">გამოგვყევი</h3>
               <div className="flex flex-wrap gap-2 sm:justify-center">
                 {socialLinks.map((link) => (
                   <SocialPill key={`${link.href}-${link.sublabel}`} {...link} />
@@ -173,7 +173,7 @@ export default function Footer() {
 
           {/* Column C — Quick links (right) */}
           <div className="space-y-3 sm:ml-auto">
-            <h3 className="font-semibold text-sm text-white/90">სწრაფი ბმულები</h3>
+            <h3 className="font-bold text-sm text-white">სწრაფი ბმულები</h3>
             <div className="space-y-2 text-sm text-white/75">
               <p>
                 <Link href="/catalog" className="hover:text-[#29abe2] transition-colors">
